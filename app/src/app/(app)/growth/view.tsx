@@ -26,8 +26,6 @@ export function GrowthView({
 }: {
   campaigns: CampaignLensRow[];
 }): ReactElement {
-  const inFlight = campaigns.filter((c) => !c.resolved).length;
-
   return (
     <div className="flex flex-col gap-4 p-5 md:p-6">
       <div className="flex flex-col gap-1">
@@ -35,10 +33,7 @@ export function GrowthView({
           Growth
         </h1>
         <p className="text-muted-foreground text-sm">
-          Campaign hypotheses scored by an independent engagement KPI — the
-          verifier reads cached post metrics, never its own confidence.
-          {campaigns.length > 0 &&
-            ` ${inFlight} in flight of ${campaigns.length}.`}
+          Campaigns growing Cogni, scored on real engagement.
         </p>
       </div>
 
