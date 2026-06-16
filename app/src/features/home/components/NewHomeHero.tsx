@@ -32,7 +32,7 @@ export function NewHomeHero(): ReactElement {
         {/* Hero Title with Sparkles */}
         {}
         <h1 className="relative z-20 whitespace-nowrap text-center font-bold text-2xl text-foreground md:text-5xl lg:text-6xl">
-          Build{" "}
+          Grow every{" "}
           <span className="relative inline-block text-gradient-accent">
             community-owned
             {/* Sparkles Effect Container */}
@@ -85,7 +85,7 @@ export function NewHomeHero(): ReactElement {
               <div className="absolute inset-0 h-full w-full bg-background [mask-image:radial-gradient(250px_100px_at_top,transparent_20%,white)] md:[mask-image:radial-gradient(350px_200px_at_top,transparent_20%,white)]" />
             </div>
           </span>{" "}
-          AI apps.
+          AI.
         </h1>
 
         {/* Content Below Sparkles */}
@@ -123,7 +123,9 @@ export function NewHomeHero(): ReactElement {
             </div>
 
             <p className="mt-8 max-w-3xl text-lg text-muted-foreground sm:text-xl">
-              Web3 Gov + Web2 AI
+              Beacon is the Cogni network&rsquo;s growth engine — an autonomous
+              loop that drafts, broadcasts, and measures content across
+              channels, then compounds what works into the hub.
             </p>
           </div>
         </div>
