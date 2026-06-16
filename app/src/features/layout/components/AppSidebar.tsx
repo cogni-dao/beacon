@@ -19,10 +19,10 @@ import {
   CreditCard,
   Github,
   LayoutDashboard,
+  RadioTower,
   Shield,
   Vote,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -90,18 +90,16 @@ export function AppSidebar(): ReactElement {
       <SidebarHeader className="h-16 shrink-0 justify-center">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Cogni">
+            <SidebarMenuButton size="lg" asChild tooltip="cogni/beacon">
               <Link href="/chat">
                 <div className="flex aspect-square size-8 items-center justify-center">
-                  <Image
-                    src="/TransparentBrainOnly.png"
-                    alt="Cogni"
-                    width={24}
-                    height={24}
+                  <RadioTower
+                    className="size-6 text-primary"
+                    aria-hidden="true"
                   />
                 </div>
                 <span className="truncate font-bold text-gradient-accent">
-                  Cogni
+                  cogni/beacon
                 </span>
               </Link>
             </SidebarMenuButton>
