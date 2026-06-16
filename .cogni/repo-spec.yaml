@@ -9,15 +9,28 @@
 
 schema_version: "0.1.4"
 
-node_id: "b927a9dd-6132-4fc9-a51e-e3cee2568e3c"
-scope_id: "b44d4394-3147-5787-acab-51546be6a3da"
+node_id: "f97f68f2-8406-4a3b-b5a9-d579b779f19d"
+scope_id: "24971774-c0e2-5fa5-a11c-df89c88a9baf"
 scope_key: "default"
 
 intent:
-  name: node-template
+  name: beacon
 
 cogni_dao:
-  chain_id: "8453" # Base mainnet
+  dao_contract: "0xdd1776f660e4cf46b2fb723196242db4d45e8b58"
+  plugin_contract: "0xc6808d775b53229116547112db1f0394888d1abf"
+  signal_contract: "0xbc20b71e4d33e12e5dcf65e8fc665d62188abaa8"
+  chain_id: "8453"
+  base_url: "https://proposal.cognidao.org"
+
+knowledge:
+  database: "knowledge_beacon"
+  remote:
+    provider: dolthub
+    owner: "cogni-dao"
+    repo: "knowledge-beacon"
+    url: "https://doltremoteapi.dolthub.com/cogni-dao/knowledge-beacon"
+    custody: cogni-owned
 
 # Activity ledger ingestion + approver allowlist.
 # `approvers` gates the `(admin)/` route group and write routes under
@@ -30,7 +43,7 @@ activity_ledger:
   activity_sources:
     github:
       attribution_pipeline: cogni-v0.0
-      source_refs: ["Cogni-DAO/standalone-node"]
+      source_refs: ["Cogni-DAO/beacon"]
 
 payments:
   status: pending_activation
