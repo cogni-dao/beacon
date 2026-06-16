@@ -71,6 +71,17 @@ export {
   SourceTypeSchema,
 } from "./domain/schemas.js";
 export { createEdoCapability } from "./edo-capability.js";
+// Engagement KPI — pure independent VERIFIER (no LLM/API/DB; never reads the
+// hypothesis's own confidence). The metric: resolution-strategy edge source.
+export {
+  computeEngagementKpi,
+  type EngagementBasis,
+  type EngagementKpiResult,
+  type EngagementTarget,
+  EngagementTargetSchema,
+  type PostMetricSnapshot,
+  PostMetricSnapshotSchema,
+} from "./domain/engagement-kpi.js";
 export {
   ContributionConflictError,
   ContributionForbiddenError,

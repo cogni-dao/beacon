@@ -35,6 +35,7 @@ import {
   createEdoCapability,
   createKnowledgeCapability,
   defaultCanMergeKnowledge,
+  type EdoResolverPort,
   type KnowledgeStorePort,
   shapeGate,
 } from "@cogni/knowledge-store";
@@ -231,6 +232,8 @@ export interface Container {
   knowledgeStorePort: KnowledgeStorePort | undefined;
   /** EDO hypothesis-loop capability for the langgraph tool bindings AND the bearer-auth REST routes under /api/v1/edo. Always present (stubs throw when DOLTGRES_URL is unset). */
   edoCapability: EdoCapability;
+  /** EDO resolver port — drives `pendingResolutions`/`resolveHypothesis` for the growth-loop bridge job. Undefined when DOLTGRES_URL is unset. */
+  edoResolver: EdoResolverPort | undefined;
   /** Thread persistence scoped to a user (RLS enforced) */
   threadPersistenceForUser(userId: UserId): ThreadPersistencePort;
   /** Governance status queries (system tenant scope) */
@@ -610,6 +613,7 @@ function createContainer(): Container {
   // KnowledgeCapability + EdoCapability for AI tools (require DOLTGRES_URL)
   let knowledgeCapability: KnowledgeCapability;
   let edoCapability: EdoCapability;
+  let edoResolver: EdoResolverPort | undefined;
   let knowledgeContributionService: ContributionService | undefined;
   let knowledgeStorePort: KnowledgeStorePort | undefined;
   if (env.DOLTGRES_URL) {
@@ -622,11 +626,12 @@ function createContainer(): Container {
     });
     knowledgeStorePort = knowledgePort;
     knowledgeCapability = createKnowledgeCapability(knowledgePort);
-    const edoResolver = new DoltgresEdoResolverAdapter({
+    const doltgresEdoResolver = new DoltgresEdoResolverAdapter({
       sql: doltClient,
       store: knowledgePort,
     });
-    edoCapability = createEdoCapability(knowledgePort, edoResolver);
+    edoResolver = doltgresEdoResolver;
+    edoCapability = createEdoCapability(knowledgePort, doltgresEdoResolver);
     const contributionPort = new DoltgresKnowledgeContributionAdapter({
       sql: doltClient,
     });
@@ -686,6 +691,7 @@ function createContainer(): Container {
     };
     knowledgeContributionService = undefined;
     knowledgeStorePort = undefined;
+    edoResolver = undefined;
     log.warn("Knowledge store not configured (DOLTGRES_URL not set)");
   }
 
@@ -867,6 +873,7 @@ function createContainer(): Container {
     knowledgeContributionService,
     knowledgeStorePort,
     edoCapability,
+    edoResolver,
     threadPersistenceForUser: (userId: UserId) =>
       new DrizzleThreadPersistenceAdapter(db, userActor(userId)),
     governanceStatus: new DrizzleGovernanceStatusAdapter(
