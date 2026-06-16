@@ -14,10 +14,12 @@
 
 import type { ToolSourcePort } from "@cogni/ai-core";
 import type {
+  BroadcastCapability,
   EdoCapability,
   KnowledgeCapability,
   MetricsCapability,
   RepoCapability,
+  SocialXCapability,
   WebSearchCapability,
 } from "@cogni/ai-tools";
 import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
@@ -122,8 +124,10 @@ import {
   createMetricsCapability,
   derivePrometheusQueryUrl,
 } from "@/bootstrap/capabilities/metrics";
+import { createBroadcastCapability } from "@/bootstrap/capabilities/broadcast";
 import { createRepoCapability } from "@/bootstrap/capabilities/repo";
 import { createScheduleCapability } from "@/bootstrap/capabilities/schedule";
+import { createSocialXCapability } from "@/bootstrap/capabilities/social-x";
 import { stubVcsCapability } from "@/bootstrap/capabilities/vcs";
 import { createWebSearchCapability } from "@/bootstrap/capabilities/web-search";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
@@ -213,6 +217,10 @@ export interface Container {
   metricsCapability: MetricsCapability;
   /** Web search capability for AI tools - requires TAVILY_API_KEY to be configured */
   webSearchCapability: WebSearchCapability;
+  /** Social broadcast + metrics capability (growth-loop v0) — fakes in test, real X when X_API_BEARER_TOKEN set */
+  socialXCapability: SocialXCapability;
+  /** Broadcast capability — posts variants + persists `broadcasts` (NO post_metrics writes) */
+  broadcastCapability: BroadcastCapability;
   /** Repo capability for AI tools - requires COGNI_REPO_PATH */
   repoCapability: RepoCapability;
   /** Tool source with real implementations for AI tool execution */
@@ -562,6 +570,15 @@ function createContainer(): Container {
   // WebSearchCapability for AI tools (requires TAVILY_API_KEY)
   const webSearchCapability = createWebSearchCapability(env);
 
+  // SocialXCapability (growth-loop v0): fakes in test, real X when X_API_BEARER_TOKEN set.
+  const socialXCapability = createSocialXCapability(env);
+  // BroadcastCapability: posts variants + persists `broadcasts` (service-role, no RLS in v0).
+  // NO_POST_METRICS_WRITE: this capability never touches `post_metrics`.
+  const broadcastCapability = createBroadcastCapability({
+    socialX: socialXCapability,
+    db: getServiceDb(),
+  });
+
   // RepoCapability for AI tools (requires COGNI_REPO_PATH)
   const repoCapability = createRepoCapability(env);
 
@@ -674,6 +691,7 @@ function createContainer(): Container {
 
   // ToolSource with real implementations (per CAPABILITY_INJECTION)
   const toolBindings = createToolBindings({
+    broadcastCapability,
     knowledgeCapability,
     edoCapability,
     metricsCapability,
@@ -842,6 +860,8 @@ function createContainer(): Container {
     scheduleManager,
     metricsCapability,
     webSearchCapability,
+    socialXCapability,
+    broadcastCapability,
     repoCapability,
     toolSource,
     knowledgeContributionService,

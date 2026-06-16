@@ -199,6 +199,12 @@ export const serverSchema = z.object({
   // Required for research graph web search capability
   TAVILY_API_KEY: optionalString,
 
+  // X (Twitter) API v2 bearer token - Optional
+  // Gates the real social-x adapter (post content + read engagement metrics).
+  // When unset, the social-x capability is env-gated off and the growth loop
+  // runs against deterministic fakes in CI/test. Per docs/guides/add-secret.md.
+  X_API_BEARER_TOKEN: optionalString,
+
   // Market Provider: Kalshi - Optional
   // Required for Kalshi market data in poly-brain. Polymarket works without credentials.
   KALSHI_API_KEY: optionalString,

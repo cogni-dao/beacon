@@ -65,6 +65,36 @@ export type {
   ScheduleInfo,
   ScheduleUpdateParams,
 } from "./schedule";
+// Broadcast capability (per beacon-growth-loop spec — persists `broadcasts` only)
+export {
+  BroadcastInputSchema,
+  BroadcastResultSchema,
+  BroadcastVariantResultSchema,
+  BroadcastVariantSchema,
+} from "./broadcast";
+export type {
+  BroadcastCapability,
+  BroadcastInput,
+  BroadcastResult,
+  BroadcastVariant,
+  BroadcastVariantResult,
+} from "./broadcast";
+// Social broadcast + metrics capability (per beacon-growth-loop spec)
+export {
+  PostContentInputSchema,
+  PostContentResultSchema,
+  PostMetricSnapshotSchema,
+  SOCIAL_CHANNELS,
+  X_API_VERSION,
+  X_MAX_TEXT_LENGTH,
+} from "./social-x";
+export type {
+  PostContentInput,
+  PostContentResult,
+  PostMetricSnapshot,
+  SocialChannel,
+  SocialXCapability,
+} from "./social-x";
 // Export capability interfaces (defined here, NOT in ai-core)
 export type {
   AuthCapability,

@@ -29,6 +29,8 @@ import { AUTORESEARCH_TOOL_IDS } from "./graphs/autoresearch/tools";
 import { BRAIN_GRAPH_NAME, createBrainGraph } from "./graphs/brain/graph";
 import { BRAIN_TOOL_IDS } from "./graphs/brain/tools";
 import { BROWSER_GRAPH_NAME, createBrowserGraph } from "./graphs/browser/graph";
+import { CONTENT_GRAPH_NAME, createContentGraph } from "./graphs/content/graph";
+import { CONTENT_TOOL_IDS } from "./graphs/content/tools";
 import {
   createFrontendTesterGraph,
   FRONTEND_TESTER_GRAPH_NAME,
@@ -173,6 +175,19 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
   },
 
   /**
+   * Content graph — 4-node inner content loop for the beacon growth loop:
+   * ideate → draft → critique/revise → adapt-per-platform. Emits one staged
+   * variant per enabled channel; the broadcast tool posts them.
+   */
+  [CONTENT_GRAPH_NAME]: {
+    displayName: "Content",
+    description:
+      "Growth content loop — ideate, draft, self-critique, and adapt one staged variant per enabled channel",
+    toolIds: CONTENT_TOOL_IDS,
+    graphFactory: createContentGraph,
+  },
+
+  /**
    * PR Review graph - single-call structured output for PR evaluation.
    * No tools — evidence is pre-fetched and passed as message content.
    */
@@ -272,6 +287,7 @@ export const LANGGRAPH_GRAPH_IDS = {
   poet: `${LANGGRAPH_PROVIDER_ID}:${POET_GRAPH_NAME}`,
   ponderer: `${LANGGRAPH_PROVIDER_ID}:${PONDERER_GRAPH_NAME}`,
   research: `${LANGGRAPH_PROVIDER_ID}:${RESEARCH_GRAPH_NAME}`,
+  content: `${LANGGRAPH_PROVIDER_ID}:${CONTENT_GRAPH_NAME}`,
   "pr-review": `${LANGGRAPH_PROVIDER_ID}:${PR_REVIEW_GRAPH_NAME}`,
   browser: `${LANGGRAPH_PROVIDER_ID}:${BROWSER_GRAPH_NAME}`,
   "frontend-tester": `${LANGGRAPH_PROVIDER_ID}:${FRONTEND_TESTER_GRAPH_NAME}`,
