@@ -3,8 +3,8 @@
 
 /**
  * Module: `@tests/component/db/beacon-growth-rls.int.test`
- * Purpose: Prove the migration-0031 `tenant_isolation` RLS policies actually
- *   isolate the beacon-growth tables (`broadcasts`, `post_metrics`,
+ * Purpose: Prove the beacon-growth `tenant_isolation` RLS policies actually
+ *   isolate the beacon-growth tables (`campaigns`, `broadcasts`, `post_metrics`,
  *   `channel_accounts`) by `account_id` at the database layer — not green-on-empty.
  * Scope: Seeds TWO accounts with real rows, then asserts (a) an account sees its
  *   own rows, (b) it cannot see the other account's rows, (c) a forgotten
@@ -31,6 +31,7 @@ import { getAppDb } from "@/adapters/server/db/client";
 import {
   billingAccounts,
   broadcasts,
+  campaigns,
   channelAccounts,
   postMetrics,
   users,
@@ -111,6 +112,12 @@ describe("beacon-growth RLS account isolation", () => {
         ownerUserId: acct.userId,
         balanceCredits: 1000n,
       });
+      await seedDb.insert(campaigns).values({
+        accountId: acct.accountId,
+        campaignId: `${CAMPAIGN_ID}-${tag}`,
+        title: `Campaign ${tag.toUpperCase()}`,
+        status: "draft",
+      });
       await seedDb.insert(channelAccounts).values({
         accountId: acct.accountId,
         channel: "x",
@@ -149,11 +156,34 @@ describe("beacon-growth RLS account isolation", () => {
       .delete(channelAccounts)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
+      .delete(campaigns)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
+    await seedDb
       .delete(billingAccounts)
       .where(sql`id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(users)
       .where(sql`id IN (${accountA.userId}, ${accountB.userId})`);
+  });
+
+  describe("campaigns - account isolation", () => {
+    it("account A sees only its own campaign", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(campaigns)
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.accountId).toBe(accountA.accountId);
+      }
+    });
+
+    it("account A cannot see account B's campaign", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(campaigns)
+      );
+      const owners = rows.map((r) => r.accountId);
+      expect(owners).not.toContain(accountB.accountId);
+    });
   });
 
   describe("broadcasts - account isolation", () => {
@@ -210,6 +240,13 @@ describe("beacon-growth RLS account isolation", () => {
   });
 
   describe("missing tenant context - fail-safe deny", () => {
+    it("no SET LOCAL on campaigns returns zero rows", async () => {
+      const rows = await withoutTenantScope(db, (tx) =>
+        tx.select().from(campaigns)
+      );
+      expect(rows).toHaveLength(0);
+    });
+
     it("no SET LOCAL on broadcasts returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
         tx.select().from(broadcasts)
@@ -233,6 +270,25 @@ describe("beacon-growth RLS account isolation", () => {
   });
 
   describe("write-path WITH CHECK enforcement", () => {
+    it("cross-account campaign INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(campaigns).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: `xss-${randomUUID().slice(0, 8)}`,
+            title: "cross-account campaign",
+            status: "draft",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
     it("cross-account broadcast INSERT is rejected by RLS policy", async () => {
       let caught: unknown;
       try {

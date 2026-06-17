@@ -5,21 +5,27 @@
  * Module: `@app/api/v1/growth/campaigns`
  * Purpose: Campaign collection surface — the growth-loop PLAN beat.
  *   `POST` files a falsifiable campaign hypothesis in the EDO substrate
- *   (domain `beacon-campaigns`, strategy `metric:engagement:<x>`) AND provisions
- *   a Temporal content schedule (`langgraph:content`) whose brief recalls
- *   `beacon-brand-voice`. `GET` lists campaigns with their CURRENT engagement KPI
- *   (computed independently from cached `post_metrics`).
- * Scope: HTTP boundary + Zod validation + orchestration. Reuses the EDO
- *   capability (no new goal table) and the schedule manager. The KPI is the
- *   same pure `computeEngagementKpi` the resolver bridge uses.
+ *   (domain `beacon-campaigns`, strategy `metric:engagement:<x>`) — the KPI resolver
+ *   reads it — AND inserts the account-scoped `campaigns` RECORD (the owned, CRUD-able
+ *   row with a real lifecycle `status`), then provisions a Temporal content schedule
+ *   (`langgraph:content`) whose brief recalls `beacon-brand-voice`. `GET` lists the
+ *   `campaigns` rows (RLS-scoped to the user's account, NOT shared Doltgres) joined
+ *   with their CURRENT engagement KPI (computed independently from `post_metrics`).
+ * Scope: HTTP boundary + Zod validation + orchestration. Files the EDO hypothesis
+ *   (resolver dependency) + writes the owned record + provisions the schedule. The
+ *   KPI is the same pure `computeEngagementKpi` the resolver bridge uses.
  * Invariants:
  *   - AUTH_VIA_SESSION: session-cookie required (humans trusted in v0, mirrors
  *     the session path of `POST /api/v1/edo/hypothesize`).
- *   - REUSE_EDO_NO_GOAL_TABLE: the campaign IS the hypothesis row.
+ *   - CAMPAIGN_RECORD_OWNED: the `campaigns` row is the account-private record;
+ *     the EDO hypothesis stays the resolver's falsifiable claim. `campaign_id` joins them.
+ *   - IDEMPOTENT_ON_CAMPAIGN_ID: re-POSTing the same slug is a no-op (409), never a dup row.
  *   - METRIC_STRATEGY: every campaign hypothesis opts into
  *     `resolution_strategy = 'metric:engagement:<campaignId>'`.
+ *   - RLS_SCOPED_READS: the LIST reads `campaigns` inside `withTenantScope` (the GUC
+ *     filters rows to the user's account) — never service-role.
  *   - KPI_NEVER_SELF_CITED: the listed KPI derives solely from `post_metrics`.
- * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read,
+ * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write,
  *   schedule create via Temporal).
  * Links: docs/spec/beacon-growth-loop-v0.md §1/§6, .context/specs/pr3-verifier.md
  * @public
@@ -32,7 +38,7 @@ import {
 } from "@cogni/knowledge-store";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -40,7 +46,7 @@ import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { getNodeId } from "@/shared/config";
-import { broadcasts, postMetrics } from "@/shared/db/schema";
+import { broadcasts, campaigns, postMetrics } from "@/shared/db/schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,14 +97,19 @@ const CampaignKpiSchema = z.object({
   postedBroadcasts: z.number().int().nonnegative(),
 });
 
+/** Lifecycle status of the owned campaign record (mirrors the CHECK constraint). */
+const CampaignStatusSchema = z.enum(["draft", "active", "paused", "done"]);
+export type CampaignStatus = z.infer<typeof CampaignStatusSchema>;
+
 const CampaignSummarySchema = z.object({
   campaignId: z.string(),
-  hypothesisId: z.string(),
   title: z.string(),
+  /** Owned lifecycle status from the `campaigns` table (not derived). */
+  status: CampaignStatusSchema,
+  brief: z.string().nullable(),
   targetRate: z.number().nullable(),
   evaluateAt: z.string().nullable(),
-  confidencePct: z.number().nullable(),
-  resolved: z.boolean(),
+  createdAt: z.string(),
   kpi: CampaignKpiSchema,
 });
 
@@ -111,16 +122,6 @@ export type CampaignSummary = z.infer<typeof CampaignSummarySchema>;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Parse a `target_rate` hint out of hypothesis content (mirrors the bridge job). */
-function targetRateFromContent(content: string): number | null {
-  const m = content.match(/target[_\s-]?rate["\s:=]+([0-9]*\.?[0-9]+)/i);
-  if (m?.[1]) {
-    const rate = Number(m[1]);
-    if (Number.isFinite(rate) && rate > 0 && rate <= 1) return rate;
-  }
-  return null;
-}
 
 /**
  * Load every cached `post_metrics` snapshot for one campaign's posted
@@ -176,14 +177,6 @@ async function loadCampaignSnapshots(
   });
 }
 
-function campaignIdFromStrategy(
-  strategy: string | null | undefined
-): string | null {
-  if (!strategy || !strategy.startsWith(METRIC_ENGAGEMENT_PREFIX)) return null;
-  const id = strategy.slice(METRIC_ENGAGEMENT_PREFIX.length).trim();
-  return id.length > 0 ? id : null;
-}
-
 // ---------------------------------------------------------------------------
 // POST /api/v1/growth/campaigns — PLAN: file hypothesis + content schedule
 // ---------------------------------------------------------------------------
@@ -227,6 +220,13 @@ export const POST = wrapRouteHandlerWithLogging(
       `Recall beacon-brand-voice for winning angles/hooks/formats before producing.`,
     ].join("\n");
 
+    // Resolve the owning billing account up front — both the owned `campaigns`
+    // record and the content schedule are stamped with it (tenancy axis).
+    const accountService = container.accountsForUser(toUserId(sessionUser.id));
+    const account = await accountService.getOrCreateBillingAccountForUser({
+      userId: sessionUser.id,
+    });
+
     try {
       const hypothesis = await edo.hypothesize({
         id: hypothesisId,
@@ -242,14 +242,26 @@ export const POST = wrapRouteHandlerWithLogging(
         confidencePct: CAMPAIGN_HYPOTHESIS_CONFIDENCE,
       });
 
+      // Persist the account-owned campaign RECORD. IDEMPOTENT_ON_CAMPAIGN_ID:
+      // the (account_id, campaign_id) unique index rejects a duplicate slug
+      // (caught below → 409). RLS_SCOPED_WRITE: insert under the user's GUC so
+      // the WITH CHECK predicate authorizes the row to the user's account.
+      const db = resolveAppDb();
+      const actorId = userActor(sessionUser.id as UserId);
+      await withTenantScope(db, actorId, async (tx) => {
+        await tx.insert(campaigns).values({
+          accountId: account.id,
+          campaignId: input.campaignId,
+          title: input.title,
+          brief: input.brief,
+          targetRate: input.targetRate,
+          status: "draft",
+          evaluateAt,
+        });
+      });
+
       let scheduleId: string | null = null;
       if (!input.skipSchedule) {
-        const accountService = container.accountsForUser(
-          toUserId(sessionUser.id)
-        );
-        const account = await accountService.getOrCreateBillingAccountForUser({
-          userId: sessionUser.id,
-        });
         const schedule = await container.scheduleManager.createSchedule(
           toUserId(sessionUser.id),
           account.id,
@@ -284,6 +296,7 @@ export const POST = wrapRouteHandlerWithLogging(
           campaignId: input.campaignId,
           hypothesisId: hypothesis.id,
           resolutionStrategy,
+          status: "draft",
           evaluateAt: input.evaluateAt,
           scheduleId,
           committed: true,
@@ -313,52 +326,46 @@ export const GET = wrapRouteHandlerWithLogging(
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const container = getContainer();
-    const store = container.knowledgeStorePort;
-    const resolver = container.edoResolver;
-    if (!store || !resolver) {
-      // Knowledge store unconfigured (DOLTGRES_URL unset) — no campaigns yet.
-      return NextResponse.json(
-        CampaignsListOutputSchema.parse({ campaigns: [] }),
-        { status: 200 }
-      );
-    }
+    const DEFAULT_TARGET_RATE = 0.02;
+    const db = resolveAppDb();
+    const actorId = userActor(sessionUser.id as UserId);
 
-    const rows = await store.listKnowledge(DOMAIN_CAMPAIGNS, { limit: 200 });
-    const hypotheses = rows.filter((r) => r.entryType === "hypothesis");
+    // RLS_SCOPED_READS: the campaign list is the owned `campaigns` table filtered
+    // to the session user's account(s) by the policy GUC — NOT shared Doltgres.
+    const rows = await withTenantScope(db, actorId, async (tx) =>
+      tx
+        .select({
+          campaignId: campaigns.campaignId,
+          title: campaigns.title,
+          status: campaigns.status,
+          brief: campaigns.brief,
+          targetRate: campaigns.targetRate,
+          evaluateAt: campaigns.evaluateAt,
+          createdAt: campaigns.createdAt,
+        })
+        .from(campaigns)
+        .orderBy(desc(campaigns.createdAt))
+    );
 
-    const campaigns: CampaignSummary[] = [];
-    for (const h of hypotheses) {
-      const campaignId =
-        campaignIdFromStrategy(h.resolutionStrategy) ??
-        (h.id.startsWith("campaign:") ? h.id.slice("campaign:".length) : null);
-      if (!campaignId) continue;
-
+    const out: CampaignSummary[] = [];
+    for (const r of rows) {
       const { snapshots, postedBroadcasts } = await loadCampaignSnapshots(
-        campaignId,
+        r.campaignId,
         sessionUser.id
       );
-      const targetRate = targetRateFromContent(h.content);
       const kpi = computeEngagementKpi(snapshots, {
-        rate: targetRate ?? 0.02,
+        rate: r.targetRate ?? DEFAULT_TARGET_RATE,
       });
-
-      // Resolved iff an incoming validates/invalidates citation exists.
-      const incoming = await store.listCitationsByCitedId(h.id);
-      const resolved = incoming.some(
-        (c) =>
-          c.citationType === "validates" || c.citationType === "invalidates"
-      );
-
       const basis: EngagementBasis = kpi.basis;
-      campaigns.push({
-        campaignId,
-        hypothesisId: h.id,
-        title: h.title,
-        targetRate,
-        evaluateAt: h.evaluateAt ? h.evaluateAt.toISOString() : null,
-        confidencePct: h.confidencePct ?? null,
-        resolved,
+
+      out.push({
+        campaignId: r.campaignId,
+        title: r.title,
+        status: CampaignStatusSchema.parse(r.status),
+        brief: r.brief ?? null,
+        targetRate: r.targetRate ?? null,
+        evaluateAt: r.evaluateAt ? r.evaluateAt.toISOString() : null,
+        createdAt: r.createdAt.toISOString(),
         kpi: {
           score0to100: kpi.score0to100,
           edge: kpi.edge,
@@ -371,12 +378,12 @@ export const GET = wrapRouteHandlerWithLogging(
     }
 
     ctx.log.info(
-      { route: "growth.campaigns.list", count: campaigns.length },
+      { route: "growth.campaigns.list", count: out.length },
       "growth.campaigns.list_success"
     );
 
     return NextResponse.json(
-      CampaignsListOutputSchema.parse({ campaigns }),
+      CampaignsListOutputSchema.parse({ campaigns: out }),
       { status: 200 }
     );
   }

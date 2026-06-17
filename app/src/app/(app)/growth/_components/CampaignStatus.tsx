@@ -3,13 +3,13 @@
 
 /**
  * Module: `@app/(app)/growth/_components/CampaignStatus`
- * Purpose: Derive + render a campaign's lifecycle status as a glanceable dot +
- *   label. Status reflects the GROWTH LOOP (Draft → Posted → Measuring →
- *   Validated/Invalidated) — deliberately NOT deploy vocabulary like "in flight".
- * Scope: Pure presentation + a pure derivation from the lens row counters.
- * Invariants: Status derives only from loop counters (posts/snapshots/resolution).
+ * Purpose: Render a campaign's OWNED lifecycle status (draft/active/paused/done)
+ *   as a glanceable dot + label. The status is the `campaigns.status` column now —
+ *   not derived from loop counters — so it reflects what the user toggled in the UI.
+ * Scope: Pure presentation + a pure mapping from the owned status enum.
+ * Invariants: Status comes from the table (STATUS_FROM_TABLE), never recomputed.
  * Side-effects: none
- * Links: ./CampaignCard.tsx, ../[campaignId]/view.tsx
+ * Links: ./CampaignCard.tsx, ../[campaignId]/view.tsx, ./CampaignStatusToggle.tsx
  * @internal
  */
 
@@ -17,64 +17,41 @@ import type { ReactElement } from "react";
 
 import { cn } from "@cogni/node-ui-kit/util/cn";
 
-import type { CampaignLensRow } from "../_api/fetchCampaigns";
-
-export type CampaignStatusKind =
-  | "draft"
-  | "posted"
-  | "measuring"
-  | "validated"
-  | "invalidated";
-
-type StatusRow = Pick<
-  CampaignLensRow,
-  "resolved" | "edge" | "postedBroadcasts" | "snapshotCount"
->;
+import type { CampaignStatus } from "@/app/_facades/growth/campaigns.server";
 
 interface StatusInfo {
-  kind: CampaignStatusKind;
   label: string;
   /** Tailwind classes for the status dot (semantic tokens only). */
   dotClass: string;
 }
 
-/** Map the loop counters to a single human-facing lifecycle status. */
-export function campaignStatus(row: StatusRow): StatusInfo {
-  if (row.resolved) {
-    return row.edge === "validates"
-      ? { kind: "validated", label: "Validated", dotClass: "bg-success" }
-      : {
-          kind: "invalidated",
-          label: "Invalidated",
-          dotClass: "bg-destructive",
-        };
+/** Map the owned lifecycle status to a human-facing label + dot. */
+export function campaignStatusInfo(status: CampaignStatus): StatusInfo {
+  switch (status) {
+    case "active":
+      return { label: "Active", dotClass: "bg-primary animate-pulse" };
+    case "paused":
+      return { label: "Paused", dotClass: "bg-muted-foreground/50" };
+    case "done":
+      return { label: "Done", dotClass: "bg-success" };
+    default:
+      return { label: "Draft", dotClass: "bg-muted-foreground/50" };
   }
-  if (row.postedBroadcasts === 0) {
-    return { kind: "draft", label: "Draft", dotClass: "bg-muted-foreground/50" };
-  }
-  if (row.snapshotCount === 0) {
-    return { kind: "posted", label: "Posted", dotClass: "bg-primary" };
-  }
-  return {
-    kind: "measuring",
-    label: "Measuring",
-    dotClass: "bg-primary animate-pulse",
-  };
 }
 
 export function CampaignStatusBadge({
-  row,
+  status,
 }: {
-  row: StatusRow;
+  status: CampaignStatus;
 }): ReactElement {
-  const status = campaignStatus(row);
+  const info = campaignStatusInfo(status);
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-medium text-foreground text-xs">
       <span
-        className={cn("size-1.5 rounded-full", status.dotClass)}
+        className={cn("size-1.5 rounded-full", info.dotClass)}
         aria-hidden="true"
       />
-      {status.label}
+      {info.label}
     </span>
   );
 }

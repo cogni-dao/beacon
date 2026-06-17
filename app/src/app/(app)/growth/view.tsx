@@ -9,10 +9,11 @@
  * Scope: Presentation. Receives already-loaded `CampaignLensRow[]` from the
  *   server page; no client fetching.
  * Invariants:
- *   - READ_ONLY: the lens only observes the loop; all writes go through the API.
+ *   - WRITES_VIA_API: the create affordance POSTs to the API (RLS-scoped); the
+ *     grid itself is presentation over already-loaded rows.
  *   - RESPONSIVE: 1 column on mobile, 2–3 on larger viewports.
  * Side-effects: none
- * Links: ./page.tsx, ./_components/CampaignCard.tsx
+ * Links: ./page.tsx, ./_components/CampaignCard.tsx, ./_components/NewCampaignSheet.tsx
  * @public
  */
 
@@ -20,6 +21,7 @@ import type { ReactElement } from "react";
 
 import type { CampaignLensRow } from "./_api/fetchCampaigns";
 import { CampaignCard } from "./_components/CampaignCard";
+import { NewCampaignSheet } from "./_components/NewCampaignSheet";
 
 export function GrowthView({
   campaigns,
@@ -28,27 +30,27 @@ export function GrowthView({
 }): ReactElement {
   return (
     <div className="flex flex-col gap-4 p-5 md:p-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-semibold text-xl tracking-tight md:text-2xl">
-          Growth
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Campaigns growing Cogni, scored on real engagement.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-semibold text-xl tracking-tight md:text-2xl">
+            Growth
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Campaigns growing Cogni, scored on real engagement.
+          </p>
+        </div>
+        <NewCampaignSheet />
       </div>
 
       {campaigns.length === 0 ? (
-        <div className="rounded-lg border border-border border-dashed p-10 text-center text-muted-foreground text-sm">
-          No campaigns yet. File one via{" "}
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            POST /api/v1/growth/campaigns
-          </code>
-          .
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-border border-dashed p-10 text-center text-muted-foreground text-sm">
+          No campaigns yet. Create your first one to start the growth loop.
+          <NewCampaignSheet />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {campaigns.map((c) => (
-            <CampaignCard key={c.hypothesisId} row={c} />
+            <CampaignCard key={c.campaignId} row={c} />
           ))}
         </div>
       )}

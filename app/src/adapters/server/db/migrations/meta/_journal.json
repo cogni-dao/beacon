@@ -225,6 +225,13 @@
       "when": 1781714664462,
       "tag": "0031_glorious_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781719558667,
+      "tag": "0032_red_lilandra",
+      "breakpoints": true
     }
   ]
 }

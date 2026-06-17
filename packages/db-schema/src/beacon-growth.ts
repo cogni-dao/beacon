@@ -4,7 +4,8 @@
 /**
  * Module: `@cogni/db-schema/beacon-growth`
  * Purpose: Operational substrate for beacon's growth loop v0 (Twitter + Moltbook, text-only).
- *   Three tables back the PRODUCE→BROADCAST→MEASURE arc: configured channel accounts,
+ *   Four tables back the PLAN→PRODUCE→BROADCAST→MEASURE arc: the account-owned
+ *   campaign RECORD (lifecycle status + targets), configured channel accounts,
  *   per-platform broadcast variants, and append-only cached engagement snapshots.
  * Scope: Drizzle `pgTable` definitions only. No queries, business logic, or I/O.
  * Invariants:
@@ -15,6 +16,10 @@
  *     (`current_setting('app.current_user_id', true)`). Worker/ingest JOBS use a service-role
  *     connection (bypasses RLS) and write account-scoped rows from row one; user-facing
  *     `/growth` reads go through the RLS-respecting tenant-scope client.
+ *   - CAMPAIGN_RECORD_OWNED: the `campaigns` row is the account-private campaign record
+ *     (CRUD-able, lifecycle `status` draft→active→paused→done). The campaign HYPOTHESIS
+ *     still lives in shared Doltgres (the KPI resolver reads it); `campaign_id` is the slug
+ *     joining the two. status→Temporal schedule pause/resume is the HEARTBEAT PR.
  *   - BROADCAST_IDEA_KEY_GROUPS: `broadcasts.idea_key` groups per-platform variants of one core idea.
  *   - BROADCAST_FUNNEL_CLASSIFIED: each broadcast carries its funnel layer (tofu/mofu/bofu)
  *     + topic so the queue is a classified funnel, not one blended stream (CHECK-bounded here).
@@ -35,8 +40,10 @@ import {
 	integer,
 	pgPolicy,
 	pgTable,
+	real,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
 
@@ -50,6 +57,63 @@ import { billingAccounts } from "./refs";
  * CREATE POLICY from `pgPolicy()` + `.enableRLS()` (no hand-authoring).
  */
 const accountOwnershipPredicate = sql`"account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true))`;
+
+// ---------------------------------------------------------------------------
+// campaigns — account-scoped campaign RECORD (the funnel run + targets + status)
+// ---------------------------------------------------------------------------
+
+/**
+ * campaigns — the account-private campaign record. The campaign HYPOTHESIS still
+ * lives in shared Doltgres (the KPI resolver reads it); this is the owned, CRUD-able
+ * operational record with a real lifecycle `status` (draft→active→paused→done).
+ * `campaign_id` is the slug shared with the Doltgres hypothesis + `broadcasts.campaign_id`
+ * — unique per row (one record per campaign). `target_rate` is the predicted engagement
+ * rate the funnel must hit. RLS scopes every row to the owning billing account.
+ */
+export const campaigns = pgTable(
+	"campaigns",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		/** Owning billing account (tenancy axis). RLS scopes rows by this FK. */
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		/** Campaign slug — shared with the Doltgres hypothesis + `broadcasts.campaign_id`. */
+		campaignId: text("campaign_id").notNull(),
+		title: text("title").notNull(),
+		/** The audience + angle + funnel-stage framing of the campaign; nullable. */
+		brief: text("brief"),
+		/** Predicted engagement RATE the funnel must hit (fraction in (0,1]); nullable. */
+		targetRate: real("target_rate"),
+		/**
+		 * Lifecycle status: draft (paused) → active (heartbeat runs) → paused → done.
+		 * Wiring status→Temporal schedule pause/resume is the HEARTBEAT PR; here it
+		 * only persists the field. CHECK-bounded.
+		 */
+		status: text("status").notNull().default("draft"),
+		/** When the campaign hypothesis resolves (budget deadline); nullable. */
+		evaluateAt: timestamp("evaluate_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		check(
+			"campaigns_status_check",
+			sql`${table.status} IN ('draft', 'active', 'paused', 'done')`,
+		),
+		// One record per campaign slug, scoped to its account (slug is account-unique).
+		uniqueIndex("campaigns_account_campaign_id_idx").on(
+			table.accountId,
+			table.campaignId,
+		),
+		index("campaigns_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // channel_accounts — configured broadcast channels (X / Moltbook)
