@@ -41,17 +41,23 @@ The shapes are declared in `.cogni/secrets-catalog.yaml`; you set the **values**
 
 ```bash
 # ops path (per env + node slug):
+pnpm secrets:set <env> <node-slug> CONNECTIONS_ENCRYPTION_KEY
 pnpm secrets:set <env> <node-slug> X_OAUTH_CLIENT_ID
 pnpm secrets:set <env> <node-slug> X_OAUTH_CLIENT_SECRET
 # self-serve path (node owner): POST /api/v1/nodes/<id>/secrets
 ```
 
-Also required (already used by connections): `CONNECTIONS_ENCRYPTION_KEY` (64 hex chars).
+`CONNECTIONS_ENCRYPTION_KEY` must be 64 hex chars. Generate it with:
+
+```bash
+openssl rand -hex 32
+```
+
 If it is unset, the connect route fails fast with a 500 and stores nothing.
 
 ## 3. Verify
 
-1. Deploy (the migrate initContainer applies migration `0032`, adding the `x` provider).
+1. Deploy (the migrate initContainer applies migration `0033`, adding the `x` provider).
 2. Sign in, open **Profile → Social Accounts → X → Connect**.
 3. You are redirected to X, approve, and land back on `/profile?connected=x` showing your `@handle`.
 4. The encrypted token is now in `connections`; the broker auto-refreshes it.

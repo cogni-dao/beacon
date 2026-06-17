@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2025 Cogni-DAO
 
 /**
- * Unit tests for XPlatformConnector pure auth-URL + PKCE logic (no network).
- * Verifies S256 PKCE correctness and authorize-URL parameters — the security-critical
- * surface the connect route depends on.
+ * Unit tests for XPlatformConnector auth-URL + PKCE logic (no network).
+ * Verifies the twitter-api-v2 OAuth helper emits the security-critical
+ * parameters the generic connect route depends on.
  */
 
 import { createHash } from "node:crypto";
@@ -31,12 +31,14 @@ describe("XPlatformConnector.buildAuthorizeUrl", () => {
     const parsed = new URL(url);
 
     expect(parsed.origin + parsed.pathname).toBe(
-      "https://twitter.com/i/oauth2/authorize"
+      "https://x.com/i/oauth2/authorize"
     );
     expect(parsed.searchParams.get("response_type")).toBe("code");
     expect(parsed.searchParams.get("client_id")).toBe("test-client");
     expect(parsed.searchParams.get("redirect_uri")).toBe(redirectUri);
-    expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(parsed.searchParams.get("code_challenge_method")?.toUpperCase()).toBe(
+      "S256"
+    );
     expect(parsed.searchParams.get("scope")).toContain("tweet.write");
     // offline.access is required for X to issue a refresh token.
     expect(parsed.searchParams.get("scope")).toContain("offline.access");

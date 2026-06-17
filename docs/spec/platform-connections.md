@@ -38,9 +38,9 @@ This is *not* a new subsystem. It is one new port + one schema delta + a generic
 
 ## Design
 
-### 1. Two ports, split by plane (control vs data)
+### 1. One control-plane port, existing data-plane capability
 
-The control plane (OAuth) and data plane (publish/metrics) have **different consumers, runtimes, and lifecycles** — bundling them produces a fat interface and a boundary violation (tools in `packages/ai-tools` would transitively import app-runtime OAuth code). Split:
+The control plane (OAuth) and data plane (publish/metrics) have **different consumers, runtimes, and lifecycles**. The control plane needs app-runtime secrets, HTTP redirects, and token exchange. The data plane already exists as `SocialXCapability` and must stay package-contract-shaped so tools and graphs keep a stable boundary.
 
 **Control plane — `PlatformConnectorPort`** (app-runtime: needs secrets, HTTP, redirect URIs). Lives in `app/src/ports/platform-connector.port.ts`, alongside the precedent `ConnectionBrokerPort` and `ModelProviderPort`.
 
@@ -66,28 +66,16 @@ export interface PlatformConnectorPort {
 }
 ```
 
-**Data plane — `PlatformClient`** (used by tools; package-resident, e.g. `packages/ai-tools` or a `platform-core` package). Built lazily from a `ResolvedConnection` the broker hands back. *Out of scope for the connect prototype; specified here for completeness.*
-
-```ts
-export interface PlatformClient {
-  publish(c: PublishInput): Promise<{ externalPostId: string; permalink?: string }>;
-  fetchMetrics(p: { externalPostIds: string[] }): Promise<PostMetric[]>;
-}
-```
-
 > **ONE credential model — per-tenant OAuth tokens in `connections`. No app-level bearer token.**
 >
-> The data plane already exists as #14's `SocialXCapability` (`packages/ai-tools/src/capabilities/social-x.ts` + `app/src/adapters/server/social/x.adapter.ts`). Its `postContent`/`readMetrics` **shape is good and is kept** — but its credential source (`X_API_BEARER_TOKEN`, an app-only token) is **wrong and non-functional**: `new TwitterApi(bearerToken)` is an app-only client, and `POST /2/tweets` (`x.adapter.ts:76`) requires **user-context** auth, so it returns **403 in production**. It only passes today because the growth-loop tests use `FakeXSocialAdapter`.
+> The data plane exists as `SocialXCapability` (`packages/ai-tools/src/capabilities/social-x.ts` + `app/src/adapters/server/social/x.adapter.ts`). Its `postContent`/`readMetrics` **shape is good and is kept**. The credential source is the tenant's active `x` connection, resolved through `ConnectionBrokerPort` on every call.
 >
 > There is therefore exactly one viable model, and it is this spec's: each tenant links their own account via OAuth (user-context token, encrypted per-tenant in `connections`), and the node posts/reads **as that tenant** using the broker-resolved token.
 >
-> **Convergence (required, not optional):**
-> - This PR adds the **control plane** (`PlatformConnectorPort` + OAuth connect flow) — the only way real X tokens enter the system.
-> - `SocialXCapability` is re-sourced from `ConnectionBrokerPort`: given a tenant (`billingAccountId`/`createdByUserId`) + provider, resolve that tenant's connection and use its user-context access token.
-> - **Purge `X_API_BEARER_TOKEN`** and the app-only `TwitterApi(bearerToken)` construction. The "node's own broadcast account" becomes just another linked connection (owned by the operator/system tenant).
-> - Do **not** introduce a second poster — `PlatformClient` above is the shape; fold it into `SocialXCapability`.
->
-> ⚠️ This convergence edits #14's merged growth-loop code that #13 (campaigns CRUD) is stacked on — it must be coordinated with that work, not landed unilaterally.
+> **Convergence — control plane DONE; data-plane purge DEFERRED:**
+> - **Control plane (this PR):** `PlatformConnectorPort` + OAuth connect flow — the only way real X tokens enter the system. Per-tenant linking works.
+> - **Data-plane purge (coordinated follow-up):** re-source `SocialXCapability` from `ConnectionBrokerPort` (resolve the posting tenant's connection → user-context token) and remove `X_API_BEARER_TOKEN` + the app-only `TwitterApi(bearerToken)` poster. **Not in this PR** — #28's growth refactor (`broadcasts`→`posts`) re-entrenched the bearer data plane, so the purge must be coordinated with that owner rather than landed in a conflict-laden rebase.
+> - No second poster — fold the per-tenant path into `SocialXCapability`. Tracked: `bug.5039` + this spec.
 
 Register connectors in a `PLATFORM_CONNECTORS` map exactly like `LANGGRAPH_CATALOG` / model providers. `refresh` is fed into the broker's existing `refreshFns` config → **token refresh is solved the day a connector is registered.** Everything platform-specific lives in one file per platform; the rest of the system never branches on provider name.
 
@@ -130,10 +118,10 @@ Replace bespoke per-provider routes with `/api/v1/connections/[provider]/{connec
 
 > Why a cookie, not `link_transactions`: that table's CHECK is `provider IN ('github','discord','google')` and it has no `state`/`code_verifier` columns. The signed cookie carries PKCE state across the redirect with no schema change and the same fail-closed guarantee.
 
-### 4. Data plane: tools + graph + schedule
+### 4. Data plane: graph + schedule
 
-- **Broker for tools.** Add a tool-callable `PlatformClientPort` (thin: `getClient(connectionId, scope)` → `broker.resolve` → `connector.createClient`). Tools get tenant scope from the execution context (`billingAccountId` already flows via ALS / `ExecutionGrant`); they never see raw tokens (`TOKENS_NEVER_LOGGED`).
-- **Two generic tools** in `CORE_TOOL_BUNDLE`: `social__publish` and `social__fetch_metrics` (effect: `state_change` / read). They take `{ connectionId, … }`, resolve via the connector — no per-platform tool.
+- **Broker for real X calls.** `createSocialXCapability` resolves the tenant's active `x` connection by `billingAccountId`, then calls `ConnectionBrokerPort.resolve`. Tools never see raw tokens (`TOKENS_NEVER_LOGGED`).
+- **Existing broadcast tool.** `core__broadcast_post` stays the publishing command surface and delegates to `SocialXCapability`; this avoids a second social publishing abstraction.
 - **One graph** `social-agent` (LangGraph catalog) implementing analyze → generate → (human-approve?) → publish → record. Metrics gathering is a second lighter graph/tool run.
 - **The loop** = a Temporal **Schedule** per (tenant, platform) → `GraphRunWorkflow(graphId='social-agent')` with an `ExecutionGrant` scoped to `billingAccountId`. Idempotency `{scheduleId}:{scheduledFor}` already handled.
 
@@ -149,9 +137,9 @@ Implication: ship **X first** (simplest auth, validates the whole pipeline end-t
 
 ## Pareto path forward (phased)
 
-1. **P0 — Prove the spine with X.** Schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + `PlatformClientPort` + `social__publish` tool. Manual graph run, no schedule. → a tenant links X and the node posts once. *This validates the entire architecture; everything after is "register another connector."*
-2. **P1 — Close the loop.** `social__fetch_metrics`, `social-agent` graph (analyze→generate→post), per-tenant Temporal Schedule + `ExecutionGrant`. → autonomous cadence for X.
-3. **P2 — Multi-account + UI.** Surface `external_handle`/`status` in the profile/connections UI; re-auth flow; link a 2nd handle.
+1. **P0 — Prove the spine with X.** DONE in this PR: schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + profile UI + `SocialXCapability` re-sourced through the broker.
+2. **P1 — Candidate-a smoke.** Set `CONNECTIONS_ENCRYPTION_KEY`, `X_OAUTH_CLIENT_ID`, and `X_OAUTH_CLIENT_SECRET`; deploy; verify Profile → Social Accounts → X → Connect round-trips and stores a linked handle.
+3. **P2 — Close the loop.** Run the existing broadcast/metrics path against a linked X account, then wire per-tenant Temporal Schedule + `ExecutionGrant` for autonomous cadence.
 4. **P3 — Breadth behind gates.** `TikTokConnector` (self_only → audit), `InstagramConnector` (business-account onboarding + Meta review). No shared-code change — just new registry entries.
 
 ## Why this is the top-0.1% choice
