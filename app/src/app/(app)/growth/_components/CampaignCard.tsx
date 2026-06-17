@@ -74,7 +74,7 @@ export function CampaignCard({ row }: { row: CampaignLensRow }): ReactElement {
               {row.campaignId}
             </p>
           </div>
-          <CampaignStatusBadge row={row} />
+          <CampaignStatusBadge status={row.status} />
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
@@ -110,11 +110,7 @@ export function CampaignCard({ row }: { row: CampaignLensRow }): ReactElement {
 
           <div className="flex flex-wrap items-center justify-between gap-1 border-border/60 border-t pt-2 text-muted-foreground text-xs">
             <span>
-              Confidence:{" "}
-              <span className="font-medium text-foreground tabular-nums">
-                {row.confidencePct ?? "—"}
-                {row.confidencePct !== null ? "%" : ""}
-              </span>
+              Created {new Date(row.createdAt).toLocaleDateString()}
             </span>
             {row.evaluateAt && (
               <span>

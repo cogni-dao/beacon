@@ -3,23 +3,25 @@
 
 /**
  * Module: `@app/_facades/growth/campaigns.server`
- * Purpose: Server-side facade for the read-only `/growth` lens — lists campaign
- *   hypotheses (domain `beacon-campaigns`) with their CURRENT engagement KPI
- *   computed independently from cached `post_metrics`.
- * Scope: Composes the `KnowledgeStorePort` (Doltgres) + RLS-scoped Postgres
- *   read + the pure `computeEngagementKpi`. No business logic beyond mapping;
- *   the KPI math lives in `@cogni/knowledge-store`.
+ * Purpose: Server-side facade for the `/growth` lens — lists the account-owned
+ *   `campaigns` records (RLS-scoped) with their CURRENT engagement KPI computed
+ *   independently from cached `post_metrics`. The lifecycle `status` is the owned
+ *   column now, not a derivation from loop counters.
+ * Scope: Composes an RLS-scoped Postgres read of `campaigns` + `broadcasts` +
+ *   `post_metrics` and the pure `computeEngagementKpi`. No business logic beyond
+ *   mapping; the KPI math lives in `@cogni/knowledge-store`.
  * Invariants:
- *   - PORT_VIA_CONTAINER: store/resolver pulled from the container.
- *   - KPI_NEVER_SELF_CITED: the surfaced KPI derives solely from `post_metrics`,
- *     never from the hypothesis confidence — the same pure fn the resolver uses.
- *   - READ_ONLY: no writes; the lens only observes the loop.
- *   - RLS_SCOPED_READS: the user-facing Postgres reads (broadcasts/post_metrics)
- *     run inside `withTenantScope` under the session user's GUC — RLS filters rows
- *     to the user's billing account(s). NEVER the service-role DB (that leaks every
- *     account's rows). The campaign LIST still comes from shared Doltgres (the
- *     documented campaigns→Postgres vNext gap).
- * Side-effects: IO (Doltgres + Postgres reads via ports)
+ *   - KPI_NEVER_SELF_CITED: the surfaced KPI derives solely from `post_metrics` —
+ *     the same pure fn the resolver uses.
+ *   - READ_ONLY: no writes; the lens only observes the loop (CRUD is the API route).
+ *   - STATUS_FROM_TABLE: the lifecycle `status` is the owned `campaigns.status`
+ *     column — NOT derived from post/snapshot counters.
+ *   - RLS_SCOPED_READS: every read (campaigns/broadcasts/post_metrics) runs inside
+ *     `withTenantScope` under the session user's GUC — RLS filters rows to the user's
+ *     billing account(s). NEVER the service-role DB (that leaks every account's rows).
+ *     The campaign LIST now comes from the owned Postgres table (the campaigns→Postgres
+ *     tenancy gap is closed).
+ * Side-effects: IO (Postgres reads via the RLS-scoped client)
  * Links: docs/spec/beacon-growth-loop-v0.md §6, app/src/app/(app)/growth/view.tsx
  * @internal
  */
@@ -31,14 +33,28 @@ import {
 	type EngagementBasis,
 	type PostMetricSnapshot,
 } from "@cogni/knowledge-store";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
-import { getContainer, resolveAppDb } from "@/bootstrap/container";
-import { broadcasts, postMetrics } from "@/shared/db/schema";
+import { resolveAppDb } from "@/bootstrap/container";
+import { broadcasts, campaigns, postMetrics } from "@/shared/db/schema";
 
-const DOMAIN_CAMPAIGNS = "beacon-campaigns";
-const METRIC_ENGAGEMENT_PREFIX = "metric:engagement:";
 const DEFAULT_TARGET_RATE = 0.02;
+
+/** Lifecycle status of the owned campaign record (mirrors the CHECK constraint). */
+export const CAMPAIGN_STATUSES = [
+	"draft",
+	"active",
+	"paused",
+	"done",
+] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/** Normalize a raw `status` value to a known status (defaults to draft). */
+function asCampaignStatus(raw: string | null | undefined): CampaignStatus {
+	return (CAMPAIGN_STATUSES as readonly string[]).includes(raw ?? "")
+		? (raw as CampaignStatus)
+		: "draft";
+}
 
 /** Funnel layers in funnel order (awareness → consideration → action). */
 export const FUNNEL_LAYERS = ["tofu", "mofu", "bofu"] as const;
@@ -62,12 +78,12 @@ export type FunnelLayerBreakdown = Record<FunnelLayer, FunnelLayerKpi>;
 /** One campaign row for the lens. */
 export interface CampaignLensRow {
 	campaignId: string;
-	hypothesisId: string;
 	title: string;
+	/** Owned lifecycle status from the `campaigns` table (not derived). */
+	status: CampaignStatus;
 	targetRate: number | null;
 	evaluateAt: string | null;
-	confidencePct: number | null;
-	resolved: boolean;
+	createdAt: string;
 	score0to100: number;
 	edge: "validates" | "invalidates";
 	observedRate: number;
@@ -76,23 +92,6 @@ export interface CampaignLensRow {
 	postedBroadcasts: number;
 	/** Independent KPI computed PER funnel layer (tofu/mofu/bofu). */
 	layers: FunnelLayerBreakdown;
-}
-
-function targetRateFromContent(content: string): number | null {
-	const m = content.match(/target[_\s-]?rate["\s:=]+([0-9]*\.?[0-9]+)/i);
-	if (m?.[1]) {
-		const rate = Number(m[1]);
-		if (Number.isFinite(rate) && rate > 0 && rate <= 1) return rate;
-	}
-	return null;
-}
-
-function campaignIdFromStrategy(
-	strategy: string | null | undefined,
-): string | null {
-	if (!strategy || !strategy.startsWith(METRIC_ENGAGEMENT_PREFIX)) return null;
-	const id = strategy.slice(METRIC_ENGAGEMENT_PREFIX.length).trim();
-	return id.length > 0 ? id : null;
 }
 
 /** Normalize a raw `funnel_layer` value to a known layer (defaults to tofu). */
@@ -207,52 +206,76 @@ function computeLayerBreakdown(
 	return out;
 }
 
+/** One owned campaign record, read RLS-scoped from the `campaigns` table. */
+interface CampaignRecord {
+	campaignId: string;
+	title: string;
+	status: CampaignStatus;
+	brief: string | null;
+	targetRate: number | null;
+	evaluateAt: string | null;
+	createdAt: string;
+}
+
+/** RLS-scoped read of the account's `campaigns` rows, newest first. */
+async function loadCampaignRecords(userId: string): Promise<CampaignRecord[]> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				campaignId: campaigns.campaignId,
+				title: campaigns.title,
+				status: campaigns.status,
+				brief: campaigns.brief,
+				targetRate: campaigns.targetRate,
+				evaluateAt: campaigns.evaluateAt,
+				createdAt: campaigns.createdAt,
+			})
+			.from(campaigns)
+			.orderBy(desc(campaigns.createdAt)),
+	);
+
+	return rows.map((r) => ({
+		campaignId: r.campaignId,
+		title: r.title,
+		status: asCampaignStatus(r.status),
+		brief: r.brief ?? null,
+		targetRate: r.targetRate ?? null,
+		evaluateAt: r.evaluateAt ? r.evaluateAt.toISOString() : null,
+		createdAt: r.createdAt.toISOString(),
+	}));
+}
+
 /**
- * List every campaign hypothesis in `beacon-campaigns` with its current,
- * independently-computed engagement KPI. Returns `[]` when the knowledge store
- * is unconfigured (DOLTGRES_URL unset) so the lens degrades gracefully.
+ * List the account-owned `campaigns` records (RLS-scoped to the session user)
+ * with each campaign's current, independently-computed engagement KPI.
  *
  * @param userId - Session user id; the Postgres reads run under this user's RLS
- *   scope so the KPI reflects only the user's own account(s).
+ *   scope so the list + KPI reflect only the user's own account(s).
  */
 export async function listGrowthCampaigns(
 	userId: string,
 ): Promise<CampaignLensRow[]> {
-	const container = getContainer();
-	const store = container.knowledgeStorePort;
-	if (!store) return [];
-
-	const rows = await store.listKnowledge(DOMAIN_CAMPAIGNS, { limit: 200 });
-	const hypotheses = rows.filter((r) => r.entryType === "hypothesis");
+	const records = await loadCampaignRecords(userId);
 
 	const out: CampaignLensRow[] = [];
-	for (const h of hypotheses) {
-		const campaignId =
-			campaignIdFromStrategy(h.resolutionStrategy) ??
-			(h.id.startsWith("campaign:") ? h.id.slice("campaign:".length) : null);
-		if (!campaignId) continue;
-
-		const loaded = await loadCampaignSnapshots(campaignId, userId);
-		const targetRate = targetRateFromContent(h.content);
-		const effectiveTarget = targetRate ?? DEFAULT_TARGET_RATE;
+	for (const rec of records) {
+		const loaded = await loadCampaignSnapshots(rec.campaignId, userId);
+		const effectiveTarget = rec.targetRate ?? DEFAULT_TARGET_RATE;
 		const kpi = computeEngagementKpi(loaded.snapshots, {
 			rate: effectiveTarget,
 		});
 		const layers = computeLayerBreakdown(loaded, effectiveTarget);
 
-		const incoming = await store.listCitationsByCitedId(h.id);
-		const resolved = incoming.some(
-			(c) => c.citationType === "validates" || c.citationType === "invalidates",
-		);
-
 		out.push({
-			campaignId,
-			hypothesisId: h.id,
-			title: h.title,
-			targetRate,
-			evaluateAt: h.evaluateAt ? h.evaluateAt.toISOString() : null,
-			confidencePct: h.confidencePct ?? null,
-			resolved,
+			campaignId: rec.campaignId,
+			title: rec.title,
+			status: rec.status,
+			targetRate: rec.targetRate,
+			evaluateAt: rec.evaluateAt,
+			createdAt: rec.createdAt,
 			score0to100: kpi.score0to100,
 			edge: kpi.edge,
 			observedRate: kpi.observedRate,
@@ -263,11 +286,6 @@ export async function listGrowthCampaigns(
 		});
 	}
 
-	// Stable order: unresolved (active) first, then by title.
-	out.sort((a, b) => {
-		if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
-		return a.title.localeCompare(b.title);
-	});
 	return out;
 }
 
@@ -291,9 +309,45 @@ export interface CampaignPost {
 
 /** Full detail for one campaign — the lens row plus its brief and posts. */
 export interface CampaignDetail extends CampaignLensRow {
-	/** The campaign brief / goal (hypothesis content). */
+	/** The campaign brief / goal (owned `campaigns.brief`); "" when unset. */
 	brief: string;
 	posts: CampaignPost[];
+}
+
+/** RLS-scoped read of a single owned campaign record by slug. */
+async function loadCampaignRecord(
+	campaignId: string,
+	userId: string,
+): Promise<CampaignRecord | null> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				campaignId: campaigns.campaignId,
+				title: campaigns.title,
+				status: campaigns.status,
+				brief: campaigns.brief,
+				targetRate: campaigns.targetRate,
+				evaluateAt: campaigns.evaluateAt,
+				createdAt: campaigns.createdAt,
+			})
+			.from(campaigns)
+			.where(eq(campaigns.campaignId, campaignId))
+			.limit(1),
+	);
+	const r = rows[0];
+	if (!r) return null;
+	return {
+		campaignId: r.campaignId,
+		title: r.title,
+		status: asCampaignStatus(r.status),
+		brief: r.brief ?? null,
+		targetRate: r.targetRate ?? null,
+		evaluateAt: r.evaluateAt ? r.evaluateAt.toISOString() : null,
+		createdAt: r.createdAt.toISOString(),
+	};
 }
 
 async function loadCampaignPosts(
@@ -374,49 +428,33 @@ async function loadCampaignPosts(
 }
 
 /**
- * Full detail for one campaign: its brief, target/budget, independent KPI, and
- * the posts (broadcasts) + their latest cached metrics that produced it.
- * Returns `null` when the store is unconfigured or the campaign is unknown.
+ * Full detail for one owned campaign: its brief, target/budget, lifecycle status,
+ * independent KPI, and the posts (broadcasts) + their latest cached metrics that
+ * produced it. Returns `null` when the campaign is unknown to the user's account.
  *
  * @param userId - Session user id; the Postgres reads run under this user's RLS
- *   scope so the posts/metrics reflect only the user's own account(s).
+ *   scope so the record/posts/metrics reflect only the user's own account(s).
  */
 export async function getGrowthCampaign(
 	campaignId: string,
 	userId: string,
 ): Promise<CampaignDetail | null> {
-	const container = getContainer();
-	const store = container.knowledgeStorePort;
-	if (!store) return null;
-
-	const rows = await store.listKnowledge(DOMAIN_CAMPAIGNS, { limit: 200 });
-	const h = rows.find(
-		(r) =>
-			r.entryType === "hypothesis" &&
-			(r.id === `campaign:${campaignId}` ||
-				campaignIdFromStrategy(r.resolutionStrategy) === campaignId),
-	);
-	if (!h) return null;
+	const rec = await loadCampaignRecord(campaignId, userId);
+	if (!rec) return null;
 
 	const loaded = await loadCampaignSnapshots(campaignId, userId);
-	const targetRate = targetRateFromContent(h.content);
-	const effectiveTarget = targetRate ?? DEFAULT_TARGET_RATE;
+	const effectiveTarget = rec.targetRate ?? DEFAULT_TARGET_RATE;
 	const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
 	const layers = computeLayerBreakdown(loaded, effectiveTarget);
-	const incoming = await store.listCitationsByCitedId(h.id);
-	const resolved = incoming.some(
-		(c) => c.citationType === "validates" || c.citationType === "invalidates",
-	);
 	const posts = await loadCampaignPosts(campaignId, userId);
 
 	return {
-		campaignId,
-		hypothesisId: h.id,
-		title: h.title,
-		targetRate,
-		evaluateAt: h.evaluateAt ? h.evaluateAt.toISOString() : null,
-		confidencePct: h.confidencePct ?? null,
-		resolved,
+		campaignId: rec.campaignId,
+		title: rec.title,
+		status: rec.status,
+		targetRate: rec.targetRate,
+		evaluateAt: rec.evaluateAt,
+		createdAt: rec.createdAt,
 		score0to100: kpi.score0to100,
 		edge: kpi.edge,
 		observedRate: kpi.observedRate,
@@ -424,7 +462,7 @@ export async function getGrowthCampaign(
 		snapshotCount: loaded.snapshots.length,
 		postedBroadcasts: loaded.postedBroadcasts,
 		layers,
-		brief: h.content,
+		brief: rec.brief ?? "",
 		posts,
 	};
 }

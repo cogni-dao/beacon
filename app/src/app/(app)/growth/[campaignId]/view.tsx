@@ -9,16 +9,16 @@
  *   per-layer KPI and the posts + latest cached metrics that scored it.
  * Scope: Pure presentation. Receives a `CampaignDetail`; no fetching.
  * Invariants:
- *   - READ_ONLY: renders the facade-computed KPI — never recomputes.
+ *   - READ_ONLY_KPI: renders the facade-computed KPI — never recomputes.
  *   - PER_LAYER_KPI: each funnel layer is scored independently (never one blended bar).
- *   - CONTROL_READONLY: pause/resume + cadence are display-only in this PR — real
- *     schedule control (Temporal status-gated activation) is the heartbeat PR.
+ *   - STATUS_TOGGLE_REAL: the draft↔active toggle + delete are WIRED (PATCH/DELETE);
+ *     status only persists the field — schedule pause/resume is the heartbeat PR.
  * Side-effects: none
- * Links: ./page.tsx, ../_components/CampaignStatus.tsx, ../_components/FunnelLayerSection.tsx
+ * Links: ./page.tsx, ../_components/CampaignStatus.tsx, ../_components/CampaignControls.tsx
  * @internal
  */
 
-import { ArrowLeft, Pause } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { ReactElement } from "react";
 
@@ -26,7 +26,11 @@ import { Card, CardContent } from "@/components";
 import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
 import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
 
-import { campaignStatus, CampaignStatusBadge } from "../_components/CampaignStatus";
+import { CampaignControls } from "../_components/CampaignControls";
+import {
+  campaignStatusInfo,
+  CampaignStatusBadge,
+} from "../_components/CampaignStatus";
 import { FunnelLayerSection } from "../_components/FunnelLayerSection";
 
 function Stat({ label, value }: { label: string; value: string }): ReactElement {
@@ -43,9 +47,9 @@ export function CampaignDetailView({
 }: {
   campaign: CampaignDetail;
 }): ReactElement {
-  const status = campaignStatus(campaign);
+  const status = campaignStatusInfo(campaign.status);
   // Cadence is a static display in v0 — the real schedule lands in the heartbeat PR.
-  const cadenceLabel = status.kind === "draft" ? "paused (draft)" : "1/day";
+  const cadenceLabel = campaign.status === "active" ? "1/day" : "paused";
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-5 md:p-6">
@@ -64,12 +68,12 @@ export function CampaignDetailView({
           </h1>
           <p className="text-muted-foreground text-xs">{campaign.campaignId}</p>
         </div>
-        <CampaignStatusBadge row={campaign} />
+        <CampaignStatusBadge status={campaign.status} />
       </div>
 
-      {/* Control panel — minimal + read-only in this PR.
-          Real schedule control (pause/resume via Temporal status-gated
-          activation) and trigger toggles (comment/DM/repost) are roadmap. */}
+      {/* Control panel — status toggle + delete are WIRED (PATCH/DELETE). The
+          toggle only persists `status`; status→Temporal schedule pause/resume
+          (and trigger toggles) are the heartbeat PR. */}
       <Card>
         <CardContent className="flex flex-col gap-3 pt-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -78,21 +82,16 @@ export function CampaignDetailView({
               <Stat label="Cadence" value={cadenceLabel} />
               <Stat label="Ingest" value="every 30m" />
             </dl>
-            <button
-              type="button"
-              disabled
-              aria-label="Pause campaign (coming soon)"
-              title="Schedule control lands in the heartbeat PR"
-              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-muted-foreground text-xs opacity-60"
-            >
-              <Pause className="size-3.5" aria-hidden="true" />
-              {status.kind === "draft" ? "Resume" : "Pause"}
-            </button>
+            <CampaignControls
+              campaignId={campaign.campaignId}
+              status={campaign.status}
+            />
           </div>
           {/* Trigger toggles (comments / DMs / reposts → signal-started workflows)
-              are roadmap — see design §3. */}
+              and schedule control are roadmap — see design §3. */}
           <p className="text-muted-foreground text-xs">
-            Triggers: comments, DMs, reposts &mdash; roadmap.
+            Schedule control + triggers (comments, DMs, reposts) &mdash; heartbeat
+            PR.
           </p>
         </CardContent>
       </Card>
