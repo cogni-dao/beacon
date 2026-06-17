@@ -33,6 +33,7 @@ import {
 	check,
 	index,
 	integer,
+	pgPolicy,
 	pgTable,
 	text,
 	timestamp,
@@ -40,6 +41,15 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { billingAccounts } from "./refs";
+
+/**
+ * Account-ownership RLS predicate: a row is visible iff its `account_id` is a
+ * billing account the session user owns (GUC `app.current_user_id`, NULL when
+ * unset → silent deny). v0 personal = sole-member account; node/org accounts
+ * extend this subquery in vFuture. drizzle-kit emits ENABLE + FORCE + the
+ * CREATE POLICY from `pgPolicy()` + `.enableRLS()` (no hand-authoring).
+ */
+const accountOwnershipPredicate = sql`"account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true))`;
 
 // ---------------------------------------------------------------------------
 // channel_accounts — configured broadcast channels (X / Moltbook)
@@ -71,6 +81,10 @@ export const channelAccounts = pgTable(
 			sql`${table.channel} IN ('x', 'moltbook')`,
 		),
 		index("channel_accounts_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
 	],
 ).enableRLS();
 
@@ -133,6 +147,10 @@ export const broadcasts = pgTable(
 		index("broadcasts_idea_key_idx").on(table.ideaKey),
 		index("broadcasts_funnel_layer_idx").on(table.funnelLayer),
 		index("broadcasts_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
 	],
 ).enableRLS();
 
@@ -172,5 +190,9 @@ export const postMetrics = pgTable(
 			table.capturedAt,
 		),
 		index("post_metrics_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
 	],
 ).enableRLS();

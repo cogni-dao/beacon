@@ -1,5 +1,5 @@
 {
-  "id": "7ee57c30-7df0-46ad-8759-46257bdf4cb2",
+  "id": "1bd2b88f-8071-4cb2-8f5c-53a0d8774b7c",
   "prevId": "7452cab8-6ae2-41c6-83d3-509f1252babf",
   "version": "7",
   "dialect": "postgresql",
@@ -2207,7 +2207,18 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
+          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
+        }
+      },
       "checkConstraints": {
         "broadcasts_status_check": {
           "name": "broadcasts_status_check",
@@ -2308,7 +2319,18 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
+          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
+        }
+      },
       "checkConstraints": {
         "channel_accounts_channel_check": {
           "name": "channel_accounts_channel_check",
@@ -2452,7 +2474,18 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
+          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
+        }
+      },
       "checkConstraints": {},
       "isRLSEnabled": true
     },
