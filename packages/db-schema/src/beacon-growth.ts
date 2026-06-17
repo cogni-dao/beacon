@@ -13,6 +13,10 @@
  *     A `tenant_id`/owner column is intentionally NOT added in v0; when RLS lands, add a
  *     node-scoped owner column + policies in a forward migration (see attribution.ts NODE_SCOPED).
  *   - BROADCAST_IDEA_KEY_GROUPS: `broadcasts.idea_key` groups per-platform variants of one core idea.
+ *   - BROADCAST_FUNNEL_CLASSIFIED: each broadcast carries its funnel layer (tofu/mofu/bofu)
+ *     + topic so the queue is a classified funnel, not one blended stream (CHECK-bounded here).
+ *   - BROADCAST_KIND_RESERVED: `kind` is text-only in v0; thread/image/video reserved for
+ *     bundles/artifacts (no blob storage yet). `bundle_id`/`seq` reserve ordered tweet-chains.
  *   - BROADCAST_LIFECYCLE: `status` walks drafted→approved→posted (or failed) — enforced by the app, CHECK-bounded here.
  *   - POST_METRICS_APPEND_ONLY: `post_metrics` is written ONLY by the ingest path; each row is one captured snapshot.
  * Side-effects: none (schema definitions only)
@@ -65,6 +69,9 @@ export const channelAccounts = pgTable(
  * broadcasts — per-platform post variants staged by the content loop.
  * `idea_key` groups the variants of one core idea across channels; `campaign_id`
  * ties them to a campaign hypothesis. `status` is the draft→approve→post lifecycle.
+ * `funnel_layer` + `topic` classify the post within the campaign funnel (the queue
+ * is a planned, classified funnel — not one blended stream). `kind`/`bundle_id`/`seq`
+ * reserve future thread/artifact/tweet-chain extensions (text-only single posts in v0).
  */
 export const broadcasts = pgTable(
   "broadcasts",
@@ -74,6 +81,16 @@ export const broadcasts = pgTable(
     ideaKey: text("idea_key").notNull(),
     angle: text("angle"),
     channel: text("channel").notNull(),
+    /** Funnel position: tofu (awareness) → mofu (consideration) → bofu (action). */
+    funnelLayer: text("funnel_layer").notNull().default("tofu"),
+    /** Free-text subject this post angles at (e.g. "ownership"); nullable. */
+    topic: text("topic"),
+    /** Content kind — text-only in v0; thread/image/video reserved (artifacts roadmap). */
+    kind: text("kind").notNull().default("text"),
+    /** Groups ordered items into one logical post (tweet-chains/threads); null in v0. */
+    bundleId: text("bundle_id"),
+    /** Position within a bundle; 0 for standalone single posts. */
+    seq: integer("seq").notNull().default(0),
     text: text("text").notNull(),
     status: text("status").notNull().default("drafted"),
     externalPostId: text("external_post_id"),
@@ -87,8 +104,17 @@ export const broadcasts = pgTable(
       "broadcasts_status_check",
       sql`${table.status} IN ('drafted', 'approved', 'posted', 'failed')`
     ),
+    check(
+      "broadcasts_funnel_layer_check",
+      sql`${table.funnelLayer} IN ('tofu', 'mofu', 'bofu')`
+    ),
+    check(
+      "broadcasts_kind_check",
+      sql`${table.kind} IN ('text', 'thread', 'image', 'video')`
+    ),
     index("broadcasts_campaign_idx").on(table.campaignId),
     index("broadcasts_idea_key_idx").on(table.ideaKey),
+    index("broadcasts_funnel_layer_idx").on(table.funnelLayer),
   ]
 );
 

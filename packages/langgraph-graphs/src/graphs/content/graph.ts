@@ -4,17 +4,20 @@
 /**
  * Module: `@cogni/langgraph-graphs/graphs/content/graph`
  * Purpose: Content production graph — a 4-node inner content loop for the beacon
- *   growth loop: ideate → draft → critique/revise → adapt-per-platform.
+ *   growth loop: ideate → draft → critique/revise → adapt-per-platform. The
+ *   draft→critique→adapt arc is looped once per funnel layer (tofu/mofu/bofu) so
+ *   the graph yields a small CLASSIFIED queue spanning the funnel — not one post.
  * Scope: Pure factory. Each node calls the injected LLM; emits one staged variant
- *   per enabled channel. Does NOT execute graphs, read env, or do I/O.
+ *   per (funnel layer × enabled channel). Does NOT execute graphs, read env, or do I/O.
  * Invariants:
  *   - PURE_FACTORY: no side effects, no env reads; LLM is injected
  *   - FOUR_NODE_CONTENT_LOOP: ideate, draft, critique_revise, adapt_per_platform
- *   - ONE_VARIANT_PER_CHANNEL: adapt emits exactly one variant per enabled channel
+ *   - QUEUE_SPANS_FUNNEL: the run produces one variant per (layer × enabled channel),
+ *     each tagged {funnelLayer, topic} — a classified funnel queue, not a single post
  *   - NO_POST_METRICS_WRITE: this module never references the post_metrics writer
  *   - TYPE_TRANSPARENT_RETURN: no explicit return type for CLI schema extraction
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §1, references the `poet` graph.
+ * Links: docs/spec/beacon-growth-loop-v0.md §1, .context/specs/pr4-funnel.md
  * @public
  */
 
@@ -34,12 +37,16 @@ import {
   CRITIQUE_PROMPT,
   DEFAULT_CHANNEL_CONSTRAINTS,
   DRAFT_PROMPT,
+  FUNNEL_LAYER_GUIDANCE,
   IDEATE_PROMPT,
+  TOPIC_PROMPT,
 } from "./prompts";
 import {
   type ContentState,
   ContentStateAnnotation,
   type ContentVariant,
+  FUNNEL_LAYERS,
+  type FunnelLayer,
 } from "./state";
 
 /**
@@ -138,53 +145,116 @@ export function createContentGraph(opts: CreateReactAgentGraphOptions) {
     };
   }
 
-  // Node 2 — DRAFT: write a first-pass core post for the strongest angle.
-  async function draft(state: ContentState, config: RunnableConfig) {
-    const angle = state.angles[0] ?? latestBrief(state.messages);
-    const response = await llm.invoke(
-      [new SystemMessage(DRAFT_PROMPT), new HumanMessage(`Angle: ${angle}`)],
-      config
-    );
-    return { draft: textOf(response) };
+  // Pick the angle for a funnel layer — one per layer, cycling if fewer angles.
+  function angleForLayer(angles: string[], layerIndex: number, brief: string): string {
+    if (angles.length === 0) return brief;
+    return angles[layerIndex % angles.length] ?? angles[0] ?? brief;
   }
 
-  // Node 3 — CRITIQUE/REVISE: one self-revise pass.
-  async function critiqueRevise(state: ContentState, config: RunnableConfig) {
+  // DRAFT one core post for a layer, framed by its funnel guidance.
+  async function draftForLayer(
+    layer: FunnelLayer,
+    angle: string,
+    config: RunnableConfig
+  ): Promise<string> {
+    const guidance = FUNNEL_LAYER_GUIDANCE[layer] ?? "";
     const response = await llm.invoke(
       [
-        new SystemMessage(CRITIQUE_PROMPT),
-        new HumanMessage(`Draft:\n${state.draft}`),
+        new SystemMessage(DRAFT_PROMPT),
+        new HumanMessage(`${guidance}\n\nAngle: ${angle}`),
       ],
       config
     );
-    const revised = textOf(response) || state.draft;
-    return { revised };
+    return textOf(response);
   }
 
-  // Node 4 — ADAPT-PER-PLATFORM: one variant per enabled channel.
+  // CRITIQUE/REVISE one core post (single self-revise pass).
+  async function reviseDraft(
+    draftText: string,
+    config: RunnableConfig
+  ): Promise<string> {
+    const response = await llm.invoke(
+      [
+        new SystemMessage(CRITIQUE_PROMPT),
+        new HumanMessage(`Draft:\n${draftText}`),
+      ],
+      config
+    );
+    return textOf(response) || draftText;
+  }
+
+  // TOPIC: distil the post's single subject into a short tag.
+  async function topicOf(
+    core: string,
+    config: RunnableConfig
+  ): Promise<string> {
+    const response = await llm.invoke(
+      [new SystemMessage(TOPIC_PROMPT), new HumanMessage(core)],
+      config
+    );
+    const raw = textOf(response).trim().toLowerCase();
+    return raw.length > 0 ? raw.slice(0, 80) : "general";
+  }
+
+  // Node 2 — DRAFT: first-pass core post for the TOFU layer (graph entry draft).
+  async function draft(state: ContentState, config: RunnableConfig) {
+    const brief = latestBrief(state.messages);
+    const angle = angleForLayer(state.angles, 0, brief);
+    return { draft: await draftForLayer("tofu", angle, config) };
+  }
+
+  // Node 3 — CRITIQUE/REVISE: one self-revise pass over the TOFU draft.
+  async function critiqueRevise(state: ContentState, config: RunnableConfig) {
+    return { revised: await reviseDraft(state.draft, config) };
+  }
+
+  // Node 4 — ADAPT-PER-PLATFORM: loop the draft→critique→adapt arc per funnel
+  // layer, emitting one variant per (layer × enabled channel) — a classified queue.
   async function adaptPerPlatform(
     state: ContentState,
     config: RunnableConfig
   ) {
-    const core = state.revised || state.draft;
+    const brief = latestBrief(state.messages);
     const channels =
       state.enabledChannels.length > 0
         ? state.enabledChannels
         : readEnabledChannels(config);
 
     const variants: ContentVariant[] = [];
-    for (const channel of channels) {
-      const constraints =
-        CHANNEL_CONSTRAINTS[channel] ?? DEFAULT_CHANNEL_CONSTRAINTS;
-      const prompt = ADAPT_PROMPT.replace("{channel}", channel).replace(
-        "{constraints}",
-        constraints
-      );
-      const response = await llm.invoke(
-        [new SystemMessage(prompt), new HumanMessage(`Core post:\n${core}`)],
-        config
-      );
-      variants.push({ channel, text: textOf(response) || core });
+    for (let i = 0; i < FUNNEL_LAYERS.length; i++) {
+      const layer = FUNNEL_LAYERS[i] as FunnelLayer;
+      // Reuse the already-drafted/revised TOFU core; draft fresh for mofu/bofu.
+      const core =
+        layer === "tofu"
+          ? state.revised || state.draft
+          : await reviseDraft(
+              await draftForLayer(
+                layer,
+                angleForLayer(state.angles, i, brief),
+                config
+              ),
+              config
+            );
+      const topic = await topicOf(core, config);
+
+      for (const channel of channels) {
+        const constraints =
+          CHANNEL_CONSTRAINTS[channel] ?? DEFAULT_CHANNEL_CONSTRAINTS;
+        const prompt = ADAPT_PROMPT.replace("{channel}", channel).replace(
+          "{constraints}",
+          constraints
+        );
+        const response = await llm.invoke(
+          [new SystemMessage(prompt), new HumanMessage(`Core post:\n${core}`)],
+          config
+        );
+        variants.push({
+          funnelLayer: layer,
+          topic,
+          channel,
+          text: textOf(response) || core,
+        });
+      }
     }
 
     // Emit the structured result as the final assistant message.

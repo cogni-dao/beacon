@@ -19,6 +19,8 @@ import type { ReactElement } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle, Progress } from "@/components";
 
+import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
+
 import type { CampaignLensRow } from "../_api/fetchCampaigns";
 import { CampaignStatusBadge } from "./CampaignStatus";
 
@@ -31,6 +33,26 @@ function basisLabel(basis: CampaignLensRow["basis"]): string {
     default:
       return "no metrics yet";
   }
+}
+
+/** Compact per-layer mini-bar: tofu/mofu/bofu scores at a glance. */
+function FunnelMiniBars({ row }: { row: CampaignLensRow }): ReactElement {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {FUNNEL_LAYERS.map((layer) => {
+        const k = row.layers[layer];
+        return (
+          <div key={layer} className="flex flex-col gap-1">
+            <div className="flex items-baseline justify-between text-[10px] text-muted-foreground uppercase">
+              <span>{layer}</span>
+              <span className="tabular-nums">{k.score0to100}</span>
+            </div>
+            <Progress value={k.score0to100} aria-label={`${layer} KPI score`} />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function CampaignCard({ row }: { row: CampaignLensRow }): ReactElement {
@@ -66,6 +88,8 @@ export function CampaignCard({ row }: { row: CampaignLensRow }): ReactElement {
           </div>
 
           <Progress value={row.score0to100} aria-label="KPI score vs target" />
+
+          <FunnelMiniBars row={row} />
 
           <dl className="grid grid-cols-3 gap-2 text-xs">
             <div>

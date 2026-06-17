@@ -26,6 +26,25 @@ Return ONLY a JSON array of 3 short angle strings, e.g.:
 ` as const;
 
 /**
+ * Per funnel-layer framing prepended to the draft step. The same brief is worked
+ * once per layer so the resulting queue spans tofu→mofu→bofu (see content graph).
+ */
+export const FUNNEL_LAYER_GUIDANCE: Readonly<Record<string, string>> = {
+  tofu: "TOFU (awareness): cast the widest net. Hook curiosity, no ask. Make a stranger stop scrolling.",
+  mofu: "MOFU (consideration): for someone already aware. Build trust with proof/insight; nudge toward learning more.",
+  bofu: "BOFU (action): for someone ready to act. One sharp, unambiguous call-to-action.",
+} as const;
+
+/**
+ * TOPIC: distil the single subject a draft is about into 1-3 lowercase words
+ * (e.g. "ownership", "ai agents"). Used to tag the broadcast for per-layer KPI.
+ */
+export const TOPIC_PROMPT = `
+Read the post below and reply with ONLY its single core subject as 1-3 lowercase words.
+No punctuation, no quotes, no explanation. Example: ownership
+` as const;
+
+/**
  * DRAFT: write a first-pass core post for the strongest angle.
  */
 export const DRAFT_PROMPT = `

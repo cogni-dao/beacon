@@ -21,7 +21,11 @@
 
 import { z } from "zod";
 
-import type { BroadcastCapability } from "../capabilities/broadcast";
+import {
+  BROADCAST_KINDS,
+  type BroadcastCapability,
+  FUNNEL_LAYERS,
+} from "../capabilities/broadcast";
 import { SOCIAL_CHANNELS } from "../capabilities/social-x";
 import type { BoundTool, ToolContract, ToolImplementation } from "../types";
 
@@ -47,10 +51,21 @@ export const BroadcastPostInputSchema = z.object({
       z.object({
         channel: z.enum(SOCIAL_CHANNELS).describe("Target channel"),
         text: z.string().min(1).describe("Platform-adapted post body"),
+        funnelLayer: z
+          .enum(FUNNEL_LAYERS)
+          .describe("Funnel position: tofu (awareness) → mofu → bofu (action)"),
+        topic: z
+          .string()
+          .max(120)
+          .nullable()
+          .describe("Subject this variant angles at (e.g. 'ownership')"),
+        kind: z
+          .enum(BROADCAST_KINDS)
+          .describe("Content kind — text-only in v0; others reserved"),
       })
     )
     .min(1)
-    .describe("One staged variant per enabled channel"),
+    .describe("One staged variant per (funnel layer × enabled channel)"),
 });
 export type BroadcastPostInput = z.infer<typeof BroadcastPostInputSchema>;
 

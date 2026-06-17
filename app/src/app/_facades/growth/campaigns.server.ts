@@ -34,6 +34,25 @@ const DOMAIN_CAMPAIGNS = "beacon-campaigns";
 const METRIC_ENGAGEMENT_PREFIX = "metric:engagement:";
 const DEFAULT_TARGET_RATE = 0.02;
 
+/** Funnel layers in funnel order (awareness → consideration → action). */
+export const FUNNEL_LAYERS = ["tofu", "mofu", "bofu"] as const;
+export type FunnelLayer = (typeof FUNNEL_LAYERS)[number];
+
+/** Independent engagement KPI for one funnel layer (a slice of a campaign). */
+export interface FunnelLayerKpi {
+  score0to100: number;
+  edge: "validates" | "invalidates";
+  observedRate: number;
+  basis: EngagementBasis;
+  /** Posted broadcasts classified to this layer. */
+  postedBroadcasts: number;
+  /** Cached metric snapshots scored for this layer. */
+  snapshotCount: number;
+}
+
+/** Per-layer KPI breakdown, keyed by funnel layer (never one blended number). */
+export type FunnelLayerBreakdown = Record<FunnelLayer, FunnelLayerKpi>;
+
 /** One campaign row for the lens. */
 export interface CampaignLensRow {
   campaignId: string;
@@ -49,6 +68,8 @@ export interface CampaignLensRow {
   basis: EngagementBasis;
   snapshotCount: number;
   postedBroadcasts: number;
+  /** Independent KPI computed PER funnel layer (tofu/mofu/bofu). */
+  layers: FunnelLayerBreakdown;
 }
 
 function targetRateFromContent(content: string): number | null {
@@ -68,24 +89,56 @@ function campaignIdFromStrategy(
   return id.length > 0 ? id : null;
 }
 
-async function loadCampaignSnapshots(campaignId: string): Promise<{
+/** Normalize a raw `funnel_layer` value to a known layer (defaults to tofu). */
+function asFunnelLayer(raw: string | null | undefined): FunnelLayer {
+  return (FUNNEL_LAYERS as readonly string[]).includes(raw ?? "")
+    ? (raw as FunnelLayer)
+    : "tofu";
+}
+
+interface CampaignSnapshots {
+  /** All snapshots across the campaign (the overall/blended KPI input). */
   snapshots: PostMetricSnapshot[];
+  /** Total posted broadcasts across the campaign. */
   postedBroadcasts: number;
-}> {
+  /** Snapshots grouped by the funnel layer of their owning broadcast. */
+  byLayer: Record<FunnelLayer, PostMetricSnapshot[]>;
+  /** Posted-broadcast counts grouped by funnel layer. */
+  postedByLayer: Record<FunnelLayer, number>;
+}
+
+function emptyLayerMap<T>(make: () => T): Record<FunnelLayer, T> {
+  return { tofu: make(), mofu: make(), bofu: make() };
+}
+
+async function loadCampaignSnapshots(
+  campaignId: string
+): Promise<CampaignSnapshots> {
   const db = getServiceDb();
   const broadcastRows = await db
-    .select({ id: broadcasts.id })
+    .select({ id: broadcasts.id, funnelLayer: broadcasts.funnelLayer })
     .from(broadcasts)
     .where(
       and(eq(broadcasts.campaignId, campaignId), eq(broadcasts.status, "posted"))
     );
-  const broadcastIds = broadcastRows.map((r) => r.id);
-  if (broadcastIds.length === 0) {
-    return { snapshots: [], postedBroadcasts: 0 };
+
+  const byLayer = emptyLayerMap<PostMetricSnapshot[]>(() => []);
+  const postedByLayer = emptyLayerMap<number>(() => 0);
+  if (broadcastRows.length === 0) {
+    return { snapshots: [], postedBroadcasts: 0, byLayer, postedByLayer };
   }
+
+  const layerOf = new Map<string, FunnelLayer>();
+  for (const r of broadcastRows) {
+    const layer = asFunnelLayer(r.funnelLayer);
+    layerOf.set(r.id, layer);
+    postedByLayer[layer] += 1;
+  }
+  const broadcastIds = broadcastRows.map((r) => r.id);
 
   const rows = await db
     .select({
+      broadcastId: postMetrics.broadcastId,
       impressions: postMetrics.impressions,
       likes: postMetrics.likes,
       reposts: postMetrics.reposts,
@@ -95,14 +148,47 @@ async function loadCampaignSnapshots(campaignId: string): Promise<{
     .from(postMetrics)
     .where(inArray(postMetrics.broadcastId, broadcastIds));
 
-  const snapshots: PostMetricSnapshot[] = rows.map((r) => ({
-    impressions: r.impressions ?? null,
-    likes: r.likes ?? 0,
-    reposts: r.reposts ?? 0,
-    replies: r.replies ?? 0,
-    followersAtCapture: r.followersAtCapture ?? null,
-  }));
-  return { snapshots, postedBroadcasts: broadcastIds.length };
+  const snapshots: PostMetricSnapshot[] = [];
+  for (const r of rows) {
+    const snapshot: PostMetricSnapshot = {
+      impressions: r.impressions ?? null,
+      likes: r.likes ?? 0,
+      reposts: r.reposts ?? 0,
+      replies: r.replies ?? 0,
+      followersAtCapture: r.followersAtCapture ?? null,
+    };
+    snapshots.push(snapshot);
+    const layer = layerOf.get(r.broadcastId) ?? "tofu";
+    byLayer[layer].push(snapshot);
+  }
+
+  return {
+    snapshots,
+    postedBroadcasts: broadcastIds.length,
+    byLayer,
+    postedByLayer,
+  };
+}
+
+/** Compute the per-layer KPI breakdown from grouped snapshots + posted counts. */
+function computeLayerBreakdown(
+  loaded: CampaignSnapshots,
+  targetRate: number
+): FunnelLayerBreakdown {
+  const out = {} as FunnelLayerBreakdown;
+  for (const layer of FUNNEL_LAYERS) {
+    const layerSnapshots = loaded.byLayer[layer];
+    const kpi = computeEngagementKpi(layerSnapshots, { rate: targetRate });
+    out[layer] = {
+      score0to100: kpi.score0to100,
+      edge: kpi.edge,
+      observedRate: kpi.observedRate,
+      basis: kpi.basis,
+      postedBroadcasts: loaded.postedByLayer[layer],
+      snapshotCount: layerSnapshots.length,
+    };
+  }
+  return out;
 }
 
 /**
@@ -125,12 +211,11 @@ export async function listGrowthCampaigns(): Promise<CampaignLensRow[]> {
       (h.id.startsWith("campaign:") ? h.id.slice("campaign:".length) : null);
     if (!campaignId) continue;
 
-    const { snapshots, postedBroadcasts } =
-      await loadCampaignSnapshots(campaignId);
+    const loaded = await loadCampaignSnapshots(campaignId);
     const targetRate = targetRateFromContent(h.content);
-    const kpi = computeEngagementKpi(snapshots, {
-      rate: targetRate ?? DEFAULT_TARGET_RATE,
-    });
+    const effectiveTarget = targetRate ?? DEFAULT_TARGET_RATE;
+    const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
+    const layers = computeLayerBreakdown(loaded, effectiveTarget);
 
     const incoming = await store.listCitationsByCitedId(h.id);
     const resolved = incoming.some(
@@ -149,8 +234,9 @@ export async function listGrowthCampaigns(): Promise<CampaignLensRow[]> {
       edge: kpi.edge,
       observedRate: kpi.observedRate,
       basis: kpi.basis,
-      snapshotCount: snapshots.length,
-      postedBroadcasts,
+      snapshotCount: loaded.snapshots.length,
+      postedBroadcasts: loaded.postedBroadcasts,
+      layers,
     });
   }
 
@@ -166,6 +252,8 @@ export async function listGrowthCampaigns(): Promise<CampaignLensRow[]> {
 export interface CampaignPost {
   id: string;
   channel: string;
+  funnelLayer: FunnelLayer;
+  topic: string | null;
   angle: string | null;
   text: string;
   status: string;
@@ -191,6 +279,8 @@ async function loadCampaignPosts(campaignId: string): Promise<CampaignPost[]> {
     .select({
       id: broadcasts.id,
       channel: broadcasts.channel,
+      funnelLayer: broadcasts.funnelLayer,
+      topic: broadcasts.topic,
       angle: broadcasts.angle,
       text: broadcasts.text,
       status: broadcasts.status,
@@ -231,6 +321,8 @@ async function loadCampaignPosts(campaignId: string): Promise<CampaignPost[]> {
     return {
       id: r.id,
       channel: r.channel,
+      funnelLayer: asFunnelLayer(r.funnelLayer),
+      topic: r.topic ?? null,
       angle: r.angle ?? null,
       text: r.text,
       status: r.status,
@@ -266,12 +358,11 @@ export async function getGrowthCampaign(
   );
   if (!h) return null;
 
-  const { snapshots, postedBroadcasts } =
-    await loadCampaignSnapshots(campaignId);
+  const loaded = await loadCampaignSnapshots(campaignId);
   const targetRate = targetRateFromContent(h.content);
-  const kpi = computeEngagementKpi(snapshots, {
-    rate: targetRate ?? DEFAULT_TARGET_RATE,
-  });
+  const effectiveTarget = targetRate ?? DEFAULT_TARGET_RATE;
+  const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
+  const layers = computeLayerBreakdown(loaded, effectiveTarget);
   const incoming = await store.listCitationsByCitedId(h.id);
   const resolved = incoming.some(
     (c) => c.citationType === "validates" || c.citationType === "invalidates"
@@ -290,8 +381,9 @@ export async function getGrowthCampaign(
     edge: kpi.edge,
     observedRate: kpi.observedRate,
     basis: kpi.basis,
-    snapshotCount: snapshots.length,
-    postedBroadcasts,
+    snapshotCount: loaded.snapshots.length,
+    postedBroadcasts: loaded.postedBroadcasts,
+    layers,
     brief: h.content,
     posts,
   };

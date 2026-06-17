@@ -67,10 +67,12 @@ export type {
 } from "./schedule";
 // Broadcast capability (per beacon-growth-loop spec — persists `broadcasts` only)
 export {
+  BROADCAST_KINDS,
   BroadcastInputSchema,
   BroadcastResultSchema,
   BroadcastVariantResultSchema,
   BroadcastVariantSchema,
+  FUNNEL_LAYERS,
 } from "./broadcast";
 export type {
   BroadcastCapability,

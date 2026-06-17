@@ -11,6 +11,8 @@
  *     table. It never imports or writes `post_metrics` (WORKER≠VERIFIER — ingest is
  *     the sole `post_metrics` writer).
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants share `ideaKey`.
+ *   - FUNNEL_CLASSIFIED: each row persists its `funnel_layer` + `topic`; `kind='text'`,
+ *     `bundle_id=null`, `seq=0` in v0 (thread/artifact/bundle columns reserved).
  *   - SERVICE_ROLE_NO_RLS: writes via the service-role DB (no RLS in growth v0).
  * Side-effects: none at construction (factory only). The returned capability does IO.
  * Links: docs/spec/beacon-growth-loop-v0.md §1/§3
@@ -68,6 +70,12 @@ export function createBroadcastCapability(
             ideaKey: input.ideaKey,
             angle: input.angle ?? null,
             channel: variant.channel,
+            funnelLayer: variant.funnelLayer,
+            topic: variant.topic ?? null,
+            kind: variant.kind,
+            // bundle_id / seq reserved for tweet-chains; single text posts in v0.
+            bundleId: null,
+            seq: 0,
             text: variant.text,
             status: "drafted",
           })
