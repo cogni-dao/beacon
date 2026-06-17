@@ -30,14 +30,14 @@ import {
   type EngagementBasis,
   type PostMetricSnapshot,
 } from "@cogni/knowledge-store";
-import { toUserId } from "@cogni/ids";
+import { withTenantScope } from "@cogni/db-client";
+import { toUserId, type UserId, userActor } from "@cogni/ids";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";
 import { getSessionUser } from "@/app/_lib/auth/session";
-import { getContainer } from "@/bootstrap/container";
+import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { getNodeId } from "@/shared/config";
 import { broadcasts, postMetrics } from "@/shared/db/schema";
@@ -124,44 +124,56 @@ function targetRateFromContent(content: string): number | null {
 
 /**
  * Load every cached `post_metrics` snapshot for one campaign's posted
- * broadcasts (service-role; no RLS in growth v0). Identical reduction to the
- * resolver bridge so the lens KPI matches the resolution KPI exactly.
+ * broadcasts. RLS_SCOPED_READS: runs inside `withTenantScope` under the session
+ * user's GUC so the policy filters rows to the user's account(s) — never
+ * service-role (which would bypass RLS and leak across accounts). Identical
+ * reduction to the resolver bridge so the lens KPI matches the resolution KPI.
  */
-async function loadCampaignSnapshots(campaignId: string): Promise<{
+async function loadCampaignSnapshots(
+  campaignId: string,
+  userId: string
+): Promise<{
   snapshots: PostMetricSnapshot[];
   postedBroadcasts: number;
 }> {
-  const db = getServiceDb();
-  const broadcastRows = await db
-    .select({ id: broadcasts.id })
-    .from(broadcasts)
-    .where(
-      and(eq(broadcasts.campaignId, campaignId), eq(broadcasts.status, "posted"))
-    );
-  const broadcastIds = broadcastRows.map((r) => r.id);
-  if (broadcastIds.length === 0) {
-    return { snapshots: [], postedBroadcasts: 0 };
-  }
+  const db = resolveAppDb();
+  const actorId = userActor(userId as UserId);
 
-  const rows = await db
-    .select({
-      impressions: postMetrics.impressions,
-      likes: postMetrics.likes,
-      reposts: postMetrics.reposts,
-      replies: postMetrics.replies,
-      followersAtCapture: postMetrics.followersAtCapture,
-    })
-    .from(postMetrics)
-    .where(inArray(postMetrics.broadcastId, broadcastIds));
+  return withTenantScope(db, actorId, async (tx) => {
+    const broadcastRows = await tx
+      .select({ id: broadcasts.id })
+      .from(broadcasts)
+      .where(
+        and(
+          eq(broadcasts.campaignId, campaignId),
+          eq(broadcasts.status, "posted")
+        )
+      );
+    const broadcastIds = broadcastRows.map((r) => r.id);
+    if (broadcastIds.length === 0) {
+      return { snapshots: [], postedBroadcasts: 0 };
+    }
 
-  const snapshots: PostMetricSnapshot[] = rows.map((r) => ({
-    impressions: r.impressions ?? null,
-    likes: r.likes ?? 0,
-    reposts: r.reposts ?? 0,
-    replies: r.replies ?? 0,
-    followersAtCapture: r.followersAtCapture ?? null,
-  }));
-  return { snapshots, postedBroadcasts: broadcastIds.length };
+    const rows = await tx
+      .select({
+        impressions: postMetrics.impressions,
+        likes: postMetrics.likes,
+        reposts: postMetrics.reposts,
+        replies: postMetrics.replies,
+        followersAtCapture: postMetrics.followersAtCapture,
+      })
+      .from(postMetrics)
+      .where(inArray(postMetrics.broadcastId, broadcastIds));
+
+    const snapshots: PostMetricSnapshot[] = rows.map((r) => ({
+      impressions: r.impressions ?? null,
+      likes: r.likes ?? 0,
+      reposts: r.reposts ?? 0,
+      replies: r.replies ?? 0,
+      followersAtCapture: r.followersAtCapture ?? null,
+    }));
+    return { snapshots, postedBroadcasts: broadcastIds.length };
+  });
 }
 
 function campaignIdFromStrategy(
@@ -322,8 +334,10 @@ export const GET = wrapRouteHandlerWithLogging(
         (h.id.startsWith("campaign:") ? h.id.slice("campaign:".length) : null);
       if (!campaignId) continue;
 
-      const { snapshots, postedBroadcasts } =
-        await loadCampaignSnapshots(campaignId);
+      const { snapshots, postedBroadcasts } = await loadCampaignSnapshots(
+        campaignId,
+        sessionUser.id
+      );
       const targetRate = targetRateFromContent(h.content);
       const kpi = computeEngagementKpi(snapshots, {
         rate: targetRate ?? 0.02,
