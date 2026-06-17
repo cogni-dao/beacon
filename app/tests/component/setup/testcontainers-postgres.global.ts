@@ -91,8 +91,17 @@ export async function setup() {
     APP_ENV: "test",
   });
 
-  // Run migrations as app_user (DB owner, same as production)
-  execSync("pnpm -w db:migrate:direct", { stdio: "inherit" });
+  // Run migrations as app_user (DB owner, same as production).
+  // Capture output so the underlying SQL error surfaces (drizzle-kit's spinner
+  // otherwise overwrites stderr, leaving only a bare "Command failed").
+  try {
+    execSync("pnpm -w db:migrate:direct", { stdio: "pipe", encoding: "utf8" });
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(
+      `db:migrate:direct failed:\n--- stdout ---\n${e.stdout ?? ""}\n--- stderr ---\n${e.stderr ?? ""}\n--- message ---\n${e.message ?? ""}`
+    );
+  }
 
   // ── Preflight: verify service role can connect (BYPASSRLS) ─────────────
   const serviceCheck = await c.exec([
