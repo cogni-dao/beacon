@@ -21,11 +21,11 @@ import { GrowthView } from "./view";
 export const dynamic = "force-dynamic";
 
 export default async function GrowthPage() {
-  const user = await getServerSessionUser();
-  if (!user) {
-    redirect("/");
-  }
+	const user = await getServerSessionUser();
+	if (!user) {
+		redirect("/");
+	}
 
-  const campaigns = await listGrowthCampaigns();
-  return <GrowthView campaigns={campaigns} />;
+	const campaigns = await listGrowthCampaigns(user.id);
+	return <GrowthView campaigns={campaigns} />;
 }

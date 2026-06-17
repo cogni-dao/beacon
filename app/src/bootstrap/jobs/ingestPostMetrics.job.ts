@@ -12,7 +12,10 @@
  *   - SOLE_POST_METRICS_WRITER: this job is the only code that inserts `post_metrics`.
  *   - POST_METRICS_APPEND_ONLY: rows are inserted, never updated.
  *   - METRICS_BATCH_LE_100: external ids are batched ≤100 per readMetrics() call.
- *   - SERVICE_ROLE_NO_RLS: reads/writes via the service-role DB (no RLS in growth v0).
+ *   - ACCOUNT_SCOPED: each appended `post_metrics` row inherits the parent broadcast's
+ *     `account_id` (the tenancy axis) so RLS scopes it.
+ *   - SERVICE_ROLE_BYPASSES_RLS: this JOB reads/writes via the service-role DB (it
+ *     operates across all accounts); RLS does not apply. It still writes account-scoped rows.
  * Side-effects: IO (DB reads/writes, social adapter reads via the container)
  * Links: docs/spec/beacon-growth-loop-v0.md §5
  * @public
@@ -34,21 +37,21 @@ const MAX_BROADCASTS_PER_RUN = 500;
  * Summary of one metrics-ingest run.
  */
 export interface PostMetricsIngestSummary {
-  /** Posted broadcasts considered (had an external post id). */
-  considered: number;
-  /** Metric snapshots appended to `post_metrics`. */
-  appended: number;
-  /** External ids returned no snapshot (deleted/unavailable post). */
-  missing: number;
+	/** Posted broadcasts considered (had an external post id). */
+	considered: number;
+	/** Metric snapshots appended to `post_metrics`. */
+	appended: number;
+	/** External ids returned no snapshot (deleted/unavailable post). */
+	missing: number;
 }
 
 /** Chunk an array into fixed-size slices. */
 function chunk<T>(items: readonly T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    out.push(items.slice(i, i + size));
-  }
-  return out;
+	const out: T[][] = [];
+	for (let i = 0; i < items.length; i += size) {
+		out.push(items.slice(i, i + size));
+	}
+	return out;
 }
 
 /**
@@ -63,75 +66,87 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
  * SOLE_POST_METRICS_WRITER: no other code path inserts into `post_metrics`.
  */
 export async function runIngestPostMetricsJob(): Promise<PostMetricsIngestSummary> {
-  const container = getContainer();
-  const { log, socialXCapability } = container;
-  const db = getServiceDb();
+	const container = getContainer();
+	const { log, socialXCapability } = container;
+	const db = getServiceDb();
 
-  // 1) Recent posted broadcasts with an external id (the only ones with metrics).
-  const rows = await db
-    .select({
-      id: broadcasts.id,
-      channel: broadcasts.channel,
-      externalPostId: broadcasts.externalPostId,
-    })
-    .from(broadcasts)
-    .where(
-      and(eq(broadcasts.status, "posted"), isNotNull(broadcasts.externalPostId))
-    )
-    .orderBy(desc(broadcasts.postedAt))
-    .limit(MAX_BROADCASTS_PER_RUN);
+	// 1) Recent posted broadcasts with an external id (the only ones with metrics).
+	const rows = await db
+		.select({
+			id: broadcasts.id,
+			accountId: broadcasts.accountId,
+			channel: broadcasts.channel,
+			externalPostId: broadcasts.externalPostId,
+		})
+		.from(broadcasts)
+		.where(
+			and(
+				eq(broadcasts.status, "posted"),
+				isNotNull(broadcasts.externalPostId),
+			),
+		)
+		.orderBy(desc(broadcasts.postedAt))
+		.limit(MAX_BROADCASTS_PER_RUN);
 
-  // Map external id → owning broadcast id (external ids are channel-native + unique).
-  const broadcastByExternalId = new Map<string, string>();
-  for (const row of rows) {
-    if (row.externalPostId) {
-      broadcastByExternalId.set(row.externalPostId, row.id);
-    }
-  }
+	// Map external id → owning broadcast (id + account) for the snapshot stamp.
+	// External ids are channel-native + unique.
+	const broadcastByExternalId = new Map<
+		string,
+		{ id: string; accountId: string }
+	>();
+	for (const row of rows) {
+		if (row.externalPostId) {
+			broadcastByExternalId.set(row.externalPostId, {
+				id: row.id,
+				accountId: row.accountId,
+			});
+		}
+	}
 
-  const externalIds = [...broadcastByExternalId.keys()];
-  if (externalIds.length === 0) {
-    log.info({}, "metrics-ingest: no posted broadcasts to read");
-    return { considered: 0, appended: 0, missing: 0 };
-  }
+	const externalIds = [...broadcastByExternalId.keys()];
+	if (externalIds.length === 0) {
+		log.info({}, "metrics-ingest: no posted broadcasts to read");
+		return { considered: 0, appended: 0, missing: 0 };
+	}
 
-  let appended = 0;
-  let resolved = 0;
+	let appended = 0;
+	let resolved = 0;
 
-  // 2) Read in ≤100-id batches and 3) append snapshots.
-  for (const batch of chunk(externalIds, METRICS_BATCH_SIZE)) {
-    const snapshots = await socialXCapability.readMetrics(batch);
-    resolved += snapshots.length;
+	// 2) Read in ≤100-id batches and 3) append snapshots.
+	for (const batch of chunk(externalIds, METRICS_BATCH_SIZE)) {
+		const snapshots = await socialXCapability.readMetrics(batch);
+		resolved += snapshots.length;
 
-    const values = snapshots
-      .map((snap) => {
-        const broadcastId = broadcastByExternalId.get(snap.externalId);
-        if (!broadcastId) return null;
-        return {
-          broadcastId,
-          channel: snap.channel,
-          capturedAt: new Date(snap.fetchedAt),
-          impressions: snap.impressions ?? null,
-          likes: snap.likes,
-          reposts: snap.reposts,
-          replies: snap.replies,
-          followersAtCapture: snap.followers ?? null,
-        };
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
+		const values = snapshots
+			.map((snap) => {
+				const parent = broadcastByExternalId.get(snap.externalId);
+				if (!parent) return null;
+				return {
+					accountId: parent.accountId,
+					broadcastId: parent.id,
+					channel: snap.channel,
+					capturedAt: new Date(snap.fetchedAt),
+					impressions: snap.impressions ?? null,
+					likes: snap.likes,
+					reposts: snap.reposts,
+					replies: snap.replies,
+					followersAtCapture: snap.followers ?? null,
+				};
+			})
+			.filter((v): v is NonNullable<typeof v> => v !== null);
 
-    if (values.length > 0) {
-      await db.insert(postMetrics).values(values);
-      appended += values.length;
-    }
-  }
+		if (values.length > 0) {
+			await db.insert(postMetrics).values(values);
+			appended += values.length;
+		}
+	}
 
-  const summary: PostMetricsIngestSummary = {
-    considered: externalIds.length,
-    appended,
-    missing: externalIds.length - resolved,
-  };
+	const summary: PostMetricsIngestSummary = {
+		considered: externalIds.length,
+		appended,
+		missing: externalIds.length - resolved,
+	};
 
-  log.info(summary, "metrics-ingest complete");
-  return summary;
+	log.info(summary, "metrics-ingest complete");
+	return summary;
 }

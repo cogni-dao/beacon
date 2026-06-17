@@ -22,20 +22,23 @@ import { CampaignDetailView } from "./view";
 export const dynamic = "force-dynamic";
 
 export default async function CampaignDetailPage({
-  params,
+	params,
 }: {
-  params: Promise<{ campaignId: string }>;
+	params: Promise<{ campaignId: string }>;
 }) {
-  const user = await getServerSessionUser();
-  if (!user) {
-    redirect("/");
-  }
+	const user = await getServerSessionUser();
+	if (!user) {
+		redirect("/");
+	}
 
-  const { campaignId } = await params;
-  const campaign = await getGrowthCampaign(decodeURIComponent(campaignId));
-  if (!campaign) {
-    notFound();
-  }
+	const { campaignId } = await params;
+	const campaign = await getGrowthCampaign(
+		decodeURIComponent(campaignId),
+		user.id,
+	);
+	if (!campaign) {
+		notFound();
+	}
 
-  return <CampaignDetailView campaign={campaign} />;
+	return <CampaignDetailView campaign={campaign} />;
 }

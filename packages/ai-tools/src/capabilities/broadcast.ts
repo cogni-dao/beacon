@@ -9,6 +9,8 @@
  * Invariants:
  *   - NO_POST_METRICS_WRITE: the broadcast write surface persists `broadcasts`
  *     ONLY. It never writes `post_metrics` (WORKER≠VERIFIER — ingest is sole writer).
+ *   - ACCOUNT_SCOPED: every broadcast carries the owning `accountId` (billing
+ *     account, the tenancy axis) — stamped on the `broadcasts` row for RLS.
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants of one core idea share `ideaKey`.
  *   - FUNNEL_CLASSIFIED: each variant carries its `funnelLayer` + `topic` so the
  *     persisted queue is a classified funnel; `kind` is text-only in v0.
@@ -34,19 +36,19 @@ export const BROADCAST_KINDS = ["text", "thread", "image", "video"] as const;
  * classify the variant within the campaign funnel (defaults keep older callers valid).
  */
 export const BroadcastVariantSchema = z.object({
-  channel: z.enum(SOCIAL_CHANNELS).describe("Target channel for this variant"),
-  text: z.string().min(1).describe("Platform-adapted post body"),
-  funnelLayer: z
-    .enum(FUNNEL_LAYERS)
-    .describe("Funnel position: tofu (awareness) → mofu → bofu (action)"),
-  topic: z
-    .string()
-    .max(120)
-    .nullable()
-    .describe("Subject this variant angles at (e.g. 'ownership')"),
-  kind: z
-    .enum(BROADCAST_KINDS)
-    .describe("Content kind — text-only in v0; others reserved"),
+	channel: z.enum(SOCIAL_CHANNELS).describe("Target channel for this variant"),
+	text: z.string().min(1).describe("Platform-adapted post body"),
+	funnelLayer: z
+		.enum(FUNNEL_LAYERS)
+		.describe("Funnel position: tofu (awareness) → mofu → bofu (action)"),
+	topic: z
+		.string()
+		.max(120)
+		.nullable()
+		.describe("Subject this variant angles at (e.g. 'ownership')"),
+	kind: z
+		.enum(BROADCAST_KINDS)
+		.describe("Content kind — text-only in v0; others reserved"),
 });
 export type BroadcastVariant = z.infer<typeof BroadcastVariantSchema>;
 
@@ -56,21 +58,25 @@ export type BroadcastVariant = z.infer<typeof BroadcastVariantSchema>;
  * idea expressed per platform.
  */
 export const BroadcastInputSchema = z.object({
-  campaignId: z.string().min(1).describe("Owning campaign hypothesis id"),
-  ideaKey: z
-    .string()
-    .min(1)
-    .max(200)
-    .describe("Stable key grouping per-channel variants of one core idea"),
-  angle: z
-    .string()
-    .max(500)
-    .optional()
-    .describe("The angle/hook this idea expresses"),
-  variants: z
-    .array(BroadcastVariantSchema)
-    .min(1)
-    .describe("One staged variant per enabled channel"),
+	accountId: z
+		.string()
+		.min(1)
+		.describe("Owning billing account id (tenancy axis; stamped on each row)"),
+	campaignId: z.string().min(1).describe("Owning campaign hypothesis id"),
+	ideaKey: z
+		.string()
+		.min(1)
+		.max(200)
+		.describe("Stable key grouping per-channel variants of one core idea"),
+	angle: z
+		.string()
+		.max(500)
+		.optional()
+		.describe("The angle/hook this idea expresses"),
+	variants: z
+		.array(BroadcastVariantSchema)
+		.min(1)
+		.describe("One staged variant per enabled channel"),
 });
 export type BroadcastInput = z.infer<typeof BroadcastInputSchema>;
 
@@ -78,26 +84,26 @@ export type BroadcastInput = z.infer<typeof BroadcastInputSchema>;
  * Result of broadcasting one variant.
  */
 export const BroadcastVariantResultSchema = z.object({
-  broadcastId: z.string().min(1).describe("Persisted `broadcasts.id`"),
-  channel: z.enum(SOCIAL_CHANNELS),
-  status: z
-    .enum(["posted", "failed"])
-    .describe("Post lifecycle status after broadcast"),
-  externalPostId: z
-    .string()
-    .nullable()
-    .describe("Channel-native post id (null when failed)"),
+	broadcastId: z.string().min(1).describe("Persisted `broadcasts.id`"),
+	channel: z.enum(SOCIAL_CHANNELS),
+	status: z
+		.enum(["posted", "failed"])
+		.describe("Post lifecycle status after broadcast"),
+	externalPostId: z
+		.string()
+		.nullable()
+		.describe("Channel-native post id (null when failed)"),
 });
 export type BroadcastVariantResult = z.infer<
-  typeof BroadcastVariantResultSchema
+	typeof BroadcastVariantResultSchema
 >;
 
 /**
  * Result of a broadcast call — one entry per input variant.
  */
 export const BroadcastResultSchema = z.object({
-  ideaKey: z.string(),
-  results: z.array(BroadcastVariantResultSchema),
+	ideaKey: z.string(),
+	results: z.array(BroadcastVariantResultSchema),
 });
 export type BroadcastResult = z.infer<typeof BroadcastResultSchema>;
 
@@ -109,13 +115,13 @@ export type BroadcastResult = z.infer<typeof BroadcastResultSchema>;
  * by the metrics-ingest path.
  */
 export interface BroadcastCapability {
-  /**
-   * Broadcast one core idea's per-channel variants.
-   * For each variant: persist a `broadcasts` row, post via the social adapter,
-   * then record `external_post_id` + status `posted` (or `failed`).
-   *
-   * @param input - Campaign/idea/variants to broadcast
-   * @returns Per-variant broadcast results
-   */
-  broadcast(input: BroadcastInput): Promise<BroadcastResult>;
+	/**
+	 * Broadcast one core idea's per-channel variants.
+	 * For each variant: persist a `broadcasts` row, post via the social adapter,
+	 * then record `external_post_id` + status `posted` (or `failed`).
+	 *
+	 * @param input - Campaign/idea/variants to broadcast
+	 * @returns Per-variant broadcast results
+	 */
+	broadcast(input: BroadcastInput): Promise<BroadcastResult>;
 }
