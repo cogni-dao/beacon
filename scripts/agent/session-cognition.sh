@@ -1,19 +1,53 @@
 #!/usr/bin/env bash
-# Session-start cognition substrate loader — shared by the Claude Code
-# (.claude/settings.json) and Codex (.codex/config.toml) SessionStart hooks.
-# Pulls the node's kickstart bundle and prints it to stdout; both runtimes inject
-# SessionStart stdout into agent context. Non-fatal by design: on any failure it
-# degrades to a one-line self-serve hint so a session never blocks on the network.
-# Override the target with COGNI_COGNITION_URL (e.g. candidate-a / preview).
+# Session-start cognition loader — shared by the Claude Code (.claude/settings.json)
+# and Codex (.codex/config.toml) SessionStart hooks. Pulls THIS node's own
+# cognition bundle and prints it to stdout; both runtimes inject it into context.
+# Non-fatal by design: any failure degrades to a one-line self-serve hint.
+#
+# .env.cogni holds two accounts (see .env.cogni.example): the NODE account
+# (this node's own hub — the bearer used here) and the OPERATOR account
+# (cognidao.org — CI/CD only: flight, deploy, secrets; never used by this loader).
 set -u
 
-URL="${COGNI_COGNITION_URL:-https://cognidao.org/api/v1/cognition}"
+read_env_file_value() {
+  var_name="$1"
+  env_file="${2:-.env.cogni}"
+  [ -f "$env_file" ] || return 0
+  awk -F= -v key="$var_name" '
+    $1 == key {
+      value = substr($0, length(key) + 2)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^["'\'']|["'\'']$/, "", value)
+      print value
+      exit
+    }
+  ' "$env_file" 2>/dev/null
+}
 
-# Cognition now requires a principal (KNOWLEDGE_READ_REQUIRES_PRINCIPAL). Pass the
-# agent key as a bearer when present; without it the request 401s and we fall
-# through to the self-serve hint below. (Arrays avoided for bash 3.2 portability.)
-if [ -n "${COGNI_API_KEY:-}" ]; then
-  bundle="$(curl -fsS --max-time 6 -H "Authorization: Bearer ${COGNI_API_KEY}" "$URL" 2>/dev/null | jq -r '.markdown // empty' 2>/dev/null)"
+# Node hub URL from repo-spec intent.name (root .cogni/repo-spec.yaml).
+node_slug=""
+if [ -f .cogni/repo-spec.yaml ]; then
+  node_slug="$(awk '
+    /^intent:/ { in_intent = 1; next }
+    in_intent && /^[^[:space:]]/ { in_intent = 0 }
+    in_intent && /^[[:space:]]+name:/ {
+      sub(/^[[:space:]]+name:[[:space:]]*/, ""); gsub(/["'"'"']/, ""); print; exit
+    }
+  ' .cogni/repo-spec.yaml 2>/dev/null)"
+fi
+
+# operator is the apex (cognidao.org); its monorepo root repo-spec carries the
+# slug `cogni-template`, the same apex node. Every other slug is its own hub.
+case "$node_slug" in
+  operator | cogni-template | "") URL="https://cognidao.org/api/v1/cognition" ;;
+  *) URL="https://${node_slug}.cognidao.org/api/v1/cognition" ;;
+esac
+
+# Bearer = this node's NODE account key (environment first, then ./.env.cogni).
+AGENT_KEY="${COGNI_NODE_API_KEY:-$(read_env_file_value COGNI_NODE_API_KEY)}"
+
+if [ -n "$AGENT_KEY" ]; then
+  bundle="$(curl -fsS --max-time 6 -H "Authorization: Bearer ${AGENT_KEY}" "$URL" 2>/dev/null | jq -r '.markdown // empty' 2>/dev/null)"
 else
   bundle="$(curl -fsS --max-time 6 "$URL" 2>/dev/null | jq -r '.markdown // empty' 2>/dev/null)"
 fi
@@ -21,5 +55,5 @@ fi
 if [ -n "$bundle" ]; then
   printf '%s\n' "$bundle"
 else
-  printf '(cognition substrate unreachable at %s — self-serve: curl -fsS "%s" | jq -r .markdown)\n' "$URL" "$URL"
+  printf '(cognition substrate unreachable at %s — self-serve: register a NODE agent via /api/v1/agent/register, save COGNI_NODE_API_KEY in .env.cogni, then retry)\n' "$URL"
 fi
