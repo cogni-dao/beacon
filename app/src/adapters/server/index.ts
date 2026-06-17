@@ -68,6 +68,11 @@ export {
   DrizzleThreadPersistenceAdapter,
   MAX_THREAD_MESSAGES,
 } from "./ai/thread-persistence.adapter";
+// Social broadcast adapter (X API v2) — env-gated off; growth-loop v0
+export {
+  XSocialAdapter,
+  type XSocialConfig,
+} from "./social/x.adapter";
 export { DrizzleAiTelemetryAdapter } from "./ai-telemetry/drizzle.adapter";
 export {
   type CreateTraceWithIOParams,

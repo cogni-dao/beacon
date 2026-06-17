@@ -7,6 +7,16 @@
 > `provision-env`, or touch Argo. See `docs/spec/node-ci-cd-contract.md` in the
 > operator monorepo for the full two-views model.
 
+## Mission
+
+**beacon is Cogni's growth-engine node.** It runs a compounding growth loop — not a flat
+funnel: **PLAN → IDEATE → PRODUCE → BROADCAST → MEASURE → ATTRIBUTE → LEARN**. Each turn of the
+loop files a campaign hypothesis, produces and broadcasts per-platform content (Twitter +
+Moltbook, text-only in v0), measures real engagement, scores it with an independent KPI, and
+distills the winners into durable brand-voice knowledge that seeds the next plan. The output
+(validated learnings + grown audience) reinvests as input — the loop compounds. Work in this
+repo should advance that loop. See [`docs/spec/beacon-growth-loop-v0.md`](docs/spec/beacon-growth-loop-v0.md).
+
 ## Your cognition is delivered at session start
 
 A SessionStart hook ([`.claude/settings.json`](.claude/settings.json) for Claude Code,

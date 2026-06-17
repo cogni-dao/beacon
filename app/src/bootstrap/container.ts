@@ -14,10 +14,12 @@
 
 import type { ToolSourcePort } from "@cogni/ai-core";
 import type {
+  BroadcastCapability,
   EdoCapability,
   KnowledgeCapability,
   MetricsCapability,
   RepoCapability,
+  SocialXCapability,
   WebSearchCapability,
 } from "@cogni/ai-tools";
 import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
@@ -33,6 +35,7 @@ import {
   createEdoCapability,
   createKnowledgeCapability,
   defaultCanMergeKnowledge,
+  type EdoResolverPort,
   type KnowledgeStorePort,
   shapeGate,
 } from "@cogni/knowledge-store";
@@ -122,8 +125,10 @@ import {
   createMetricsCapability,
   derivePrometheusQueryUrl,
 } from "@/bootstrap/capabilities/metrics";
+import { createBroadcastCapability } from "@/bootstrap/capabilities/broadcast";
 import { createRepoCapability } from "@/bootstrap/capabilities/repo";
 import { createScheduleCapability } from "@/bootstrap/capabilities/schedule";
+import { createSocialXCapability } from "@/bootstrap/capabilities/social-x";
 import { stubVcsCapability } from "@/bootstrap/capabilities/vcs";
 import { createWebSearchCapability } from "@/bootstrap/capabilities/web-search";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
@@ -213,6 +218,10 @@ export interface Container {
   metricsCapability: MetricsCapability;
   /** Web search capability for AI tools - requires TAVILY_API_KEY to be configured */
   webSearchCapability: WebSearchCapability;
+  /** Social broadcast + metrics capability (growth-loop v0) — fakes in test, real X when X_API_BEARER_TOKEN set */
+  socialXCapability: SocialXCapability;
+  /** Broadcast capability — posts variants + persists `broadcasts` (NO post_metrics writes) */
+  broadcastCapability: BroadcastCapability;
   /** Repo capability for AI tools - requires COGNI_REPO_PATH */
   repoCapability: RepoCapability;
   /** Tool source with real implementations for AI tool execution */
@@ -223,6 +232,8 @@ export interface Container {
   knowledgeStorePort: KnowledgeStorePort | undefined;
   /** EDO hypothesis-loop capability for the langgraph tool bindings AND the bearer-auth REST routes under /api/v1/edo. Always present (stubs throw when DOLTGRES_URL is unset). */
   edoCapability: EdoCapability;
+  /** EDO resolver port — drives `pendingResolutions`/`resolveHypothesis` for the growth-loop bridge job. Undefined when DOLTGRES_URL is unset. */
+  edoResolver: EdoResolverPort | undefined;
   /** Thread persistence scoped to a user (RLS enforced) */
   threadPersistenceForUser(userId: UserId): ThreadPersistencePort;
   /** Governance status queries (system tenant scope) */
@@ -562,6 +573,15 @@ function createContainer(): Container {
   // WebSearchCapability for AI tools (requires TAVILY_API_KEY)
   const webSearchCapability = createWebSearchCapability(env);
 
+  // SocialXCapability (growth-loop v0): fakes in test, real X when X_API_BEARER_TOKEN set.
+  const socialXCapability = createSocialXCapability(env);
+  // BroadcastCapability: posts variants + persists `broadcasts` (service-role, no RLS in v0).
+  // NO_POST_METRICS_WRITE: this capability never touches `post_metrics`.
+  const broadcastCapability = createBroadcastCapability({
+    socialX: socialXCapability,
+    db: getServiceDb(),
+  });
+
   // RepoCapability for AI tools (requires COGNI_REPO_PATH)
   const repoCapability = createRepoCapability(env);
 
@@ -593,6 +613,7 @@ function createContainer(): Container {
   // KnowledgeCapability + EdoCapability for AI tools (require DOLTGRES_URL)
   let knowledgeCapability: KnowledgeCapability;
   let edoCapability: EdoCapability;
+  let edoResolver: EdoResolverPort | undefined;
   let knowledgeContributionService: ContributionService | undefined;
   let knowledgeStorePort: KnowledgeStorePort | undefined;
   if (env.DOLTGRES_URL) {
@@ -605,11 +626,12 @@ function createContainer(): Container {
     });
     knowledgeStorePort = knowledgePort;
     knowledgeCapability = createKnowledgeCapability(knowledgePort);
-    const edoResolver = new DoltgresEdoResolverAdapter({
+    const doltgresEdoResolver = new DoltgresEdoResolverAdapter({
       sql: doltClient,
       store: knowledgePort,
     });
-    edoCapability = createEdoCapability(knowledgePort, edoResolver);
+    edoResolver = doltgresEdoResolver;
+    edoCapability = createEdoCapability(knowledgePort, doltgresEdoResolver);
     const contributionPort = new DoltgresKnowledgeContributionAdapter({
       sql: doltClient,
     });
@@ -669,11 +691,13 @@ function createContainer(): Container {
     };
     knowledgeContributionService = undefined;
     knowledgeStorePort = undefined;
+    edoResolver = undefined;
     log.warn("Knowledge store not configured (DOLTGRES_URL not set)");
   }
 
   // ToolSource with real implementations (per CAPABILITY_INJECTION)
   const toolBindings = createToolBindings({
+    broadcastCapability,
     knowledgeCapability,
     edoCapability,
     metricsCapability,
@@ -842,11 +866,14 @@ function createContainer(): Container {
     scheduleManager,
     metricsCapability,
     webSearchCapability,
+    socialXCapability,
+    broadcastCapability,
     repoCapability,
     toolSource,
     knowledgeContributionService,
     knowledgeStorePort,
     edoCapability,
+    edoResolver,
     threadPersistenceForUser: (userId: UserId) =>
       new DrizzleThreadPersistenceAdapter(db, userActor(userId)),
     governanceStatus: new DrizzleGovernanceStatusAdapter(

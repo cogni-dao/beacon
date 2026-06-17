@@ -27,14 +27,18 @@ import { CORE_TEST_ENV } from "../../_fixtures/env/base-env";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROVISION_SH = path.resolve(
   __dirname,
-  "../../../../../../infra/compose/runtime/postgres-init/provision.sh"
+  "../../../../infra/compose/runtime/postgres-init/provision.sh"
 );
 
-const APP_DB_USER = "app_user";
+// Per-node model: provision.sh computes app_<node>/service_<node> from the DB name
+// (cogni_<node>) and ignores APP_DB_USER. The harness connects as those same
+// computed roles to prove FORCE-RLS + per-node ownership on a live cluster.
+const APP_DB_NAME = "cogni_apptest";
+const NODE = APP_DB_NAME.replace(/^cogni_/, "");
+const APP_DB_USER = `app_${NODE}`;
 const APP_DB_PASSWORD = "app_user_pass";
-const APP_DB_SERVICE_USER = "app_service";
+const APP_DB_SERVICE_USER = `service_${NODE}`;
 const APP_DB_SERVICE_PASSWORD = "service_pass";
-const APP_DB_NAME = "app_test_db";
 
 export async function setup() {
   // Start Postgres with provision.sh copied into the container
@@ -91,8 +95,15 @@ export async function setup() {
     APP_ENV: "test",
   });
 
-  // Run migrations as app_user (DB owner, same as production)
-  execSync("pnpm -w db:migrate:direct", { stdio: "inherit" });
+  // Run migrations as app_user (DB owner, same as production).
+  // Use the programmatic migrator (run-migrations.diag) instead of drizzle-kit's
+  // `migrate` CLI: the CLI hides the underlying PostgresError behind a spinner
+  // ("Command failed"), so a failing statement is undiagnosable. The diag runner
+  // prints the full PG error (message/code/position/query) before re-throwing.
+  execSync(
+    `pnpm -w exec tsx ${path.resolve(__dirname, "run-migrations.diag.mts")}`,
+    { stdio: "inherit" }
+  );
 
   // ── Preflight: verify service role can connect (BYPASSRLS) ─────────────
   const serviceCheck = await c.exec([

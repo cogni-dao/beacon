@@ -13,6 +13,11 @@
 
 export type {
   AuthCapability,
+  BroadcastCapability,
+  BroadcastInput,
+  BroadcastResult,
+  BroadcastVariant,
+  BroadcastVariantResult,
   ChainDirection,
   ChainNodeEntry,
   CheckInfo,
@@ -38,6 +43,9 @@ export type {
   MetricsCapability,
   MetricTemplate,
   MetricWindow,
+  PostContentInput,
+  PostContentResult,
+  PostMetricSnapshot,
   PrSummary,
   RecordOutcomeParams,
   RecordOutcomeResult,
@@ -53,6 +61,8 @@ export type {
   ScheduleCreateParams,
   ScheduleInfo,
   ScheduleUpdateParams,
+  SocialChannel,
+  SocialXCapability,
   TemplateQueryParams,
   ToolCapabilities,
   VcsCapability,
@@ -69,12 +79,22 @@ export type {
 } from "./capabilities";
 // Capabilities
 export {
+  BroadcastInputSchema,
+  BroadcastResultSchema,
+  BroadcastVariantResultSchema,
+  BroadcastVariantSchema,
   CONFIDENCE,
   createFixedClock,
   makeRepoCitation,
+  PostContentInputSchema,
+  PostContentResultSchema,
+  PostMetricSnapshotSchema,
   REPO_CITATION_REGEX,
+  SOCIAL_CHANNELS,
   stubAuthCapability,
   systemClock,
+  X_API_VERSION,
+  X_MAX_TEXT_LENGTH,
 } from "./capabilities";
 // Tool catalog
 export {
@@ -97,6 +117,19 @@ export {
   toToolSpecs,
 } from "./schema";
 // Tools
+export {
+  BROADCAST_POST_NAME,
+  broadcastPostBoundTool,
+  broadcastPostContract,
+  broadcastPostStubImplementation,
+  type BroadcastPostDeps,
+  type BroadcastPostInput,
+  BroadcastPostInputSchema,
+  type BroadcastPostOutput,
+  BroadcastPostOutputSchema,
+  type BroadcastPostRedacted,
+  createBroadcastPostImplementation,
+} from "./tools/broadcast-post";
 export {
   createEdoDecideImplementation,
   EDO_DECIDE_NAME,
