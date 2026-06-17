@@ -3,49 +3,33 @@
 
 /**
  * Module: `@app/(app)/growth/[campaignId]/view`
- * Purpose: Read-only campaign detail — the brief/goal, the independent KPI vs
- *   target, and the posts (broadcasts) + their latest cached metrics that the
- *   KPI scored. Makes the loop's evidence chain visible to a human.
+ * Purpose: Read-only campaign detail — the brief/goal, a minimal control panel
+ *   (status + read-only pause/resume + cadence), and the classified content queue
+ *   GROUPED BY funnel layer (TOFU/MOFU/BOFU), each section showing its independent
+ *   per-layer KPI and the posts + latest cached metrics that scored it.
  * Scope: Pure presentation. Receives a `CampaignDetail`; no fetching.
- * Invariants: READ_ONLY; renders the facade-computed KPI — never recomputes.
+ * Invariants:
+ *   - READ_ONLY: renders the facade-computed KPI — never recomputes.
+ *   - PER_LAYER_KPI: each funnel layer is scored independently (never one blended bar).
+ *   - CONTROL_READONLY: pause/resume + cadence are display-only in this PR — real
+ *     schedule control (Temporal status-gated activation) is the heartbeat PR.
  * Side-effects: none
- * Links: ./page.tsx, ../_components/CampaignStatus.tsx
+ * Links: ./page.tsx, ../_components/CampaignStatus.tsx, ../_components/FunnelLayerSection.tsx
  * @internal
  */
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pause } from "lucide-react";
 import Link from "next/link";
 import type { ReactElement } from "react";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Progress,
-} from "@/components";
+import { Card, CardContent } from "@/components";
 import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
+import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
 
-import { CampaignStatusBadge } from "../_components/CampaignStatus";
+import { campaignStatus, CampaignStatusBadge } from "../_components/CampaignStatus";
+import { FunnelLayerSection } from "../_components/FunnelLayerSection";
 
-function basisLabel(basis: CampaignDetail["basis"]): string {
-  switch (basis) {
-    case "impressions":
-      return "engagement rate";
-    case "followers":
-      return "engagement / follower";
-    default:
-      return "no metrics yet";
-  }
-}
-
-function Stat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}): ReactElement {
+function Stat({ label, value }: { label: string; value: string }): ReactElement {
   return (
     <div>
       <dt className="text-muted-foreground text-xs">{label}</dt>
@@ -59,11 +43,9 @@ export function CampaignDetailView({
 }: {
   campaign: CampaignDetail;
 }): ReactElement {
-  const targetPct =
-    campaign.targetRate !== null
-      ? `${(campaign.targetRate * 100).toFixed(2)}%`
-      : "—";
-  const observedPct = `${(campaign.observedRate * 100).toFixed(2)}%`;
+  const status = campaignStatus(campaign);
+  // Cadence is a static display in v0 — the real schedule lands in the heartbeat PR.
+  const cadenceLabel = status.kind === "draft" ? "paused (draft)" : "1/day";
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-5 md:p-6">
@@ -85,93 +67,59 @@ export function CampaignDetailView({
         <CampaignStatusBadge row={campaign} />
       </div>
 
-      {/* KPI */}
+      {/* Control panel — minimal + read-only in this PR.
+          Real schedule control (pause/resume via Temporal status-gated
+          activation) and trigger toggles (comment/DM/repost) are roadmap. */}
       <Card>
         <CardContent className="flex flex-col gap-3 pt-6">
-          <div className="flex items-baseline justify-between">
-            <span className="font-semibold text-3xl tabular-nums tracking-tight">
-              {campaign.score0to100}
-              <span className="text-lg text-muted-foreground">/100</span>
-            </span>
-            <span className="text-muted-foreground text-sm">
-              {observedPct} vs {targetPct} target · {basisLabel(campaign.basis)}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <dl className="flex flex-wrap gap-6">
+              <Stat label="Status" value={status.label} />
+              <Stat label="Cadence" value={cadenceLabel} />
+              <Stat label="Ingest" value="every 30m" />
+            </dl>
+            <button
+              type="button"
+              disabled
+              aria-label="Pause campaign (coming soon)"
+              title="Schedule control lands in the heartbeat PR"
+              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-muted-foreground text-xs opacity-60"
+            >
+              <Pause className="size-3.5" aria-hidden="true" />
+              {status.kind === "draft" ? "Resume" : "Pause"}
+            </button>
           </div>
-          <Progress
-            value={campaign.score0to100}
-            aria-label="KPI score vs target"
-          />
-          <dl className="grid grid-cols-2 gap-3 pt-1 sm:grid-cols-4">
-            <Stat
-              label="Confidence"
-              value={
-                campaign.confidencePct !== null
-                  ? `${campaign.confidencePct}%`
-                  : "—"
-              }
-            />
-            <Stat label="Posts" value={String(campaign.postedBroadcasts)} />
-            <Stat label="Snapshots" value={String(campaign.snapshotCount)} />
-            <Stat
-              label="Resolves"
-              value={
-                campaign.evaluateAt
-                  ? new Date(campaign.evaluateAt).toLocaleDateString()
-                  : "—"
-              }
-            />
-          </dl>
+          {/* Trigger toggles (comments / DMs / reposts → signal-started workflows)
+              are roadmap — see design §3. */}
+          <p className="text-muted-foreground text-xs">
+            Triggers: comments, DMs, reposts &mdash; roadmap.
+          </p>
         </CardContent>
       </Card>
 
       {/* Brief */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Brief</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
+          <h2 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Brief
+          </h2>
           <p className="whitespace-pre-wrap text-muted-foreground text-sm leading-relaxed">
             {campaign.brief}
           </p>
         </CardContent>
       </Card>
 
-      {/* Posts */}
-      <div className="flex flex-col gap-2">
-        <h2 className="font-medium text-sm">Posts ({campaign.posts.length})</h2>
-        {campaign.posts.length === 0 ? (
-          <div className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
-            No posts yet — this campaign hasn&rsquo;t generated content.
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {campaign.posts.map((post) => (
-              <li key={post.id}>
-                <Card>
-                  <CardContent className="flex flex-col gap-2 pt-4">
-                    <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
-                      <span className="font-medium text-foreground uppercase">
-                        {post.channel}
-                      </span>
-                      <span>{post.status}</span>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {post.text}
-                    </p>
-                    <div className="flex flex-wrap gap-4 border-border/60 border-t pt-2 text-muted-foreground text-xs tabular-nums">
-                      <span>
-                        {post.impressions ?? "—"} impressions
-                      </span>
-                      <span>{post.likes} likes</span>
-                      <span>{post.reposts} reposts</span>
-                      <span>{post.replies} replies</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Queue grouped by funnel layer, each with its own independent KPI. */}
+      <div className="flex flex-col gap-4">
+        {FUNNEL_LAYERS.map((layer) => (
+          <FunnelLayerSection
+            key={layer}
+            layer={layer}
+            kpi={campaign.layers[layer]}
+            targetRate={campaign.targetRate}
+            posts={campaign.posts.filter((p) => p.funnelLayer === layer)}
+          />
+        ))}
       </div>
     </div>
   );

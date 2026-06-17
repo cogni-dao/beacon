@@ -10,9 +10,11 @@
  *   - NO_POST_METRICS_WRITE: the broadcast write surface persists `broadcasts`
  *     ONLY. It never writes `post_metrics` (WORKER≠VERIFIER — ingest is sole writer).
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants of one core idea share `ideaKey`.
+ *   - FUNNEL_CLASSIFIED: each variant carries its `funnelLayer` + `topic` so the
+ *     persisted queue is a classified funnel; `kind` is text-only in v0.
  *   - STRUCTURED_RESULTS: Zod-validated input/output.
  * Side-effects: none (interface + schemas only)
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§3
+ * Links: docs/spec/beacon-growth-loop-v0.md §1/§3, .context/specs/pr4-funnel.md
  * @public
  */
 
@@ -20,13 +22,31 @@ import { z } from "zod";
 
 import { SOCIAL_CHANNELS } from "./social-x";
 
+/** Funnel layers a campaign queue spans: awareness → consideration → action. */
+export const FUNNEL_LAYERS = ["tofu", "mofu", "bofu"] as const;
+
+/** Content kinds — text-only in v0; thread/image/video reserved (artifacts roadmap). */
+export const BROADCAST_KINDS = ["text", "thread", "image", "video"] as const;
+
 /**
  * One per-channel variant to broadcast. `channel` selects the backend;
- * `text` is already platform-adapted by the content graph.
+ * `text` is already platform-adapted by the content graph. `funnelLayer` + `topic`
+ * classify the variant within the campaign funnel (defaults keep older callers valid).
  */
 export const BroadcastVariantSchema = z.object({
   channel: z.enum(SOCIAL_CHANNELS).describe("Target channel for this variant"),
   text: z.string().min(1).describe("Platform-adapted post body"),
+  funnelLayer: z
+    .enum(FUNNEL_LAYERS)
+    .describe("Funnel position: tofu (awareness) → mofu → bofu (action)"),
+  topic: z
+    .string()
+    .max(120)
+    .nullable()
+    .describe("Subject this variant angles at (e.g. 'ownership')"),
+  kind: z
+    .enum(BROADCAST_KINDS)
+    .describe("Content kind — text-only in v0; others reserved"),
 });
 export type BroadcastVariant = z.infer<typeof BroadcastVariantSchema>;
 
