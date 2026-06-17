@@ -80,6 +80,13 @@ export type {
   ResolvedConnection,
 } from "./connection-broker.port";
 export type {
+  PlatformAccount,
+  PlatformConnectorPort,
+  PlatformCredentialBlob,
+  PlatformGating,
+  PlatformRefreshResult,
+} from "./platform-connector.port";
+export type {
   GovernanceRun,
   GovernanceStatusPort,
   UpcomingRun,

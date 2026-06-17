@@ -41,6 +41,16 @@ const CONNECTION_PROVIDERS = [
   "github",
   "google",
   "bluesky",
+  // Social platforms (see docs/spec/platform-connections.md)
+  "x",
+] as const;
+
+/** Connection health — legible without decrypting the credential blob. */
+const CONNECTION_STATUSES = [
+  "active",
+  "needs_reauth",
+  "expired",
+  "review_pending",
 ] as const;
 
 const CREDENTIAL_TYPES = [
@@ -70,6 +80,14 @@ export const connections = pgTable(
     encryptionKeyId: text("encryption_key_id").notNull(),
     /** OAuth scopes granted (empty array for non-OAuth types) */
     scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+    /** Non-secret platform account identity — for display + multi-account uniqueness. NULL for non-social providers. */
+    externalAccountId: text("external_account_id"),
+    /** Non-secret handle/username (e.g. "@acme") for UI display without decryption. */
+    externalHandle: text("external_handle"),
+    /** Non-secret human label (e.g. "Acme on X"). */
+    displayLabel: text("display_label"),
+    /** Connection health, legible without decrypting credentials. */
+    status: text("status").notNull().default("active"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -96,9 +114,23 @@ export const connections = pgTable(
         sql`, `
       )})`
     ),
+    check(
+      "connections_status_check",
+      sql`${table.status} IN (${sql.join(
+        CONNECTION_STATUSES.map((s) => sql`${s}`),
+        sql`, `
+      )})`
+    ),
     index("connections_billing_account_id_idx").on(table.billingAccountId),
-    uniqueIndex("connections_billing_account_provider_active_idx")
-      .on(table.billingAccountId, table.provider)
+    // One active connection per (account, provider, external account). COALESCE
+    // collapses NULL external_account_id to '' so non-social providers (openai-*)
+    // keep "one active per provider" while social providers allow multiple handles.
+    uniqueIndex("connections_billing_provider_account_active_idx")
+      .on(
+        table.billingAccountId,
+        table.provider,
+        sql`COALESCE(${table.externalAccountId}, '')`
+      )
       .where(sql`${table.revokedAt} IS NULL`),
   ]
 ).enableRLS();

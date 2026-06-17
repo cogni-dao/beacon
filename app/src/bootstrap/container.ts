@@ -99,6 +99,7 @@ import {
   ViemTreasuryAdapter,
 } from "@/adapters/server";
 import { ServiceDrizzleAccountService } from "@/adapters/server/accounts/drizzle.adapter";
+import { getPlatformConnector } from "@/adapters/server/connections/registry";
 import {
   AggregatingModelCatalog,
   ProviderResolver,
@@ -810,11 +811,28 @@ function createContainer(): Container {
       );
       return undefined;
     }
+    // Provider-specific token refresh — wired from the platform connector registry.
+    // Adding a platform connector with a refresh() makes its tokens auto-refresh here.
+    const refreshFns: Record<
+      string,
+      (refreshToken: string) => Promise<{
+        access: string;
+        refresh: string;
+        expires: number;
+        accountId?: string;
+      }>
+    > = {};
+    const xConnector = getPlatformConnector("x");
+    if (xConnector) {
+      refreshFns.x = (token: string) => xConnector.refresh(token);
+    }
+
     return new DrizzleConnectionBrokerAdapter({
       db: db as unknown as import("drizzle-orm/node-postgres").NodePgDatabase,
       encryptionKey: keyBuf,
       encryptionKeyId: "v1",
       log,
+      refreshFns,
     });
   })();
 
@@ -979,3 +997,10 @@ export function resolveAppDb(): Database {
 export function resolveServiceDb(): Database {
   return getServiceDb();
 }
+
+/**
+ * Resolve a platform connector (X, …) by provider key, or null if unknown/unconfigured.
+ * Re-exported through bootstrap so app routes reach the adapter registry without
+ * importing `@/adapters/server` directly (app→adapters boundary).
+ */
+export { getPlatformConnector } from "@/adapters/server/connections/registry";

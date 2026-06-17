@@ -265,6 +265,11 @@ export const serverSchema = z.object({
   // Optional — BYO-AI features disabled when not set.
   CONNECTIONS_ENCRYPTION_KEY: optionalString,
 
+  // Platform connections — X (Twitter) OAuth 2.0 (PKCE confidential client).
+  // Optional — X linking disabled when unset. See docs/spec/platform-connections.md.
+  X_OAUTH_CLIENT_ID: optionalString,
+  X_OAUTH_CLIENT_SECRET: optionalString,
+
   // PostHog product analytics — required
   // See docs/guides/posthog-setup.md for setup
   // PostHog Cloud free tier: 1M events/month at https://us.i.posthog.com
