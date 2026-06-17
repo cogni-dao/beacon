@@ -4,9 +4,9 @@ type: guide
 title: Add a Node Secret
 status: draft
 trust: draft
-summary: Node-repo half of adding a node-specific secret without touching operator deploy plumbing.
-read_when: Adding a credential or API key that this node's app code consumes.
-owner: derekg1729
+summary: How a node's secrets get set — who does what, and why no human edits files or touches the cluster.
+read_when: Adding a credential or API key this node's app consumes (e.g. X OAuth app creds).
+owner: cogni-dev
 created: 2026-06-05
 verified: null
 tags: [secrets, nodes]
@@ -14,84 +14,82 @@ tags: [secrets, nodes]
 
 # Add a Node Secret
 
-A node developer owns the secret declaration and typed consumption. The value is written through the operator — a node-owner can now self-serve it with only an API key (no kubectl, no OpenBao token).
+Three roles. **Humans never edit files and never touch the cluster.** A human, at
+most, pastes a secret *value* once — securely, through the operator.
 
-## Secret or Plain Config
+| Who | Does | How |
+| --- | --- | --- |
+| **Node-dev (agent)** | declares the secret's *shape* | one PR editing `.cogni/secrets-catalog.yaml` |
+| **Node owner (human)** | approves access + provides a *value* | one click + one secure paste, through the operator |
+| **Operator (CI/CD)** | writes the value to OpenBao with its **own** identity, syncs to the pod | automatic |
 
-Use this guide only for credentials: API keys, tokens, webhook secrets, private signing material, and passwords.
+No `kubectl`, no OpenBao token, no `pnpm secrets:set`, no editing k8s Secrets, no
+secret values in files / PRs / chat, and **never anyone else's credentials.**
 
-Plain non-sensitive config belongs in typed app config and the operator-owned deployment overlay, not in a secrets catalog.
+## 1. Declare the shape — node-dev, one PR
 
-## 1. Declare the Shape
-
-If `.cogni/secrets-catalog.yaml` does not exist, create it (a commented stub ships in this template). Add one entry for the node-owned key:
+Edit `.cogni/secrets-catalog.yaml`. Declare *shape only*, never a value:
 
 ```yaml
-- name: MY_NEW_KEY
-  tier: A2
-  appliesTo: web
-  shared: false
-  source: human
-  required: true
-  category: "Vendor Name"
-  description: One line describing what consumes this key.
-  steps:
-    - "Create the key in the vendor dashboard."
+secrets:
+  - name: CONNECTIONS_ENCRYPTION_KEY
+    tier: A2
+    appliesTo: web
+    source: agent              # auto-generated — nobody ever types it
+    required: true
+    generate: { kind: hex, bytes: 32 }
+  - name: X_OAUTH_CLIENT_ID
+    tier: A2
+    appliesTo: web
+    source: human              # a human provides the value (step 3)
+    required: false            # false → deploy succeeds before the value exists
+  - name: X_OAUTH_CLIENT_SECRET
+    tier: A2
+    appliesTo: web
+    source: human
+    required: false
 ```
 
-Use `source: agent` only for values that automation can generate safely. Use `source: human` for vendor credentials.
+Consume them through the typed env boundary (`process.env.X_OAUTH_CLIENT_ID`, etc.).
+`source: agent` keys are generated for you — there is **no** value step for them.
 
-## 2. Consume It in Code
+## 2. Get permission — once
 
-Read `process.env.MY_NEW_KEY` through the node's typed env boundary. Required secrets must fail fast at startup if missing. Do not silently continue with `undefined`.
-
-Do not log secret values, request headers, tokens, cookies, or full vendor payloads.
-
-## 3. Set the Value
-
-The value never enters git, PR comments, chat, or committed YAML. Two paths write it to OpenBao:
-
-**Self-serve via the operator (you, the node owner — recommended).** Granted OpenFGA
-`secrets_manager` on this node, you set the value through the operator with only your
-**API key** — no kubeconfig, no OpenBao writer token:
-
-```
-POST https://<operator-host>/api/v1/nodes/<node-id>/secrets
-Authorization: Bearer <your-api-key>
-content-type: application/json
-
-{ "key": "MY_NEW_KEY", "value": "…", "op": "set" }     # op:"rotate" to rotate
-
-→ 200 { "written": true, "version": <n>, "path": "cogni/<env>/<node>/MY_NEW_KEY" }
-```
-
-The operator authorizes the write per-node (`can_manage_secrets`), confirms `MY_NEW_KEY`
-is declared in this node's catalog (step 1), and writes it with its **own** in-cluster
-OpenBao identity — your key never carries cluster custody. ESO + Stakater Reloader then
-carry the value into the running pod. Confirm with the `version` in the response (no
-`kubectl` needed).
-
-**Ops / deploy-env owner (fallback).** Whoever holds the env's OpenBao writer role can
-also write it directly:
+Your registered agent requests the `secrets_manager` role on this node:
 
 ```bash
-pnpm secrets:set <env> <node-slug> MY_NEW_KEY
+curl -fsS -X POST "https://<operator-host>/api/v1/nodes/<node-id>/access-requests" \
+  -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" \
+  -H "content-type: application/json" -d '{"role":"secrets_manager"}'
 ```
 
-Either way, the operator side owns ExternalSecret wiring, pod `envFrom`, DB/DNS
-provisioning, and rollout. A node PR should not edit those surfaces.
+The node owner approves it once on the node page. `$YOUR_OPERATOR_API_KEY` is *your
+own* operator-registered key — never a shared or admin one.
 
-## What Not to Touch
+## 3. Set a `source: human` value — secure paste, node owner
 
-- Do not commit a Kubernetes `Secret`.
-- Do not add a per-key `valueFrom` line to a pod spec.
-- Do not create a per-key ExternalSecret YAML.
-- Do not paste the value into a PR, issue, chat, or shell history.
-- Do not edit operator `infra/catalog`, Argo, or environment overlays from this node repo.
+The owner provides the value through the operator. This is the **only** time a human
+touches a secret, and it never lands in a file, shell history, or chat:
 
-## PR Proof
+```bash
+read -rsp "X_OAUTH_CLIENT_SECRET: " V; echo
+printf '%s' "$V" | jq -Rs '{key:"X_OAUTH_CLIENT_SECRET",value:.,op:"set"}' |
+  curl -fsS -X POST "https://<operator-host>/api/v1/nodes/<node-id>/secrets" \
+    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" \
+    -H "content-type: application/json" --data-binary @-
+unset V
+```
 
-- `.cogni/secrets-catalog.yaml` declares the key shape.
-- The typed env boundary validates the key if code requires it.
-- Tests or startup checks prove missing required config fails loudly.
-- `pnpm check` passes.
+The operator checks your `can_manage_secrets` grant, then writes
+`cogni/<env>/<node>/X_OAUTH_CLIENT_SECRET` **with its own in-cluster identity** — your
+key only proves you're allowed; it carries no cluster custody. ESO + Reloader roll the
+value into the pod. Confirm via the `version` in the response — no `kubectl`.
+
+> Get `503 secrets_plane_config_missing`? The operator hasn't enabled the self-serve
+> writer on this env yet (a one-time per-env operator step). Ping the operator team;
+> do **not** fall back to cluster tools.
+
+## What the operator owns (not you)
+
+ExternalSecret wiring, pod `envFrom`, DB/DNS provisioning, rollout, and the OpenBao
+writer identity. A node PR never edits those.
