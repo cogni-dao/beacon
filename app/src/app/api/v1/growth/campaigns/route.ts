@@ -7,12 +7,14 @@
  *   `POST` files a falsifiable campaign hypothesis in the EDO substrate
  *   (domain `beacon-campaigns`, strategy `metric:engagement:<x>`) — the KPI resolver
  *   reads it — AND inserts the account-scoped `campaigns` RECORD (the owned, CRUD-able
- *   row with a real lifecycle `status`), then provisions a Temporal content schedule
- *   (`langgraph:content`) whose brief recalls `beacon-brand-voice`. `GET` lists the
+ *   row with a real lifecycle `status`), self-healing the beacon-growth knowledge
+ *   domains first so a fresh env doesn't 500. `GET` lists the
  *   `campaigns` rows (RLS-scoped to the user's account, NOT shared Doltgres) joined
  *   with their CURRENT engagement KPI (computed independently from `post_metrics`).
+ *   (v0 campaign = a record; content generation + scheduling is a separate pipeline —
+ *   no Temporal in the campaign path. See docs/spec/beacon-growth-loop-v0.md.)
  * Scope: HTTP boundary + Zod validation + orchestration. Files the EDO hypothesis
- *   (resolver dependency) + writes the owned record + provisions the schedule. The
+ *   (resolver dependency) + writes the owned record. The
  *   KPI is the same pure `computeEngagementKpi` the resolver bridge uses.
  * Invariants:
  *   - AUTH_VIA_SESSION: session-cookie required (humans trusted in v0, mirrors
@@ -25,8 +27,7 @@
  *   - RLS_SCOPED_READS: the LIST reads `campaigns` inside `withTenantScope` (the GUC
  *     filters rows to the user's account) — never service-role.
  *   - KPI_NEVER_SELF_CITED: the listed KPI derives solely from `post_metrics`.
- * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write,
- *   schedule create via Temporal).
+ * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write).
  * Links: docs/spec/beacon-growth-loop-v0.md §1/§6, .context/specs/pr3-verifier.md
  * @public
  */

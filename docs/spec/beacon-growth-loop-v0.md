@@ -42,6 +42,7 @@ component lane.
 3. **`posts`** *(rename of `broadcasts`)* `(id, account_id, campaign_id, funnel_layer, topic, angle, channel['moltbook'|'x'], text, score, revision, status['generated'|'in_review'|'approved'|'posted'|'rejected'|'failed'], external_post_id, posted_at, created_at)` — **THE QUEUE.** `status` = the lane; `score` = ranking signal; `revision` tracks refine passes (generation is iterative, never one-off).
 4. **`post_metrics`** append-only `(id, account_id, post_id, captured_at, impressions, likes, reposts, replies, followers_at_capture)` — cached engagement; **written only by the analyze/ingest path.**
 5. **`channel_accounts`** `(id, account_id, channel, handle, credential_ref, enabled, created_at)`.
+6. **`post_decisions`** *(propensity log — ships with the first POST build)* `(id, account_id, campaign_id, post_id, decided_at, action['ranked'|'approved'|'rejected'|'posted'], score, rank, reason, model_ref)` — **why** each post was chosen/ranked/published, append-only. MUST land with POST: this propensity signal is **uncapturable retroactively** and is the training data for future bandit / learned ranking. (Review correction.)
 
 ## 3. AI workflows & how they're scheduled
 Workflows = **LangGraph graphs** (the thinking), run as **jobs**:
@@ -56,8 +57,11 @@ Workflows = **LangGraph graphs** (the thinking), run as **jobs**:
 - **refine/rank** — iterate (critique → revise, multi-pass; bumps `posts.revision`),
   score, promote best → `approved`, prune → `rejected`. **Generation is never a
   one-off — it is generate→refine, continuously topping up funnel coverage.**
-- **analyze** — cached metrics → KPI per funnel-layer + channel → re-rank + distill
-  *generic* learnings into the Dolt playbook.
+- **analyze** — cached metrics → KPI **per (funnel-layer, channel), never blended** →
+  re-rank + distill *generic* learnings into the Dolt playbook. A single global
+  engagement number is wrong for a funnel (TOFU reach ≠ MOFU engagement ≠ BOFU
+  conversion); the existing Dolt-hypothesis resolver computes one blended number and
+  **must be replaced** by per-(layer,channel) KPI read from Postgres. (Review correction.)
 
 **Autonomy is the core, not on-demand.** A campaign's `autonomy` field sets how far
 it self-runs:
@@ -129,6 +133,18 @@ Temporal-native heartbeat, RLS-Doltgres.
    (coverage per funnel layer), operator-tunable / agent-proposed. There is no
    magic N; the funnel plan decides how much to draft.
 
+### Folded from the design review (APPROVE WITH CHANGES)
+3. ✅ **Per-layer KPI** (not a global blended number) — §2.4/§3 analyze.
+4. ✅ **`post_decisions` propensity log ships with the first POST build** — §2.6.
+5. ✅ **Autonomous next-content *planning* is sequenced LAST** — after the loop is
+   proven and evergreen-recycle works. No incumbent (Mautic/Listmonk/Mixpost/
+   Typefully) ships autonomous planning; we don't make it the early core. The
+   `autonomous` mode still exists for the *known* stages; what's deferred is the AI
+   *deciding what to make next* unsupervised.
+6. ✅ **OSS-first** — borrow, don't reinvent: Listmonk (campaign/list schema +
+   per-message analytics), WhisperX + OpenShorts (vNext video pipeline), Postiz/
+   Mixpost (channels-as-config), n8n templates (workflow shapes). See §9.
+
 ## Build order (each its own small PR)
 1. ✅ campaign CRUD + domain self-heal, no Temporal (PR #17, reduced).
 2. **define**: extend `campaigns` with voice/core_topic/icp/objective/autonomy
@@ -138,7 +154,21 @@ Temporal-native heartbeat, RLS-Doltgres.
 4. **generate + refine**: N-draft generate grounded in voice+brief+research →
    iterate/rank → approve (agent; human gate when `approve_gate`). Lens shows lanes.
 5. **post**: k8s CronJob `/tick` → publish approved-only → Moltbook (proven in Loki).
-6. **analyze**: ingest + per-layer KPI → re-rank + Dolt playbook distill; **campaign
-   KPI source = Postgres, not Dolt (§8.1).**
-7. **autonomy**: `/tick` advances each `active` campaign through due stages per its
-   `autonomy` mode.
+   **Ships with `post_decisions`** (§2.6) — the propensity log, uncapturable later.
+6. **analyze**: ingest + **per-(layer,channel) KPI** → re-rank + Dolt playbook distill;
+   **campaign KPI source = Postgres, not Dolt (§8.1/§8.3); replace the blended resolver.**
+7. **evergreen-recycle**: re-surface proven winners (the simplest "what next" — borrow
+   from incumbents) before any autonomous planning.
+8. **autonomy (LAST)**: `/tick` self-advances `active` campaigns through the *known*
+   stages per `autonomy` mode; autonomous *planning of new content* comes only after
+   6–7 are proven (§8.5).
+
+## 9. Research & review (grounding)
+- `docs/research/marketing-platforms-landscape.md` — OSS/incumbent landscape (Listmonk,
+  Postiz/Mixpost, Typefully/Blotato, n8n, WhisperX/OpenShorts, Hormozi/Welsh frameworks)
+  + the four product answers (critical workflows, UI scaffolding, critical tables, vNext
+  video) + a 7-phase roadmap.
+- `docs/research/_knowledge/agentic-marketing-spine-validated.md` — the durable knowledge
+  atom (held node-owned; beacon's cognition hub was unreachable at write time).
+- **Design-review verdict:** APPROVE WITH CHANGES — spine is right; the three corrections
+  above (§8.3–8.5) are folded in.

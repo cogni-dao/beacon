@@ -3,10 +3,11 @@
 
 /**
  * Module: `@cogni/db-schema/beacon-growth`
- * Purpose: Operational substrate for beacon's growth loop v0 (Twitter + Moltbook, text-only).
- *   Four tables back the PLAN→PRODUCE→BROADCAST→MEASURE arc: the account-owned
+ * Purpose: Operational substrate for beacon's growth loop v0 (Moltbook-first).
+ *   Tables back the DEFINE→GENERATE→REFINE→POST→ANALYZE arc: the account-owned
  *   campaign RECORD (lifecycle status + targets + strategy fields), configured channel
- *   accounts, per-platform POST variants, and append-only cached engagement snapshots.
+ *   accounts, the `posts` queue (review-lane statuses), and append-only cached engagement
+ *   snapshots. The campaign's KPI is tenant data in Postgres (NOT a Doltgres hypothesis).
  * Scope: Drizzle `pgTable` definitions only. No queries, business logic, or I/O.
  * Invariants:
  *   - ACCOUNT_SCOPED: every row carries `account_id` (FK → `billing_accounts`), the
@@ -17,9 +18,9 @@
  *     connection (bypasses RLS) and write account-scoped rows from row one; user-facing
  *     `/growth` reads go through the RLS-respecting tenant-scope client.
  *   - CAMPAIGN_RECORD_OWNED: the `campaigns` row is the account-private campaign record
- *     (CRUD-able, lifecycle `status` draft→active→paused→done). The campaign HYPOTHESIS
- *     still lives in shared Doltgres (the KPI resolver reads it); `campaign_id` is the slug
- *     joining the two. status→Temporal schedule pause/resume is the HEARTBEAT PR.
+ *     (CRUD-able, lifecycle `status` draft→active→paused→done). `status` is a plain field
+ *     that gates the queue — no schedule coupling. Per the SSOT, tenant KPI lives in
+ *     Postgres; Doltgres holds only generic playbook knowledge (no tenant data).
  *   - CAMPAIGN_STRATEGY_FIELDS: `voice`/`core_topic`/`icp`/`objective`/`funnel_targets`
  *     carry the generation strategy (brand voice, topic, ideal-customer profile, objective,
  *     per-funnel-layer coverage targets) that later steps consume to drive generation volume
