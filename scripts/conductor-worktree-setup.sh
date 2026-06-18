@@ -101,7 +101,7 @@ link_from_auth_root() {
   fi
 
   if [[ -e "$name" && ! -L "$name" ]]; then
-    # A real (non-symlink) file is the source of truth — e.g. beacon ships its own
+    # A real (non-symlink) file is the source of truth — e.g. a node ships its own
     # node-scoped .env.cogni that must not be replaced by the auth-root copy.
     warn "$name is a real file, not a symlink; keeping it and skipping the auth-root link"
     return

@@ -17,6 +17,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,10 +26,29 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { CORE_TEST_ENV } from "../../_fixtures/env/base-env";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROVISION_SH = path.resolve(
-  __dirname,
-  "../../../../infra/compose/runtime/postgres-init/provision.sh"
-);
+
+// Resolve provision.sh layout-agnostically by walking up to the repo root that
+// holds it. The operator monorepo nests this test under nodes/<node>/app/...
+// (6 levels up); flat forks (node-at-root) nest under app/... (4 levels up).
+// A hard-coded hop count is correct for exactly one layout and silently ENOENTs
+// on the other — the gap that left the component lane false-green on every fork
+// (beacon #14). Walking up makes one byte-identical file work in both.
+const PROVISION_REL = "infra/compose/runtime/postgres-init/provision.sh";
+function resolveProvisionSh(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 12; i++) {
+    const candidate = path.join(dir, PROVISION_REL);
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `Could not locate ${PROVISION_REL} walking up from ${__dirname}. ` +
+      `Forks must ship it at the repo root (mirror node-template).`
+  );
+}
+const PROVISION_SH = resolveProvisionSh();
 
 // Per-node model: provision.sh computes app_<node>/service_<node> from the DB name
 // (cogni_<node>) and ignores APP_DB_USER. The harness connects as those same
@@ -95,15 +115,8 @@ export async function setup() {
     APP_ENV: "test",
   });
 
-  // Run migrations as app_user (DB owner, same as production).
-  // Use the programmatic migrator (run-migrations.diag) instead of drizzle-kit's
-  // `migrate` CLI: the CLI hides the underlying PostgresError behind a spinner
-  // ("Command failed"), so a failing statement is undiagnosable. The diag runner
-  // prints the full PG error (message/code/position/query) before re-throwing.
-  execSync(
-    `pnpm -w exec tsx ${path.resolve(__dirname, "run-migrations.diag.mts")}`,
-    { stdio: "inherit" }
-  );
+  // Run migrations as app_user (DB owner, same as production)
+  execSync("pnpm -w db:migrate:direct", { stdio: "inherit" });
 
   // ── Preflight: verify service role can connect (BYPASSRLS) ─────────────
   const serviceCheck = await c.exec([
@@ -143,8 +156,15 @@ export async function setup() {
   // ── Preflight: every table with a FK to users must have RLS enabled ──────
   // Catalog-derived (no hardcoded list): any public base table with a foreign
   // key referencing `users` is tenant-scoped and MUST have row-level security.
-  // Combined with the FORCE check above: FK->users => ENABLE => FORCE.
-  // deny-all (ENABLE+FORCE, no policy) is accepted for service-role-only tables.
+  // Combined with the FORCE check above: FK→users => ENABLE => FORCE. This is the
+  // floor that prevents the 0010_shallow_paibok class of leak (user-FK table
+  // shipped with no RLS at all) from recurring as new nodes/tables are added.
+  // deny-all (ENABLE+FORCE, no policy) is an accepted state for service-role-only
+  // tables — a policy is NOT required, only that RLS is enabled. FK-based (not a
+  // `%user_id` column match) so external identifiers like ingestion_receipts.
+  // platform_user_id are correctly ignored. Transitive tenancy (FK to
+  // billing_accounts, not users) is covered by hand-written policies, not here.
+  // See docs/spec/database-rls.md RLS_COVERAGE.
   const coverageCheck = await c.exec([
     "bash",
     "-c",
@@ -159,7 +179,8 @@ export async function setup() {
     throw new Error(
       `Preflight failed: tables with a FK to users lack RLS: ${uncoveredUserTables.join(", ")}. ` +
         `Every tenant-scoped table (a foreign key to users) must ENABLE + FORCE row-level security. ` +
-        `Add an owner-scoped policy, or ENABLE+FORCE with no policy (deny-all) if the table is service-role-only.`
+        `Add an owner-scoped policy, or ENABLE+FORCE with no policy (deny-all) if the table is ` +
+        `service-role-only. See docs/spec/database-rls.md (RLS_COVERAGE).`
     );
   }
 
