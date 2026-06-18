@@ -118,8 +118,17 @@ export async function GET(
     expiresAt = exchanged.expiresAt;
     account = await connector.fetchAccount(blob.access_token);
   } catch (err) {
+    // Surface the provider's actual OAuth error (twitter-api-v2 ApiResponseError
+    // carries .code = HTTP status and .data = { error, error_description }).
+    // These describe the rejection, never our tokens.
+    const e = err as { code?: number; data?: unknown; message?: string };
     log.error(
-      { provider, error: err instanceof Error ? err.message : String(err) },
+      {
+        provider,
+        error: err instanceof Error ? err.message : String(err),
+        providerStatus: e?.code,
+        providerError: e?.data,
+      },
       "Platform OAuth exchange failed"
     );
     return fail(req, provider, "exchange_failed");
