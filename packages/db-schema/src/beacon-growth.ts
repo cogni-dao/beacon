@@ -25,6 +25,12 @@
  *     carry the generation strategy (brand voice, topic, ideal-customer profile, objective,
  *     per-funnel-layer coverage targets) that later steps consume to drive generation volume
  *     (no hardcoded N). `autonomy` gates how far the loop runs unattended (CHECK-bounded).
+ *   - RESEARCH_IS_AN_ACTIVITY: `findings` holds the tenant OUTPUTS of the research
+ *     activity (insights/pain-points/angles for THIS campaign + collected exemplar/
+ *     reference url-or-handle in `source_ref`). Research itself is a workflow, not a
+ *     table. Generic reusable skills/playbooks ("how to research a niche") are NOT
+ *     findings — they live in Doltgres (the playbook), recalled by the activity.
+ *     Findings are tenant data; they are NEVER written to Doltgres.
  *   - POST_IDEA_KEY_GROUPS: `posts.idea_key` groups per-platform variants of one core idea.
  *   - POST_FUNNEL_CLASSIFIED: each post carries its funnel layer (tofu/mofu/bofu)
  *     + topic so the queue is a classified funnel, not one blended stream (CHECK-bounded here).
@@ -140,6 +146,58 @@ export const campaigns = pgTable(
 			table.campaignId,
 		),
 		index("campaigns_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// findings — tenant OUTPUTS of the research activity (insights/angles/exemplars)
+// ---------------------------------------------------------------------------
+
+/**
+ * findings — the account-scoped tenant outputs of the RESEARCH activity for one
+ * campaign. RESEARCH_IS_AN_ACTIVITY: research is a workflow (recall generic Dolt
+ * playbook → ground the campaign strategy → write findings), NOT a table; this is
+ * where its tenant-specific results land. `kind` classifies each row:
+ *   - `insight` / `pain_point` / `angle` — the campaign-specific research outputs
+ *     (what to say, the audience's pain, the hook) produced by the v0 workflow.
+ *   - `exemplar` / `reference` — collected successful other accounts/posts/styles;
+ *     `source_ref` carries the url/handle. (Web-search collection deferred in v0;
+ *     the kinds exist in the CHECK so the later pass needs no migration.)
+ * `campaign_id` joins to `campaigns.campaign_id` (slug, no FK — mirrors `posts`).
+ * RLS scopes every row to the owning billing account; findings are tenant data and
+ * are NEVER written to Doltgres.
+ */
+export const findings = pgTable(
+	"findings",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		/** Owning billing account (tenancy axis). RLS scopes rows by this FK. */
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		/** Campaign slug this finding grounds — joins `campaigns.campaign_id`. */
+		campaignId: text("campaign_id").notNull(),
+		/** What the row is: research output (insight/pain_point/angle) or a collected exemplar/reference. */
+		kind: text("kind").notNull(),
+		/** The finding text (the insight / pain point / angle / exemplar summary). */
+		content: text("content").notNull(),
+		/** Source url or handle for exemplar/reference rows; null for synthesized findings. */
+		sourceRef: text("source_ref"),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		check(
+			"findings_kind_check",
+			sql`${table.kind} IN ('insight', 'pain_point', 'angle', 'exemplar', 'reference')`,
+		),
+		index("findings_account_idx").on(table.accountId),
+		index("findings_campaign_idx").on(table.campaignId),
 		pgPolicy("tenant_isolation", {
 			using: accountOwnershipPredicate,
 			withCheck: accountOwnershipPredicate,
