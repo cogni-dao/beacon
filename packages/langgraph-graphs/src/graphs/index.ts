@@ -39,6 +39,22 @@ export { createPrReviewGraph, PR_REVIEW_GRAPH_NAME } from "./pr-review/graph";
 export { buildReviewUserMessage } from "./pr-review/prompts";
 // Research graph (deep research with web search)
 export { createResearchGraph, RESEARCH_GRAPH_NAME } from "./research/graph";
+// Growth-research workflow (beacon growth loop RESEARCH activity — pure, on-demand;
+// NOT a catalog graph: invoked directly by the research route, no Temporal).
+export {
+  RESEARCH_FINDING_KINDS,
+  RESEARCH_PROMPT,
+  type ResearchFindingKind,
+} from "./growth-research/prompts";
+export {
+  type CampaignStrategy,
+  type CompleteFn,
+  parseFindings,
+  type RecallPlaybookFn,
+  type ResearchFinding,
+  runGrowthResearch,
+  type RunGrowthResearchInput,
+} from "./growth-research/workflow";
 // Shared graph types
 export type {
   CreateReactAgentGraphOptions,

@@ -33,6 +33,19 @@ export {
   POET_GRAPH_NAME,
 } from "./graphs/index";
 
+// Re-export the growth-research workflow (beacon growth loop RESEARCH activity).
+export {
+  type CampaignStrategy,
+  type CompleteFn,
+  parseFindings,
+  type RecallPlaybookFn,
+  RESEARCH_FINDING_KINDS,
+  type ResearchFinding,
+  type ResearchFindingKind,
+  runGrowthResearch,
+  type RunGrowthResearchInput,
+} from "./graphs/index";
+
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 

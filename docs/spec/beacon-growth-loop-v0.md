@@ -38,7 +38,7 @@ All `account_id`-scoped, `pgPolicy("tenant_isolation")` + FORCE RLS, proven by t
 component lane.
 
 1. **`campaigns`** = the **strategy** (DEFINE) `(id, account_id, campaign_id, title, status['draft'|'active'|'paused'|'done'], voice, core_topic, icp, objective, target_rate, funnel_targets, autonomy['manual'|'approve_gate'|'autonomous'], evaluate_at, created_at)` — voice + core topic + ICP + objective drive everything downstream. `funnel_targets` = desired live coverage **per funnel layer** (the tunable that drives generation volume — no hardcoded N). `status` is a **plain Postgres field that gates the queue** (no schedule coupling). `autonomy` sets how far it self-runs (§3). *(Doltgres hypothesis removed — §8.1.)*
-2. **`research`** *(tenant artifacts)* `(id, account_id, campaign_id, kind['icp'|'use_case'|'pain_point'|'topic'|'competitor'], content, source_ref, created_at)` — the output of the RESEARCH workflows that grounds generation. Tenant-private (it's *this* campaign's research); the generic research *methods/skills* are recalled from Dolt.
+2. **`findings`** *(tenant outputs of the RESEARCH activity)* `(id, account_id, campaign_id, kind['insight'|'pain_point'|'angle'|'exemplar'|'reference'], content, source_ref, created_at)` — research is an **activity, not a table**. Its tenant outputs are **findings** (insights/pain-points/angles for *this* campaign) + collected **references/exemplars** (successful other accounts/posts/styles; `source_ref` = url/handle). Generic, reusable **skills/guides** ("how to research a niche", "effective hooks for SaaS") are NOT findings — they live in **Doltgres** (the playbook), recalled and contributed by the activity.
 3. **`posts`** *(rename of `broadcasts`)* `(id, account_id, campaign_id, funnel_layer, topic, angle, channel['moltbook'|'x'], text, score, revision, status['generated'|'in_review'|'approved'|'posted'|'rejected'|'failed'], external_post_id, posted_at, created_at)` — **THE QUEUE.** `status` = the lane; `score` = ranking signal; `revision` tracks refine passes (generation is iterative, never one-off).
 4. **`post_metrics`** append-only `(id, account_id, post_id, captured_at, impressions, likes, reposts, replies, followers_at_capture)` — cached engagement; **written only by the analyze/ingest path.**
 5. **`channel_accounts`** `(id, account_id, channel, handle, credential_ref, enabled, created_at)`.
@@ -46,9 +46,10 @@ component lane.
 
 ## 3. AI workflows & how they're scheduled
 Workflows = **LangGraph graphs** (the thinking), run as **jobs**:
-- **research** — spawn marketing research for the campaign's ICP/topic (use cases,
-  pain points, topic + competitor landscape) → `research` rows. Recalls generic
-  research *methods/skills* from Dolt.
+- **research** *(activity, not a table)* — given the campaign strategy (voice/topic/
+  ICP), recall generic **skills/guides** from Dolt, run the research (pain points,
+  angles, exemplar accounts/posts/styles), and write tenant **`findings`** that ground
+  generation. May distill new generic learnings back to the Dolt playbook.
 - **generate** — **populate the campaign funnel**: from voice + brief + research,
   lay out a content plan (topics × angles across **TOFU/MOFU/BOFU**) and draft posts
   to fill it. It is *not* N copies of one idea — it's coverage of the funnel. How
@@ -83,7 +84,8 @@ not how the loop normally advances.
 
 ## 4. The spine (generate ≠ post — the safety invariant)
 0. **define** → operator sets campaign voice + core topic + ICP + objective + autonomy.
-1. **research** → research workflows fill `research` rows that ground the campaign.
+1. **research** → the research activity writes tenant `findings` (insights + exemplar
+   references) that ground the campaign; recalls/contributes generic skills/guides in Dolt.
 2. **generate** → AI lays out the funnel plan (topics × angles × TOFU/MOFU/BOFU) and
    drafts `posts` (status `generated`) to fill it. Volume = funnel coverage, not a
    fixed count.
@@ -149,8 +151,8 @@ Temporal-native heartbeat, RLS-Doltgres.
 1. ✅ campaign CRUD + domain self-heal, no Temporal (PR #17, reduced).
 2. **define**: extend `campaigns` with voice/core_topic/icp/objective/autonomy
    (+ rename `broadcasts`→`posts`, status lanes, `score`, `revision`; one migration).
-3. **research**: `research` table + a 1-pass research workflow (ICP/topic/pain
-   points), grounding the campaign brief.
+3. **research**: `findings` table (tenant outputs) + a 1-pass research workflow
+   (recall Dolt skills → write findings/exemplars), grounding the campaign brief.
 4. **generate + refine**: N-draft generate grounded in voice+brief+research →
    iterate/rank → approve (agent; human gate when `approve_gate`). Lens shows lanes.
 5. **post**: k8s CronJob `/tick` → publish approved-only → Moltbook (proven in Loki).

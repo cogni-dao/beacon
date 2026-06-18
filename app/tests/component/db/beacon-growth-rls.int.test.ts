@@ -4,8 +4,9 @@
 /**
  * Module: `@tests/component/db/beacon-growth-rls.int.test`
  * Purpose: Prove the beacon-growth `tenant_isolation` RLS policies actually
- *   isolate the beacon-growth tables (`campaigns`, `posts`, `post_metrics`,
- *   `channel_accounts`) by `account_id` at the database layer — not green-on-empty.
+ *   isolate the beacon-growth tables (`campaigns`, `findings`, `posts`,
+ *   `post_metrics`, `channel_accounts`) by `account_id` at the database layer —
+ *   not green-on-empty.
  * Scope: Seeds TWO accounts with real rows, then asserts (a) an account sees its
  *   own rows, (b) it cannot see the other account's rows, (c) a forgotten
  *   `SET LOCAL` returns zero rows (fail-closed), and (d) a cross-account INSERT
@@ -32,6 +33,7 @@ import {
   billingAccounts,
   campaigns,
   channelAccounts,
+  findings,
   postMetrics,
   posts,
   users,
@@ -130,6 +132,14 @@ describe("beacon-growth RLS account isolation", () => {
         channel: "x",
         handle: `@account_${tag}`,
       });
+      // Findings are the tenant outputs of the RESEARCH activity (0034). Seed
+      // one per account to prove account-isolation + the kind CHECK.
+      await seedDb.insert(findings).values({
+        accountId: acct.accountId,
+        campaignId: `${CAMPAIGN_ID}-${tag}`,
+        kind: "insight",
+        content: `insight for account ${tag}`,
+      });
       await seedDb.insert(posts).values({
         id: acct.postId,
         accountId: acct.accountId,
@@ -164,6 +174,9 @@ describe("beacon-growth RLS account isolation", () => {
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(channelAccounts)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
+    await seedDb
+      .delete(findings)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(campaigns)
@@ -258,6 +271,26 @@ describe("beacon-growth RLS account isolation", () => {
     });
   });
 
+  describe("findings - account isolation", () => {
+    it("account A sees only its own findings", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(findings)
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.accountId).toBe(accountA.accountId);
+      }
+    });
+
+    it("account A cannot see account B's findings", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(findings)
+      );
+      const owners = rows.map((r) => r.accountId);
+      expect(owners).not.toContain(accountB.accountId);
+    });
+  });
+
   describe("missing tenant context - fail-safe deny", () => {
     it("no SET LOCAL on campaigns returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
@@ -283,6 +316,13 @@ describe("beacon-growth RLS account isolation", () => {
     it("no SET LOCAL on channel_accounts returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
         tx.select().from(channelAccounts)
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it("no SET LOCAL on findings returns zero rows", async () => {
+      const rows = await withoutTenantScope(db, (tx) =>
+        tx.select().from(findings)
       );
       expect(rows).toHaveLength(0);
     });
@@ -319,6 +359,25 @@ describe("beacon-growth RLS account isolation", () => {
             channel: "x",
             text: "cross-account write",
             status: "generated",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
+    it("cross-account finding INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(findings).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: CAMPAIGN_ID,
+            kind: "angle",
+            content: "cross-account finding",
           })
         );
       } catch (e) {

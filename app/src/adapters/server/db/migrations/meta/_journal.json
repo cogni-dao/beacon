@@ -239,6 +239,13 @@
       "when": 1781768400000,
       "tag": "0033_beacon_posts_define",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781814948872,
+      "tag": "0034_outgoing_black_cat",
+      "breakpoints": true
     }
   ]
 }
