@@ -20,7 +20,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { withTenantScope } from "@cogni/db-client";
 import { connections } from "@cogni/db-schema";
 import { type UserId, userActor } from "@cogni/ids";
-import { aeadEncrypt } from "@cogni/node-shared";
+import { aeadEncrypt, decodeAeadKey } from "@cogni/node-shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -144,7 +144,8 @@ export async function GET(
       connection_id: connectionId,
       provider,
     },
-    Buffer.from(encKeyHex, "hex")
+    // Accepts 64-hex (dev) or base64-of-32-bytes (substrate-minted).
+    decodeAeadKey(encKeyHex)
   );
 
   const db = resolveAppDb();
