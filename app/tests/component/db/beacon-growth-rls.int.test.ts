@@ -4,7 +4,7 @@
 /**
  * Module: `@tests/component/db/beacon-growth-rls.int.test`
  * Purpose: Prove the beacon-growth `tenant_isolation` RLS policies actually
- *   isolate the beacon-growth tables (`campaigns`, `broadcasts`, `post_metrics`,
+ *   isolate the beacon-growth tables (`campaigns`, `posts`, `post_metrics`,
  *   `channel_accounts`) by `account_id` at the database layer — not green-on-empty.
  * Scope: Seeds TWO accounts with real rows, then asserts (a) an account sees its
  *   own rows, (b) it cannot see the other account's rows, (c) a forgotten
@@ -17,7 +17,7 @@
  * Side-effects: IO (database operations via testcontainers)
  * Notes: getAppDb() connects as app_user (FORCE RLS via provision.sh). getSeedDb()
  *        connects as app_service (BYPASSRLS) for seed/cleanup.
- * Links: app/src/adapters/server/db/migrations/0031_glorious_warlock.sql,
+ * Links: app/src/adapters/server/db/migrations/0033_beacon_posts_define.sql,
  *        packages/db-schema/src/beacon-growth.ts, docs/spec/database-rls.md
  * @public
  */
@@ -30,17 +30,17 @@ import type { Database } from "@/adapters/server/db/client";
 import { getAppDb } from "@/adapters/server/db/client";
 import {
   billingAccounts,
-  broadcasts,
   campaigns,
   channelAccounts,
   postMetrics,
+  posts,
   users,
 } from "@/shared/db/schema";
 
 interface TestAccount {
   userId: string;
   accountId: string;
-  broadcastId: string;
+  postId: string;
 }
 
 /**
@@ -85,12 +85,12 @@ describe("beacon-growth RLS account isolation", () => {
     accountA = {
       userId: randomUUID(),
       accountId: randomUUID(),
-      broadcastId: randomUUID(),
+      postId: randomUUID(),
     };
     accountB = {
       userId: randomUUID(),
       accountId: randomUUID(),
-      broadcastId: randomUUID(),
+      postId: randomUUID(),
     };
 
     // Seed via service role (bypasses RLS).
@@ -117,23 +117,33 @@ describe("beacon-growth RLS account isolation", () => {
         campaignId: `${CAMPAIGN_ID}-${tag}`,
         title: `Campaign ${tag.toUpperCase()}`,
         status: "draft",
+        // Strategy fields added in 0033 — exercise the new columns + autonomy CHECK.
+        voice: `voice-${tag}`,
+        coreTopic: `topic-${tag}`,
+        icp: `icp-${tag}`,
+        objective: `objective-${tag}`,
+        funnelTargets: { tofu: 3, mofu: 2, bofu: 1 },
+        autonomy: "approve_gate",
       });
       await seedDb.insert(channelAccounts).values({
         accountId: acct.accountId,
         channel: "x",
         handle: `@account_${tag}`,
       });
-      await seedDb.insert(broadcasts).values({
-        id: acct.broadcastId,
+      await seedDb.insert(posts).values({
+        id: acct.postId,
         accountId: acct.accountId,
         campaignId: CAMPAIGN_ID,
         ideaKey: `idea-${tag}`,
         channel: "x",
         text: `post from account ${tag}`,
+        // New 0033 columns: optional quality score + revision counter.
+        score: 0.75,
+        revision: 1,
         status: "posted",
       });
       await seedDb.insert(postMetrics).values({
-        broadcastId: acct.broadcastId,
+        postId: acct.postId,
         accountId: acct.accountId,
         channel: "x",
         impressions: 100,
@@ -150,7 +160,7 @@ describe("beacon-growth RLS account isolation", () => {
       .delete(postMetrics)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
-      .delete(broadcasts)
+      .delete(posts)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(channelAccounts)
@@ -186,24 +196,33 @@ describe("beacon-growth RLS account isolation", () => {
     });
   });
 
-  describe("broadcasts - account isolation", () => {
-    it("account A sees its own broadcast", async () => {
+  describe("posts - account isolation", () => {
+    it("account A sees its own post", async () => {
       const rows = await withTenantScope(db, accountA.userId, (tx) =>
-        tx.select().from(broadcasts)
+        tx.select().from(posts)
       );
       const ids = rows.map((r) => r.id);
-      expect(ids).toContain(accountA.broadcastId);
+      expect(ids).toContain(accountA.postId);
       for (const r of rows) {
         expect(r.accountId).toBe(accountA.accountId);
       }
     });
 
-    it("account A cannot see account B's broadcast", async () => {
+    it("account A cannot see account B's post", async () => {
       const rows = await withTenantScope(db, accountA.userId, (tx) =>
-        tx.select().from(broadcasts)
+        tx.select().from(posts)
       );
       const ids = rows.map((r) => r.id);
-      expect(ids).not.toContain(accountB.broadcastId);
+      expect(ids).not.toContain(accountB.postId);
+    });
+
+    it("account A's post round-trips the new score/revision columns", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(posts)
+      );
+      const mine = rows.find((r) => r.id === accountA.postId);
+      expect(mine?.score).toBe(0.75);
+      expect(mine?.revision).toBe(1);
     });
   });
 
@@ -247,9 +266,9 @@ describe("beacon-growth RLS account isolation", () => {
       expect(rows).toHaveLength(0);
     });
 
-    it("no SET LOCAL on broadcasts returns zero rows", async () => {
+    it("no SET LOCAL on posts returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
-        tx.select().from(broadcasts)
+        tx.select().from(posts)
       );
       expect(rows).toHaveLength(0);
     });
@@ -289,17 +308,17 @@ describe("beacon-growth RLS account isolation", () => {
       expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
     });
 
-    it("cross-account broadcast INSERT is rejected by RLS policy", async () => {
+    it("cross-account post INSERT is rejected by RLS policy", async () => {
       let caught: unknown;
       try {
         await withTenantScope(db, accountA.userId, (tx) =>
-          tx.insert(broadcasts).values({
+          tx.insert(posts).values({
             accountId: accountB.accountId, // A writing as B
             campaignId: CAMPAIGN_ID,
             ideaKey: `xss-${randomUUID().slice(0, 8)}`,
             channel: "x",
             text: "cross-account write",
-            status: "drafted",
+            status: "generated",
           })
         );
       } catch (e) {

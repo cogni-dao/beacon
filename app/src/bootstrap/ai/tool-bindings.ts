@@ -118,8 +118,8 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
     [GET_CURRENT_TIME_NAME]:
       getCurrentTimeImplementation as AnyToolImplementation,
 
-    // Broadcast tool — posts staged variants + persists `broadcasts` (growth-loop v0).
-    // NO_POST_METRICS_WRITE: BroadcastCapability writes `broadcasts` only.
+    // Broadcast tool — posts staged variants + persists `posts` (growth-loop v0).
+    // NO_POST_METRICS_WRITE: BroadcastCapability writes `posts` only.
     [BROADCAST_POST_NAME]: createBroadcastPostImplementation({
       broadcastCapability: deps.broadcastCapability,
     }) as AnyToolImplementation,

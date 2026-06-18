@@ -4,7 +4,7 @@
 /**
  * Module: `@app/api/v1/growth/campaigns/[campaignId]`
  * Purpose: Single-campaign mutations on the account-owned `campaigns` record.
- *   `DELETE` removes the campaign row (broadcasts cascade via FK / are explicitly
+ *   `DELETE` removes the campaign row (posts cascade via FK / are explicitly
  *   cleared); `PATCH` flips the lifecycle `status` (draft↔active, plus paused/done).
  * Scope: HTTP boundary + Zod validation + RLS-scoped writes. No business logic
  *   beyond persistence. The KPI/lens read path lives in the collection route.
@@ -30,7 +30,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { broadcasts, campaigns } from "@/shared/db/schema";
+import { campaigns, posts } from "@/shared/db/schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -133,11 +133,11 @@ export const DELETE = wrapRouteHandlerWithLogging<{
     const db = resolveAppDb();
     const actorId = userActor(sessionUser.id as UserId);
 
-    // RLS_SCOPED_WRITES: delete is scoped to the user's account. `broadcasts`
+    // RLS_SCOPED_WRITES: delete is scoped to the user's account. `posts`
     // reference the campaign only by the `campaign_id` slug (no FK), so clear the
-    // campaign's broadcasts explicitly, both RLS-scoped, in one transaction.
+    // campaign's posts explicitly, both RLS-scoped, in one transaction.
     const deleted = await withTenantScope(db, actorId, async (tx) => {
-      await tx.delete(broadcasts).where(eq(broadcasts.campaignId, slug));
+      await tx.delete(posts).where(eq(posts.campaignId, slug));
       return tx
         .delete(campaigns)
         .where(eq(campaigns.campaignId, slug))

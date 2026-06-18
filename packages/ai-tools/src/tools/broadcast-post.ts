@@ -4,17 +4,17 @@
 /**
  * Module: `@cogni/ai-tools/tools/broadcast-post`
  * Purpose: AI tool that broadcasts a core idea's per-channel variants — posts via
- *   the social adapter and persists `broadcasts` rows for the beacon growth loop.
+ *   the social adapter and persists `posts` rows for the beacon growth loop.
  * Scope: Thin tool over BroadcastCapability. Does NOT implement DB/transport.
  * Invariants:
  *   - TOOL_ID_NAMESPACED: ID is `core__broadcast_post`
  *   - EFFECT_TYPED: effect is `state_change` (posts + DB writes via capability)
  *   - NO_POST_METRICS_WRITE: this tool's only write surface is BroadcastCapability,
- *     which persists `broadcasts` ONLY — never `post_metrics`. Cached engagement is
+ *     which persists `posts` ONLY — never `post_metrics`. Cached engagement is
  *     written exclusively by the metrics-ingest path (WORKER≠VERIFIER).
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants share `ideaKey`.
  *   - NO LangChain imports (LangChain wrapping happens in langgraph-graphs).
- * Side-effects: IO (post to social channels + persist `broadcasts` via capability)
+ * Side-effects: IO (post to social channels + persist `posts` via capability)
  * Links: docs/spec/beacon-growth-loop-v0.md §1/§3
  * @public
  */
@@ -97,7 +97,7 @@ export const broadcastPostContract: ToolContract<
 	name: BROADCAST_POST_NAME,
 	description:
 		"Broadcast a core idea's per-channel variants to the configured social channels. " +
-		"Persists one `broadcasts` row per variant (variants share an ideaKey), posts each " +
+		"Persists one `posts` row per variant (variants share an ideaKey), posts each " +
 		"via the social adapter, and records the external post id with status 'posted'. " +
 		"Does NOT read or write engagement metrics — that is the ingest path's job.",
 	effect: "state_change",

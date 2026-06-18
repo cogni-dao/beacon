@@ -7,12 +7,14 @@
  *   `POST` files a falsifiable campaign hypothesis in the EDO substrate
  *   (domain `beacon-campaigns`, strategy `metric:engagement:<x>`) — the KPI resolver
  *   reads it — AND inserts the account-scoped `campaigns` RECORD (the owned, CRUD-able
- *   row with a real lifecycle `status`), then provisions a Temporal content schedule
- *   (`langgraph:content`) whose brief recalls `beacon-brand-voice`. `GET` lists the
+ *   row with a real lifecycle `status`), self-healing the beacon-growth knowledge
+ *   domains first so a fresh env doesn't 500. `GET` lists the
  *   `campaigns` rows (RLS-scoped to the user's account, NOT shared Doltgres) joined
  *   with their CURRENT engagement KPI (computed independently from `post_metrics`).
+ *   (v0 campaign = a record; content generation + scheduling is a separate pipeline —
+ *   no Temporal in the campaign path. See docs/spec/beacon-growth-loop-v0.md.)
  * Scope: HTTP boundary + Zod validation + orchestration. Files the EDO hypothesis
- *   (resolver dependency) + writes the owned record + provisions the schedule. The
+ *   (resolver dependency) + writes the owned record. The
  *   KPI is the same pure `computeEngagementKpi` the resolver bridge uses.
  * Invariants:
  *   - AUTH_VIA_SESSION: session-cookie required (humans trusted in v0, mirrors
@@ -25,8 +27,7 @@
  *   - RLS_SCOPED_READS: the LIST reads `campaigns` inside `withTenantScope` (the GUC
  *     filters rows to the user's account) — never service-role.
  *   - KPI_NEVER_SELF_CITED: the listed KPI derives solely from `post_metrics`.
- * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write,
- *   schedule create via Temporal).
+ * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write).
  * Links: docs/spec/beacon-growth-loop-v0.md §1/§6, .context/specs/pr3-verifier.md
  * @public
  */
@@ -45,8 +46,8 @@ import { z } from "zod";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { getNodeId } from "@/shared/config";
-import { broadcasts, campaigns, postMetrics } from "@/shared/db/schema";
+import { campaigns, postMetrics, posts } from "@/shared/db/schema";
+import type { RequestContext } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,14 +57,12 @@ export const runtime = "nodejs";
 // ---------------------------------------------------------------------------
 
 const DOMAIN_CAMPAIGNS = "beacon-campaigns";
-const CONTENT_GRAPH_ID = "langgraph:content";
+const DOMAIN_POST_PERFORMANCE = "beacon-post-performance";
+const DOMAIN_BRAND_VOICE = "beacon-brand-voice";
 const METRIC_ENGAGEMENT_PREFIX = "metric:engagement:";
 const CAMPAIGN_HYPOTHESIS_CONFIDENCE = 30;
 /** Slug-safe campaign id charset. */
 const CAMPAIGN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-/** Default cadence for the content sub-loop (daily, UTC) — operator-tunable later. */
-const DEFAULT_CONTENT_CRON = "0 13 * * *";
-const DEFAULT_TIMEZONE = "UTC";
 
 // ---------------------------------------------------------------------------
 // Wire contracts (Zod boundaries)
@@ -81,11 +80,6 @@ const CreateCampaignInputSchema = z.object({
   targetRate: z.number().positive().max(1),
   /** Budget deadline — when the hypothesis resolves (ISO 8601). */
   evaluateAt: z.string().datetime(),
-  /** Cron for the content schedule. Defaults to daily 13:00 UTC. */
-  cron: z.string().min(1).max(120).optional(),
-  timezone: z.string().min(1).max(64).optional(),
-  /** Skip provisioning the Temporal content schedule (file the hypothesis only). */
-  skipSchedule: z.boolean().optional(),
 });
 
 const CampaignKpiSchema = z.object({
@@ -125,7 +119,7 @@ export type CampaignSummary = z.infer<typeof CampaignSummarySchema>;
 
 /**
  * Load every cached `post_metrics` snapshot for one campaign's posted
- * broadcasts. RLS_SCOPED_READS: runs inside `withTenantScope` under the session
+ * `posts`. RLS_SCOPED_READS: runs inside `withTenantScope` under the session
  * user's GUC so the policy filters rows to the user's account(s) — never
  * service-role (which would bypass RLS and leak across accounts). Identical
  * reduction to the resolver bridge so the lens KPI matches the resolution KPI.
@@ -141,17 +135,14 @@ async function loadCampaignSnapshots(
   const actorId = userActor(userId as UserId);
 
   return withTenantScope(db, actorId, async (tx) => {
-    const broadcastRows = await tx
-      .select({ id: broadcasts.id })
-      .from(broadcasts)
+    const postRows = await tx
+      .select({ id: posts.id })
+      .from(posts)
       .where(
-        and(
-          eq(broadcasts.campaignId, campaignId),
-          eq(broadcasts.status, "posted")
-        )
+        and(eq(posts.campaignId, campaignId), eq(posts.status, "posted"))
       );
-    const broadcastIds = broadcastRows.map((r) => r.id);
-    if (broadcastIds.length === 0) {
+    const postIds = postRows.map((r) => r.id);
+    if (postIds.length === 0) {
       return { snapshots: [], postedBroadcasts: 0 };
     }
 
@@ -164,7 +155,7 @@ async function loadCampaignSnapshots(
         followersAtCapture: postMetrics.followersAtCapture,
       })
       .from(postMetrics)
-      .where(inArray(postMetrics.broadcastId, broadcastIds));
+      .where(inArray(postMetrics.postId, postIds));
 
     const snapshots: PostMetricSnapshot[] = rows.map((r) => ({
       impressions: r.impressions ?? null,
@@ -173,12 +164,73 @@ async function loadCampaignSnapshots(
       replies: r.replies ?? 0,
       followersAtCapture: r.followersAtCapture ?? null,
     }));
-    return { snapshots, postedBroadcasts: broadcastIds.length };
+    return { snapshots, postedBroadcasts: postIds.length };
+  });
+}
+
+type AppContainer = ReturnType<typeof getContainer>;
+type KnowledgeStorePort = NonNullable<AppContainer["knowledgeStorePort"]>;
+
+/** Register one knowledge domain if absent; tolerate the already-registered race. */
+async function ensureDomain(
+  ctx: RequestContext,
+  store: KnowledgeStorePort,
+  input: { id: string; name: string; description: string }
+): Promise<void> {
+  if (await store.domainExists(input.id)) {
+    return;
+  }
+  try {
+    await store.registerDomain(input);
+    ctx.log.info(
+      { route: "growth.campaigns.create", domain: input.id },
+      "growth.knowledge_domain.registered"
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "DomainAlreadyRegisteredError") {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Self-heal: register the 3 beacon-growth knowledge domains before the campaign
+ * hypothesis is filed. `BASE_DOMAIN_SEEDS` only seed at DB-init, so a fresh
+ * preview/candidate env has no domains and `edo.hypothesize` 500s with
+ * `DomainNotRegisteredError`. Idempotent (domainExists guard + race tolerance).
+ */
+async function ensureGrowthKnowledgeDomains(
+  ctx: RequestContext,
+  container: AppContainer
+): Promise<void> {
+  const store = container.knowledgeStorePort;
+  if (!store) {
+    return;
+  }
+  await ensureDomain(ctx, store, {
+    id: DOMAIN_CAMPAIGNS,
+    name: "Beacon Campaigns",
+    description:
+      "Growth-campaign hypotheses (metric:engagement) and resolved outcomes for the beacon growth loop.",
+  });
+  await ensureDomain(ctx, store, {
+    id: DOMAIN_POST_PERFORMANCE,
+    name: "Beacon Post Performance",
+    description:
+      "Per-post and per-angle findings that cite campaign hypotheses as evidence.",
+  });
+  await ensureDomain(ctx, store, {
+    id: DOMAIN_BRAND_VOICE,
+    name: "Beacon Brand Voice",
+    description:
+      "Durable growth learnings: winning hooks, angles, formats, timing, and channel patterns.",
   });
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/growth/campaigns — PLAN: file hypothesis + content schedule
+// POST /api/v1/growth/campaigns — PLAN: file the campaign record + hypothesis
+// (v0 = record only; content generation/scheduling is a separate pipeline)
 // ---------------------------------------------------------------------------
 
 export const POST = wrapRouteHandlerWithLogging(
@@ -206,6 +258,9 @@ export const POST = wrapRouteHandlerWithLogging(
 
     const container = getContainer();
     const edo = container.edoCapability;
+
+    // Self-heal the knowledge domains so a fresh env doesn't 500 on hypothesize.
+    await ensureGrowthKnowledgeDomains(ctx, container);
 
     const hypothesisId = `campaign:${input.campaignId}`;
     const resolutionStrategy = `${METRIC_ENGAGEMENT_PREFIX}${input.campaignId}`;
@@ -260,33 +315,12 @@ export const POST = wrapRouteHandlerWithLogging(
         });
       });
 
-      let scheduleId: string | null = null;
-      if (!input.skipSchedule) {
-        const schedule = await container.scheduleManager.createSchedule(
-          toUserId(sessionUser.id),
-          account.id,
-          {
-            nodeId: getNodeId(),
-            graphId: CONTENT_GRAPH_ID,
-            input: {
-              campaignId: input.campaignId,
-              brief: input.brief,
-              recall: "beacon-brand-voice",
-            },
-            cron: input.cron ?? DEFAULT_CONTENT_CRON,
-            timezone: input.timezone ?? DEFAULT_TIMEZONE,
-          }
-        );
-        scheduleId = schedule.id;
-      }
-
       ctx.log.info(
         {
           route: "growth.campaigns.create",
           campaignId: input.campaignId,
           hypothesisId,
           resolutionStrategy,
-          scheduleId,
         },
         "growth.campaign.created"
       );
@@ -298,7 +332,6 @@ export const POST = wrapRouteHandlerWithLogging(
           resolutionStrategy,
           status: "draft",
           evaluateAt: input.evaluateAt,
-          scheduleId,
           committed: true,
         },
         { status: 201 }

@@ -9,13 +9,15 @@
 
 ## Mission
 
-**beacon is Cogni's growth-engine node.** It runs a compounding growth loop — not a flat
-funnel: **PLAN → IDEATE → PRODUCE → BROADCAST → MEASURE → ATTRIBUTE → LEARN**. Each turn of the
-loop files a campaign hypothesis, produces and broadcasts per-platform content (Twitter +
-Moltbook, text-only in v0), measures real engagement, scores it with an independent KPI, and
-distills the winners into durable brand-voice knowledge that seeds the next plan. The output
+**beacon is Cogni's growth-engine node** — the kernel of a full-stack AI marketing tool.
+It runs a compounding, autonomous-by-default loop per campaign — not a flat funnel:
+**DEFINE → RESEARCH → GENERATE → REVIEW/REFINE → POST → ANALYZE → LEARN**. A campaign is
+*strategy* (voice + core topic + ICP); beacon researches, drafts at volume to fill the
+funnel, refines + ranks, and publishes **approved-only** content (Moltbook in v0), measures
+real engagement, scores it with an independent **per-funnel-layer** KPI, and distills the
+winners into durable generic playbook knowledge that seeds the next plan. The output
 (validated learnings + grown audience) reinvests as input — the loop compounds. Work in this
-repo should advance that loop. See [`docs/spec/beacon-growth-loop-v0.md`](docs/spec/beacon-growth-loop-v0.md).
+repo should advance that loop. See [`docs/spec/beacon-growth-loop-v0.md`](docs/spec/beacon-growth-loop-v0.md) (the SSOT).
 
 ## Your cognition is delivered at session start
 

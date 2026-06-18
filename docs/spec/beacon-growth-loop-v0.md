@@ -1,62 +1,174 @@
-# beacon growth-loop v0 — spec (Twitter + Moltbook, text-only)
+# beacon growth-loop — design (v0)
 
-## 1. The loop — a compounding growth loop, not a flat funnel
+> Single source of truth. Supersedes every prior scratch doc (all purged).
+> v0 is the **kernel** of a full-stack AI marketing tool. The long tail (RBAC,
+> research/competitor pipelines, multi-channel, analytics depth) is deliberately
+> out of scope — see §7.
 
-Flat "GENERATE→BROADCAST→MEASURE→REFINE" hides the two things that make marketing work: a growth *loop* whose output (validated learnings + grown audience) reinvests into its input (Balfour/Reforge — loops compound, funnels leak), and a real content-production *sub-loop* where ideas are planned, drafted, edited, and adapted per platform. v0 models both, minimally.
+## 0. What beacon is
+An AI marketer that runs a compounding, **autonomous-by-default** loop per campaign:
 
-### Outer growth loop (slow, compounding) — strategy & learning
-1. **PLAN (strategy/funnel)** — audience + **funnel stage** (TOFU awareness / MOFU consideration / BOFU conversion) + objective → a **campaign hypothesis**: "angle A for audience X at stage S hits engagement-rate target T within budget B." *Recalls* `beacon-brand-voice` to seed angles.
-2. **IDEATE** — expand the brief into a few distinct **angles/hooks** (core ideas).
-3. **PRODUCE** — inner content loop (below) → ready per-platform posts.
-4. **BROADCAST** — distribute the per-platform variants.
-5. **MEASURE** — cache real engagement (decoupled cadence).
-6. **ATTRIBUTE** — independent KPI scores each post / angle / platform.
-7. **LEARN** — distill winners into `beacon-brand-voice`; resolve the campaign hypothesis. → feeds the next PLAN. Output reinvests as input = compounding.
+**DEFINE** (voice + core topic + ICP) → **RESEARCH** (spawn marketing-research
+workflows) → **GENERATE** (N drafts, never one-off) → **REVIEW/REFINE** (iterate +
+rank + approve) → **POST** (approved-only) → **ANALYZE** (KPI → re-rank → learn) ↺.
 
-### Inner content loop (fast, per idea) — where drafts/edits/adaptation happen
-- **a. DRAFT** for one angle → **b. CRITIQUE→EDIT** (1 self-revise pass in v0; optional human approve/refine in lens) → **c. ADAPT per platform** (core idea → X ≤280 hook-first; Moltbook its format) → **d. STAGE** as `drafted`→`approved` broadcasts rows.
+A campaign is **strategy**, not a single post: a human (or guided agent) sets the
+voice + core topic + audience; beacon then researches, drafts at volume, refines,
+and publishes — and the operator can let it **run autonomously** or steer any stage
+**on demand**. Autonomy is the core; on-demand is a capability, never the limiter.
+v0: one channel (**Moltbook**), single account per tenant.
 
-**Architecture mapping (no new infra):** PLAN = campaign-start API + EDO hypothesis + brief. IDEATE+DRAFT+CRITIQUE+ADAPT = `langgraph:content` as a 4-node graph. STAGE/approve = `broadcasts.status` + lens. BROADCAST = broadcast tool. MEASURE = ingest job. ATTRIBUTE = independent resolver (groups by `idea_key`+channel). LEARN = resolver distills a brand-voice rule + resolves the hypothesis.
+## 1. The split: Postgres vs Doltgres (the foundational rule)
 
-## 2. Substrate reality (corrected) & OSS
+| | **Postgres** | **Doltgres (knowledge hub)** |
+|---|---|---|
+| Holds | tenant-private **operational truth** | app-wide **generic knowledge** |
+| Examples | campaigns, the post queue, metrics, channel creds | "how the system works" + the most effective *skills/strategies* for campaigns, platforms, analytics, brand-voice |
+| Scope | every row `account_id`-scoped, **RLS + FORCE** | **no tenant data, ever** (RLS-Dolt is someday) |
+| Question it answers | "what is **this tenant** doing?" | "what **works**, in general?" |
 
-- **EDO substrate is built+tested for the `agent` strategy + manual `recordOutcome`** (`packages/knowledge-store`). A campaign reuses the `hypothesis` row — **no new goal table**.
-- **The `metric:` resolution strategy is documented-but-UNIMPLEMENTED** (`packages/knowledge-store/src/domain/schemas.ts:99` lists `metric:<query>` as a future kind; the resolver handles only `agent`; `pendingResolutions(strategy)` already filters by `LIKE 'metric:%'` but nothing computes a metric edge, and it is driven from nowhere but tests). **PR 3 therefore owns NEW resolver wiring in `packages/knowledge-store`** — a `metric:`-strategy resolver + the driver that calls `pendingResolutions("metric:") → compute edge → resolveHypothesis(edge)` — not merely the pure KPI function.
-- **OSS:** `twitter-api-v2` (typed X v2 client) — real X adapter. **Moltbook = fake-only in v0** (no verified public client/API; real adapter deferred to a flagged follow-up once its API is confirmed). Reuse in-repo: **LangGraph** (generate), **Temporal** (cadence), **Drizzle + Dolt/Doltgres**, **LiteLLM** (models), **Zod/Pino→Loki**, **Tavily web-search** as the exact capability/adapter/fake/factory template. v1 (deferred): **Postiz/Mixpost** (OSS multi-channel "channels=config"), **PostHog** (OSS funnel attribution).
+**The rule:** if a row names a specific account / campaign / post, it's **Postgres**.
+If it's a reusable strategy/skill/playbook the AI could apply to *any* tenant, it's
+**Doltgres**. At runtime the AI **recalls generic Dolt knowledge and applies it,
+customized, to a tenant's Postgres campaign** — Dolt is the playbook, Postgres is the
+game. (Today's campaign hypothesis must move **out** of Dolt into Postgres — see §2/§8.)
 
-## 3. Postgres tables (3) — `packages/db-schema/src/beacon-growth.ts`
-No-RLS-v0 / service-role per `attribution.ts` precedent; tenant col present for future RLS; migration via **`schema-update` skill**.
-1. **`channel_accounts`** `(id, channel['x'|'moltbook'], handle, credential_ref, enabled, created_at)`.
-2. **`broadcasts`** `(id, campaign_id, idea_key, angle, channel, text, status['drafted'|'approved'|'posted'|'failed'], external_post_id, posted_at, created_at)` — `idea_key` groups per-platform variants; `status` = draft→approve→post lifecycle. *(Add `creative_assets` media table when images land — next step.)*
-3. **`post_metrics`** append-only `(id, broadcast_id, channel, captured_at, impressions, likes, reposts, replies, followers_at_capture)` — cached KPI ground-truth; written ONLY by the ingest path.
+## 2. Postgres tables (`packages/db-schema/src/beacon-growth.ts`)
+All `account_id`-scoped, `pgPolicy("tenant_isolation")` + FORCE RLS, proven by the
+component lane.
 
-## 4. Knowledge domains (3, Doltgres, cited)
-1. **`beacon-campaigns`** — hypotheses (`metric:engagement`) + outcomes.
-2. **`beacon-post-performance`** — per-post/angle findings → `evidence_for` the campaign.
-3. **`beacon-brand-voice`** — durable rules (winning hooks/angles/formats/timing per audience+channel); every PLAN recalls it.
+1. **`campaigns`** = the **strategy** (DEFINE) `(id, account_id, campaign_id, title, status['draft'|'active'|'paused'|'done'], voice, core_topic, icp, objective, target_rate, funnel_targets, autonomy['manual'|'approve_gate'|'autonomous'], evaluate_at, created_at)` — voice + core topic + ICP + objective drive everything downstream. `funnel_targets` = desired live coverage **per funnel layer** (the tunable that drives generation volume — no hardcoded N). `status` is a **plain Postgres field that gates the queue** (no schedule coupling). `autonomy` sets how far it self-runs (§3). *(Doltgres hypothesis removed — §8.1.)*
+2. **`research`** *(tenant artifacts)* `(id, account_id, campaign_id, kind['icp'|'use_case'|'pain_point'|'topic'|'competitor'], content, source_ref, created_at)` — the output of the RESEARCH workflows that grounds generation. Tenant-private (it's *this* campaign's research); the generic research *methods/skills* are recalled from Dolt.
+3. **`posts`** *(rename of `broadcasts`)* `(id, account_id, campaign_id, funnel_layer, topic, angle, channel['moltbook'|'x'], text, score, revision, status['generated'|'in_review'|'approved'|'posted'|'rejected'|'failed'], external_post_id, posted_at, created_at)` — **THE QUEUE.** `status` = the lane; `score` = ranking signal; `revision` tracks refine passes (generation is iterative, never one-off).
+4. **`post_metrics`** append-only `(id, account_id, post_id, captured_at, impressions, likes, reposts, replies, followers_at_capture)` — cached engagement; **written only by the analyze/ingest path.**
+5. **`channel_accounts`** `(id, account_id, channel, handle, credential_ref, enabled, created_at)`.
+6. **`post_decisions`** *(propensity log — ships with the first POST build)* `(id, account_id, campaign_id, post_id, decided_at, action['ranked'|'approved'|'rejected'|'posted'], score, rank, reason, model_ref)` — **why** each post was chosen/ranked/published, append-only. MUST land with POST: this propensity signal is **uncapturable retroactively** and is the training data for future bandit / learned ranking. (Review correction.)
 
-## 5. v0 metric — precise
-Primary independent KPI = **engagement rate** = `(likes+reposts+replies)/impressions` from X v2 `public_metrics` (+ Moltbook equiv), aggregated per campaign → normalized **0–100** vs target. **X-tier assumption:** Basic+ exposes `impressions`; **free tier hides impressions**, so the adapter falls back to `engagement_per_follower = (likes+reposts+replies)/followers_at_capture`, pinned by which fields the adapter actually receives. Secondary: follower **delta**. **PostHog = v1.**
+## 3. AI workflows & how they're scheduled
+Workflows = **LangGraph graphs** (the thinking), run as **jobs**:
+- **research** — spawn marketing research for the campaign's ICP/topic (use cases,
+  pain points, topic + competitor landscape) → `research` rows. Recalls generic
+  research *methods/skills* from Dolt.
+- **generate** — **populate the campaign funnel**: from voice + brief + research,
+  lay out a content plan (topics × angles across **TOFU/MOFU/BOFU**) and draft posts
+  to fill it. It is *not* N copies of one idea — it's coverage of the funnel. How
+  many is **derived** from the plan / a per-layer target-depth on the campaign
+  (operator-tunable, agent-proposed) — **never a hardcoded constant.**
+- **refine/rank** — iterate (critique → revise, multi-pass; bumps `posts.revision`),
+  score, promote best → `approved`, prune → `rejected`. **Generation is never a
+  one-off — it is generate→refine, continuously topping up funnel coverage.**
+- **analyze** — cached metrics → KPI **per (funnel-layer, channel), never blended** →
+  re-rank + distill *generic* learnings into the Dolt playbook. A single global
+  engagement number is wrong for a funnel (TOFU reach ≠ MOFU engagement ≠ BOFU
+  conversion); the existing Dolt-hypothesis resolver computes one blended number and
+  **must be replaced** by per-(layer,channel) KPI read from Postgres. (Review correction.)
 
----
+**Autonomy is the core, not on-demand.** A campaign's `autonomy` field sets how far
+it self-runs:
+| `autonomy` | behavior |
+|---|---|
+| `autonomous` | the loop runs itself end-to-end; agent approval gates posting |
+| `approve_gate` | self-runs research→generate→refine, then **waits for human approve** before post |
+| `manual` | every stage is operator-triggered |
 
-## 6. Subagents — one self-contained spec per PR (sequential; merges held per §0)
+**Driver:** one real, self-firing **node-local timer** (k8s CronJob in beacon's
+deploy) → an internal `/tick` that, for each `active` campaign, advances **whatever
+stage has due work** (research stale → research; queue thin → generate/refine;
+approved posts ready → post; metrics due → analyze). **Proven by Loki** (it fires
+itself; never a manual curl). **On-demand triggers exist on every stage** as a
+capability layered on top — kick generate now, force a re-research — but they are
+not how the loop normally advances.
+- **Temporal-native scheduling is deferred** until the operator worker is ready; the
+  CronJob is the v0 substrate. No half-wired Temporal in the campaign path.
 
-### PR 1 — `foundation` (substrate + framing)
-- **Owns:** `packages/db-schema/src/beacon-growth.ts` (§3 tables) + barrel; migration (schema-update skill + generate-clean gate); `docs/spec/beacon-growth-loop-v0.md` (this spec); root `AGENTS.md` → growth-engine mission; `.cogni/rules/repo-goal-alignment.yaml` `clear-purpose` → growth-loop; register 3 Doltgres domains.
-- **I/O before→after:** before — no growth tables/domains/mission; after — substrate + domains exist; repo-goal gate scores the mission correctly.
-- **Validation / done:** `pnpm check` + generate-clean green; migration in `meta/_journal.json`; no behavior change; CI green; PR open (merge held).
+## 4. The spine (generate ≠ post — the safety invariant)
+0. **define** → operator sets campaign voice + core topic + ICP + objective + autonomy.
+1. **research** → research workflows fill `research` rows that ground the campaign.
+2. **generate** → AI lays out the funnel plan (topics × angles × TOFU/MOFU/BOFU) and
+   drafts `posts` (status `generated`) to fill it. Volume = funnel coverage, not a
+   fixed count.
+3. **refine/rank** → iterate (critique→revise, multi-pass), score, promote →
+   `approved` (or `rejected`). Approval is agent-default; an `approve_gate` campaign
+   **waits for a human** here.
+4. **post** (cron `/tick`, **approved-only**) → pop highest-`score` `approved` post
+   for an active campaign → publish to Moltbook → `posted`. **The publisher never
+   generates, refines, or decides — it only ships already-approved content.**
+5. **analyze** (cron) → ingest engagement → `post_metrics` → KPI → re-rank future
+   candidates + distill generic learnings into Dolt.
 
-### PR 2 — `studio` (Produce → Broadcast → Measure)
-- **Owns:** capability iface `packages/ai-tools/src/capabilities/social-x.ts` (`postContent`,`readMetrics`, Zod, pin X v2) — **shared package, multi-runtime** (mirrors `web-search.ts`); real adapter `app/src/adapters/server/social/x.adapter.ts` (`twitter-api-v2`, env-gated off) + fakes `app/src/adapters/test/social/{x,moltbook}.fake.ts` (deterministic monotonic-rising engagement); factory `app/src/bootstrap/capabilities/social-x.ts`; secret via `/add-secret`. `packages/langgraph-graphs/src/graphs/content/*` 4-node graph (ideate→draft→critique→adapt), registered in **`packages/langgraph-graphs/src/catalog.ts` (`LANGGRAPH_CATALOG`)** (+ optionally the `AVAILABLE_GRAPHS` UI picker). `core__broadcast_post` tool → writes `broadcasts` (per-channel variants by `idea_key`). `ingestPostMetrics.job` + token-gated `POST /api/internal/ops/growth/metrics-ingest` → appends `post_metrics`.
-- **WORKER≠VERIFIER guard:** broadcast/content modules contain **no `post_metrics` writer**; ingest job is the sole writer. Enforced by module separation + a unit test asserting the broadcast tool's write surface excludes `post_metrics` (no dependency-cruiser in this repo — assert structurally in a test).
-- **I/O before→after:** before — no draft/post/measure path; after — brief → per-platform drafts → (fake) posts in `broadcasts`; `curl` ingest fills `post_metrics`. No scoring.
-- **Validation / done:** unit (graph emits one variant per enabled channel; broadcast tool persists external id; ingest appends snapshots; guard test) green; CI green; PR open.
+The invariant that survives autonomy: **nothing reaches the public except an
+`approved` row**, and the publisher is a dumb, auditable shipper. Autonomy changes
+*who approves* (agent vs human gate), never *whether* approval happens.
 
-### PR 3 — `verifier` (Verify → Refine → Surface) — the crux
-- **Owns (incl. the corrected resolver bridge):** in `packages/knowledge-store` — a **`metric:`-strategy resolver** + pure `computeEngagementKpi(snapshots,target)→{score0to100,edge}` (no LLM/API; never reads the hypothesis's own confidence). In app — `resolveEngagementCampaigns.job` driving `pendingResolutions("metric:")` → load that campaign's `post_metrics` → `resolveHypothesis(edge)` (idempotent) + file a `beacon-post-performance` finding w/ `evidence_for` + distill a `beacon-brand-voice` rule on validate; token-gated `POST /api/internal/ops/growth/resolve`; `POST /api/v1/growth/campaigns` (PLAN: file hypothesis + content schedule, brief recalls brand-voice); thin `/growth` lens (mirror `/work`) + nav item.
-- **I/O before→after:** before — posts+metrics exist but nothing scores/learns; after — campaign self-resolves from cached metrics → outcome + cited finding + brand-voice rule; `/growth` shows KPI vs target; `GET /api/v1/edo/chain/<id>` walks the proof chain.
-- **Validation / done (deploy_verified, once operator repairs deploy):** unit `computeEngagementKpi` (score independence; budget→invalidates) + integration mirroring `edo-loop.test.ts` (ingest low → rising → resolve → `validates` + recomputed confidence). On candidate-a: start campaign → produce+post (fake) → ingest×2 → resolve → chain shows hypothesis ← finding(evidence_for) ← outcome(validates); lens shows lifted KPI; own request in Loki at deployed SHA; `/validate-candidate` scorecard.
+## 5. The compounding loop
+`posted → measured → analyzed → generic learnings into Dolt → recalled by the next
+generate (customized per tenant) → better candidates.` Loops compound; that is the
+entire point.
 
-## 7. Seed as Dolt knowledge (after operator gets beacon to prod)
-Via `/contribute-knowledge-to-cogni`: add this spec to `beacon-campaigns`, entryType `rule`, confidence 70, tags `[growth-loop,v0,spec]`; open the contribution branch, merge once prod is green → durable, cited, recall-before-write knowledge for every future beacon agent.
+## 6. UI
+- `/growth` (campaigns) → list; campaign detail → **posts grouped by lane** + an
+  approve/reject control + per-layer KPI.
+- **Kanban board (lanes = columns) is a vNext view.** v0 = a grouped list.
+
+## 7. v0 depth vs deferred (discipline)
+v0 builds the **whole spine thin**, not a few stages deep:
+- research = **one pass** (ICP + topic + pain points); competitor-analysis as its own
+  rich pipeline is later.
+- generate = fill toward modest default `funnel_targets` (a few per layer; tunable,
+  never a hardcoded N); refine = **1–2 passes**; rank = heuristic + brand-voice
+  recall (not a learned model yet).
+- autonomy = all three modes supported; coverage targets stay modest until ranking
+  quality is proven.
+
+**Deferred entirely:** RBAC / multi-user, channels beyond Moltbook (X, threads,
+images/blob), DMs/comments/reposts, PostHog/BOFU conversion, auto-scaled volume,
+Temporal-native heartbeat, RLS-Doltgres.
+
+## 8. Decisions (resolved)
+1. ✅ **Dolt purge:** campaign `metric:engagement` hypothesis moves out of Dolt into
+   Postgres; `analyze` reads tenant KPI from Postgres only. Dolt holds **generic
+   playbook/skills exclusively** (no tenant data; RLS-Dolt is someday). The
+   independent-KPI verifier's data source = Postgres, not a Dolt hypothesis.
+2. ✅ **No hardcoded volume:** generation fills toward per-campaign `funnel_targets`
+   (coverage per funnel layer), operator-tunable / agent-proposed. There is no
+   magic N; the funnel plan decides how much to draft.
+
+### Folded from the design review (APPROVE WITH CHANGES)
+3. ✅ **Per-layer KPI** (not a global blended number) — §2.4/§3 analyze.
+4. ✅ **`post_decisions` propensity log ships with the first POST build** — §2.6.
+5. ✅ **Autonomous next-content *planning* is sequenced LAST** — after the loop is
+   proven and evergreen-recycle works. No incumbent (Mautic/Listmonk/Mixpost/
+   Typefully) ships autonomous planning; we don't make it the early core. The
+   `autonomous` mode still exists for the *known* stages; what's deferred is the AI
+   *deciding what to make next* unsupervised.
+6. ✅ **OSS-first** — borrow, don't reinvent: Listmonk (campaign/list schema +
+   per-message analytics), WhisperX + OpenShorts (vNext video pipeline), Postiz/
+   Mixpost (channels-as-config), n8n templates (workflow shapes). See §9.
+
+## Build order (each its own small PR)
+1. ✅ campaign CRUD + domain self-heal, no Temporal (PR #17, reduced).
+2. **define**: extend `campaigns` with voice/core_topic/icp/objective/autonomy
+   (+ rename `broadcasts`→`posts`, status lanes, `score`, `revision`; one migration).
+3. **research**: `research` table + a 1-pass research workflow (ICP/topic/pain
+   points), grounding the campaign brief.
+4. **generate + refine**: N-draft generate grounded in voice+brief+research →
+   iterate/rank → approve (agent; human gate when `approve_gate`). Lens shows lanes.
+5. **post**: k8s CronJob `/tick` → publish approved-only → Moltbook (proven in Loki).
+   **Ships with `post_decisions`** (§2.6) — the propensity log, uncapturable later.
+6. **analyze**: ingest + **per-(layer,channel) KPI** → re-rank + Dolt playbook distill;
+   **campaign KPI source = Postgres, not Dolt (§8.1/§8.3); replace the blended resolver.**
+7. **evergreen-recycle**: re-surface proven winners (the simplest "what next" — borrow
+   from incumbents) before any autonomous planning.
+8. **autonomy (LAST)**: `/tick` self-advances `active` campaigns through the *known*
+   stages per `autonomy` mode; autonomous *planning of new content* comes only after
+   6–7 are proven (§8.5).
+
+## 9. Research & review (grounding)
+- `docs/research/marketing-platforms-landscape.md` — OSS/incumbent landscape (Listmonk,
+  Postiz/Mixpost, Typefully/Blotato, n8n, WhisperX/OpenShorts, Hormozi/Welsh frameworks)
+  + the four product answers (critical workflows, UI scaffolding, critical tables, vNext
+  video) + a 7-phase roadmap.
+- `docs/research/_knowledge/agentic-marketing-spine-validated.md` — the durable knowledge
+  atom (held node-owned; beacon's cognition hub was unreachable at write time).
+- **Design-review verdict:** APPROVE WITH CHANGES — spine is right; the three corrections
+  above (§8.3–8.5) are folded in.

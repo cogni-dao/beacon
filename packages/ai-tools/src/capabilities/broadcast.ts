@@ -4,13 +4,13 @@
 /**
  * Module: `@cogni/ai-tools/capabilities/broadcast`
  * Purpose: Broadcast capability — post staged per-channel variants and persist
- *   `broadcasts` rows for the beacon growth loop.
+ *   `posts` rows for the beacon growth loop.
  * Scope: Interface + Zod boundary schemas. Does NOT implement DB/transport.
  * Invariants:
- *   - NO_POST_METRICS_WRITE: the broadcast write surface persists `broadcasts`
+ *   - NO_POST_METRICS_WRITE: the broadcast write surface persists `posts`
  *     ONLY. It never writes `post_metrics` (WORKER≠VERIFIER — ingest is sole writer).
- *   - ACCOUNT_SCOPED: every broadcast carries the owning `accountId` (billing
- *     account, the tenancy axis) — stamped on the `broadcasts` row for RLS.
+ *   - ACCOUNT_SCOPED: every post carries the owning `accountId` (billing
+ *     account, the tenancy axis) — stamped on the `posts` row for RLS.
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants of one core idea share `ideaKey`.
  *   - FUNNEL_CLASSIFIED: each variant carries its `funnelLayer` + `topic` so the
  *     persisted queue is a classified funnel; `kind` is text-only in v0.
@@ -84,7 +84,7 @@ export type BroadcastInput = z.infer<typeof BroadcastInputSchema>;
  * Result of broadcasting one variant.
  */
 export const BroadcastVariantResultSchema = z.object({
-	broadcastId: z.string().min(1).describe("Persisted `broadcasts.id`"),
+	broadcastId: z.string().min(1).describe("Persisted `posts.id`"),
 	channel: z.enum(SOCIAL_CHANNELS),
 	status: z
 		.enum(["posted", "failed"])
@@ -108,16 +108,16 @@ export const BroadcastResultSchema = z.object({
 export type BroadcastResult = z.infer<typeof BroadcastResultSchema>;
 
 /**
- * Broadcast capability: post staged variants + persist `broadcasts` rows.
+ * Broadcast capability: post staged variants + persist `posts` rows.
  *
  * NO_POST_METRICS_WRITE: implementations of this capability persist only the
- * `broadcasts` table. Cached engagement (`post_metrics`) is written exclusively
+ * `posts` table. Cached engagement (`post_metrics`) is written exclusively
  * by the metrics-ingest path.
  */
 export interface BroadcastCapability {
 	/**
 	 * Broadcast one core idea's per-channel variants.
-	 * For each variant: persist a `broadcasts` row, post via the social adapter,
+	 * For each variant: persist a `posts` row, post via the social adapter,
 	 * then record `external_post_id` + status `posted` (or `failed`).
 	 *
 	 * @param input - Campaign/idea/variants to broadcast

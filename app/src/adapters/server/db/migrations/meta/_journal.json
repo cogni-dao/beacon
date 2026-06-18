@@ -232,6 +232,13 @@
       "when": 1781719558667,
       "tag": "0032_red_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781768400000,
+      "tag": "0033_beacon_posts_define",
+      "breakpoints": true
     }
   ]
 }
