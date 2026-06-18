@@ -55,6 +55,23 @@ export {
   runGrowthResearch,
   type RunGrowthResearchInput,
 } from "./growth-research/workflow";
+// Growth-generate workflow (beacon growth loop GENERATE activity — pure, on-demand;
+// NOT a catalog graph: invoked directly by the generate route, no Temporal).
+export {
+  FUNNEL_LAYER_GUIDANCE,
+  FUNNEL_LAYERS,
+  type FunnelLayer,
+  GENERATE_PROMPT,
+} from "./growth-generate/prompts";
+export {
+  type DraftPost,
+  type FunnelTargets,
+  type GenerateFinding,
+  parseDraftPosts,
+  resolveLayerCount,
+  runGrowthGenerate,
+  type RunGrowthGenerateInput,
+} from "./growth-generate/workflow";
 // Shared graph types
 export type {
   CreateReactAgentGraphOptions,

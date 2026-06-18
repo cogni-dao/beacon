@@ -46,6 +46,21 @@ export {
   type RunGrowthResearchInput,
 } from "./graphs/index";
 
+// Re-export the growth-generate workflow (beacon growth loop GENERATE activity).
+export {
+  type DraftPost,
+  FUNNEL_LAYER_GUIDANCE,
+  FUNNEL_LAYERS,
+  type FunnelLayer,
+  type FunnelTargets,
+  GENERATE_PROMPT,
+  type GenerateFinding,
+  parseDraftPosts,
+  resolveLayerCount,
+  runGrowthGenerate,
+  type RunGrowthGenerateInput,
+} from "./graphs/index";
+
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 
