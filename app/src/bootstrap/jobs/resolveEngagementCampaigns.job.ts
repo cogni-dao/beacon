@@ -38,7 +38,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";
 import { getContainer } from "@/bootstrap/container";
-import { broadcasts, postMetrics } from "@/shared/db/schema";
+import { postMetrics, posts } from "@/shared/db/schema";
 
 /** Strategy namespace this job owns. */
 const METRIC_ENGAGEMENT_PREFIX = "metric:engagement:";
@@ -104,21 +104,19 @@ function targetFromHypothesis(content: string | null): EngagementTarget {
 
 /**
  * Load every cached `post_metrics` snapshot for one campaign's posted
- * broadcasts (service-role; no RLS in growth v0). Snapshots are reduced to the
+ * posts (service-role; no RLS in growth v0). Snapshots are reduced to the
  * plane-agnostic `PostMetricSnapshot` shape the pure KPI consumes.
  */
 async function loadCampaignSnapshots(
   campaignId: string
 ): Promise<PostMetricSnapshot[]> {
   const db = getServiceDb();
-  const broadcastRows = await db
-    .select({ id: broadcasts.id })
-    .from(broadcasts)
-    .where(
-      and(eq(broadcasts.campaignId, campaignId), eq(broadcasts.status, "posted"))
-    );
-  const broadcastIds = broadcastRows.map((r) => r.id);
-  if (broadcastIds.length === 0) return [];
+  const postRows = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(eq(posts.campaignId, campaignId), eq(posts.status, "posted")));
+  const postIds = postRows.map((r) => r.id);
+  if (postIds.length === 0) return [];
 
   const rows = await db
     .select({
@@ -129,7 +127,7 @@ async function loadCampaignSnapshots(
       followersAtCapture: postMetrics.followersAtCapture,
     })
     .from(postMetrics)
-    .where(inArray(postMetrics.broadcastId, broadcastIds));
+    .where(inArray(postMetrics.postId, postIds));
 
   return rows.map((r) => ({
     impressions: r.impressions ?? null,

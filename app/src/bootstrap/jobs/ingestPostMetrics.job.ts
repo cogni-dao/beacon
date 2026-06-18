@@ -4,15 +4,15 @@
 /**
  * Module: `@bootstrap/jobs/ingestPostMetrics.job`
  * Purpose: Metrics-ingest job for the beacon growth loop — reads recent posted
- *   `broadcasts`, reads cached engagement via SocialXCapability, and APPENDS
+ *   `posts`, reads cached engagement via SocialXCapability, and APPENDS
  *   `post_metrics` snapshots. This is the SOLE `post_metrics` writer.
  * Scope: Wires the container's SocialXCapability + service-role DB. Does NOT post
- *   content or mutate `broadcasts` (WORKER≠VERIFIER — the broadcast path is the worker).
+ *   content or mutate `posts` (WORKER≠VERIFIER — the broadcast path is the worker).
  * Invariants:
  *   - SOLE_POST_METRICS_WRITER: this job is the only code that inserts `post_metrics`.
  *   - POST_METRICS_APPEND_ONLY: rows are inserted, never updated.
  *   - METRICS_BATCH_LE_100: external ids are batched ≤100 per readMetrics() call.
- *   - ACCOUNT_SCOPED: each appended `post_metrics` row inherits the parent broadcast's
+ *   - ACCOUNT_SCOPED: each appended `post_metrics` row inherits the parent post's
  *     `account_id` (the tenancy axis) so RLS scopes it.
  *   - SERVICE_ROLE_BYPASSES_RLS: this JOB reads/writes via the service-role DB (it
  *     operates across all accounts); RLS does not apply. It still writes account-scoped rows.
@@ -25,7 +25,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 
 import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";
 import { getContainer } from "@/bootstrap/container";
-import { broadcasts, postMetrics } from "@/shared/db/schema";
+import { postMetrics, posts } from "@/shared/db/schema";
 
 /** X v2 (and the capability boundary) tolerate at most 100 ids per readMetrics call. */
 const METRICS_BATCH_SIZE = 100;
@@ -70,22 +70,19 @@ export async function runIngestPostMetricsJob(): Promise<PostMetricsIngestSummar
 	const { log, socialXCapability } = container;
 	const db = getServiceDb();
 
-	// 1) Recent posted broadcasts with an external id (the only ones with metrics).
+	// 1) Recent posted posts with an external id (the only ones with metrics).
 	const rows = await db
 		.select({
-			id: broadcasts.id,
-			accountId: broadcasts.accountId,
-			channel: broadcasts.channel,
-			externalPostId: broadcasts.externalPostId,
+			id: posts.id,
+			accountId: posts.accountId,
+			channel: posts.channel,
+			externalPostId: posts.externalPostId,
 		})
-		.from(broadcasts)
+		.from(posts)
 		.where(
-			and(
-				eq(broadcasts.status, "posted"),
-				isNotNull(broadcasts.externalPostId),
-			),
+			and(eq(posts.status, "posted"), isNotNull(posts.externalPostId)),
 		)
-		.orderBy(desc(broadcasts.postedAt))
+		.orderBy(desc(posts.postedAt))
 		.limit(MAX_BROADCASTS_PER_RUN);
 
 	// Map external id → owning broadcast (id + account) for the snapshot stamp.
@@ -123,7 +120,7 @@ export async function runIngestPostMetricsJob(): Promise<PostMetricsIngestSummar
 				if (!parent) return null;
 				return {
 					accountId: parent.accountId,
-					broadcastId: parent.id,
+					postId: parent.id,
 					channel: snap.channel,
 					capturedAt: new Date(snap.fetchedAt),
 					impressions: snap.impressions ?? null,

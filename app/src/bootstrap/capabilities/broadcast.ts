@@ -4,16 +4,16 @@
 /**
  * Module: `@bootstrap/capabilities/broadcast`
  * Purpose: Factory for BroadcastCapability — posts staged per-channel variants via
- *   SocialXCapability and persists `broadcasts` rows for the beacon growth loop.
- * Scope: Wires the social adapter + Drizzle `broadcasts` writes. Does NOT compute KPIs.
+ *   SocialXCapability and persists `posts` rows for the beacon growth loop.
+ * Scope: Wires the social adapter + Drizzle `posts` writes. Does NOT compute KPIs.
  * Invariants:
- *   - NO_POST_METRICS_WRITE: this factory's only DB write surface is the `broadcasts`
+ *   - NO_POST_METRICS_WRITE: this factory's only DB write surface is the `posts`
  *     table. It never imports or writes `post_metrics` (WORKER≠VERIFIER — ingest is
  *     the sole `post_metrics` writer).
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants share `ideaKey`.
  *   - FUNNEL_CLASSIFIED: each row persists its `funnel_layer` + `topic`; `kind='text'`,
  *     `bundle_id=null`, `seq=0` in v0 (thread/artifact/bundle columns reserved).
- *   - ACCOUNT_SCOPED: each `broadcasts` row is stamped with the caller's `accountId`
+ *   - ACCOUNT_SCOPED: each `posts` row is stamped with the caller's `accountId`
  *     (billing account, the tenancy axis) so RLS scopes it. The worker writes via the
  *     service-role DB (bypasses RLS) but persists account-scoped rows from row one.
  * Side-effects: none at construction (factory only). The returned capability does IO.
@@ -31,7 +31,7 @@ import type {
 import { eq } from "drizzle-orm";
 
 import type { Database } from "@/adapters/server/db/client";
-import { broadcasts } from "@/shared/db/schema";
+import { posts } from "@/shared/db/schema";
 import { makeLogger } from "@/shared/observability";
 
 const logger = makeLogger({ component: "BroadcastCapability" });
@@ -49,11 +49,11 @@ export interface BroadcastCapabilityDeps {
 /**
  * Create a BroadcastCapability.
  *
- * For each variant: insert a `broadcasts` row (status `drafted`), post via the
+ * For each variant: insert a `posts` row (status `generated`), post via the
  * social adapter, then update the row to `posted` with the external id (or
  * `failed` if the post throws). Per-channel variants share `idea_key`.
  *
- * NO_POST_METRICS_WRITE: this implementation touches only the `broadcasts`
+ * NO_POST_METRICS_WRITE: this implementation touches only the `posts`
  * table — never `post_metrics`.
  */
 export function createBroadcastCapability(
@@ -66,7 +66,7 @@ export function createBroadcastCapability(
 			for (const variant of input.variants) {
 				// 1) Stage the row first so a crash mid-post still leaves a record.
 				const [row] = await deps.db
-					.insert(broadcasts)
+					.insert(posts)
 					.values({
 						accountId: input.accountId,
 						campaignId: input.campaignId,
@@ -80,9 +80,9 @@ export function createBroadcastCapability(
 						bundleId: null,
 						seq: 0,
 						text: variant.text,
-						status: "drafted",
+						status: "generated",
 					})
-					.returning({ id: broadcasts.id });
+					.returning({ id: posts.id });
 
 				if (!row) {
 					throw new Error("Failed to persist broadcast row");
@@ -99,13 +99,13 @@ export function createBroadcastCapability(
 
 					// 3) Record external id + status posted.
 					await deps.db
-						.update(broadcasts)
+						.update(posts)
 						.set({
 							status: "posted",
 							externalPostId: posted.externalId,
 							postedAt: new Date(posted.postedAt),
 						})
-						.where(eq(broadcasts.id, broadcastId));
+						.where(eq(posts.id, broadcastId));
 
 					results.push({
 						broadcastId,
@@ -123,9 +123,9 @@ export function createBroadcastCapability(
 						"broadcast post failed",
 					);
 					await deps.db
-						.update(broadcasts)
+						.update(posts)
 						.set({ status: "failed" })
-						.where(eq(broadcasts.id, broadcastId));
+						.where(eq(posts.id, broadcastId));
 
 					results.push({
 						broadcastId,

@@ -5,8 +5,8 @@
  * Module: `@cogni/db-schema/beacon-growth`
  * Purpose: Operational substrate for beacon's growth loop v0 (Twitter + Moltbook, text-only).
  *   Four tables back the PLAN→PRODUCE→BROADCAST→MEASURE arc: the account-owned
- *   campaign RECORD (lifecycle status + targets), configured channel accounts,
- *   per-platform broadcast variants, and append-only cached engagement snapshots.
+ *   campaign RECORD (lifecycle status + targets + strategy fields), configured channel
+ *   accounts, per-platform POST variants, and append-only cached engagement snapshots.
  * Scope: Drizzle `pgTable` definitions only. No queries, business logic, or I/O.
  * Invariants:
  *   - ACCOUNT_SCOPED: every row carries `account_id` (FK → `billing_accounts`), the
@@ -20,12 +20,19 @@
  *     (CRUD-able, lifecycle `status` draft→active→paused→done). The campaign HYPOTHESIS
  *     still lives in shared Doltgres (the KPI resolver reads it); `campaign_id` is the slug
  *     joining the two. status→Temporal schedule pause/resume is the HEARTBEAT PR.
- *   - BROADCAST_IDEA_KEY_GROUPS: `broadcasts.idea_key` groups per-platform variants of one core idea.
- *   - BROADCAST_FUNNEL_CLASSIFIED: each broadcast carries its funnel layer (tofu/mofu/bofu)
+ *   - CAMPAIGN_STRATEGY_FIELDS: `voice`/`core_topic`/`icp`/`objective`/`funnel_targets`
+ *     carry the generation strategy (brand voice, topic, ideal-customer profile, objective,
+ *     per-funnel-layer coverage targets) that later steps consume to drive generation volume
+ *     (no hardcoded N). `autonomy` gates how far the loop runs unattended (CHECK-bounded).
+ *   - POST_IDEA_KEY_GROUPS: `posts.idea_key` groups per-platform variants of one core idea.
+ *   - POST_FUNNEL_CLASSIFIED: each post carries its funnel layer (tofu/mofu/bofu)
  *     + topic so the queue is a classified funnel, not one blended stream (CHECK-bounded here).
- *   - BROADCAST_KIND_RESERVED: `kind` is text-only in v0; thread/image/video reserved for
+ *   - POST_KIND_RESERVED: `kind` is text-only in v0; thread/image/video reserved for
  *     bundles/artifacts (no blob storage yet). `bundle_id`/`seq` reserve ordered tweet-chains.
- *   - BROADCAST_LIFECYCLE: `status` walks drafted→approved→posted (or failed) — enforced by the app, CHECK-bounded here.
+ *   - POST_LIFECYCLE: `status` walks the review lanes
+ *     generated→in_review→approved→posted (or rejected/failed) — enforced by the app,
+ *     CHECK-bounded here. `score` is the optional pre-post quality score; `revision`
+ *     counts critique→edit passes.
  *   - POST_METRICS_APPEND_ONLY: `post_metrics` is written ONLY by the ingest path; each row is one captured snapshot.
  * Side-effects: none (schema definitions only)
  * Links: docs/spec/beacon-growth-loop-v0.md
@@ -38,6 +45,7 @@ import {
 	check,
 	index,
 	integer,
+	jsonb,
 	pgPolicy,
 	pgTable,
 	real,
@@ -66,7 +74,7 @@ const accountOwnershipPredicate = sql`"account_id" IN (SELECT "id" FROM "billing
  * campaigns — the account-private campaign record. The campaign HYPOTHESIS still
  * lives in shared Doltgres (the KPI resolver reads it); this is the owned, CRUD-able
  * operational record with a real lifecycle `status` (draft→active→paused→done).
- * `campaign_id` is the slug shared with the Doltgres hypothesis + `broadcasts.campaign_id`
+ * `campaign_id` is the slug shared with the Doltgres hypothesis + `posts.campaign_id`
  * — unique per row (one record per campaign). `target_rate` is the predicted engagement
  * rate the funnel must hit. RLS scopes every row to the owning billing account.
  */
@@ -78,13 +86,32 @@ export const campaigns = pgTable(
 		accountId: text("account_id")
 			.notNull()
 			.references(() => billingAccounts.id, { onDelete: "cascade" }),
-		/** Campaign slug — shared with the Doltgres hypothesis + `broadcasts.campaign_id`. */
+		/** Campaign slug — shared with the Doltgres hypothesis + `posts.campaign_id`. */
 		campaignId: text("campaign_id").notNull(),
 		title: text("title").notNull(),
 		/** The audience + angle + funnel-stage framing of the campaign; nullable. */
 		brief: text("brief"),
 		/** Predicted engagement RATE the funnel must hit (fraction in (0,1]); nullable. */
 		targetRate: real("target_rate"),
+		/** Brand voice / tone the generator writes in; nullable. */
+		voice: text("voice"),
+		/** The core subject the campaign orbits (seeds idea expansion); nullable. */
+		coreTopic: text("core_topic"),
+		/** Ideal-customer profile / target audience description; nullable. */
+		icp: text("icp"),
+		/** What the campaign is trying to achieve (awareness, signups, …); nullable. */
+		objective: text("objective"),
+		/**
+		 * Per-funnel-layer coverage target that drives generation VOLUME (no hardcoded N).
+		 * Shape is consumed by later steps (e.g. {"tofu":N,"mofu":N,"bofu":N}); nullable.
+		 */
+		funnelTargets: jsonb("funnel_targets"),
+		/**
+		 * How far the loop runs unattended: `manual` (human drives every step),
+		 * `approve_gate` (generate freely, human approves before post), `autonomous`
+		 * (end-to-end). CHECK-bounded; defaults to the safe `manual`.
+		 */
+		autonomy: text("autonomy").notNull().default("manual"),
 		/**
 		 * Lifecycle status: draft (paused) → active (heartbeat runs) → paused → done.
 		 * Wiring status→Temporal schedule pause/resume is the HEARTBEAT PR; here it
@@ -101,6 +128,10 @@ export const campaigns = pgTable(
 		check(
 			"campaigns_status_check",
 			sql`${table.status} IN ('draft', 'active', 'paused', 'done')`,
+		),
+		check(
+			"campaigns_autonomy_check",
+			sql`${table.autonomy} IN ('manual', 'approve_gate', 'autonomous')`,
 		),
 		// One record per campaign slug, scoped to its account (slug is account-unique).
 		uniqueIndex("campaigns_account_campaign_id_idx").on(
@@ -153,19 +184,21 @@ export const channelAccounts = pgTable(
 ).enableRLS();
 
 // ---------------------------------------------------------------------------
-// broadcasts — per-platform post variants (draft→approve→post lifecycle)
+// posts — per-platform post variants (review-lane lifecycle)
 // ---------------------------------------------------------------------------
 
 /**
- * broadcasts — per-platform post variants staged by the content loop.
+ * posts — per-platform post variants staged by the content loop.
  * `idea_key` groups the variants of one core idea across channels; `campaign_id`
- * ties them to a campaign hypothesis. `status` is the draft→approve→post lifecycle.
+ * ties them to a campaign hypothesis. `status` walks the review lanes
+ * generated→in_review→approved→posted (or rejected/failed). `score` is the optional
+ * pre-post quality score and `revision` counts critique→edit passes.
  * `funnel_layer` + `topic` classify the post within the campaign funnel (the queue
  * is a planned, classified funnel — not one blended stream). `kind`/`bundle_id`/`seq`
  * reserve future thread/artifact/tweet-chain extensions (text-only single posts in v0).
  */
-export const broadcasts = pgTable(
-	"broadcasts",
+export const posts = pgTable(
+	"posts",
 	{
 		id: uuid("id").defaultRandom().primaryKey(),
 		/** Owning billing account (tenancy axis). RLS scopes rows by this FK. */
@@ -187,7 +220,11 @@ export const broadcasts = pgTable(
 		/** Position within a bundle; 0 for standalone single posts. */
 		seq: integer("seq").notNull().default(0),
 		text: text("text").notNull(),
-		status: text("status").notNull().default("drafted"),
+		/** Optional pre-post quality score from the critique pass; nullable. */
+		score: real("score"),
+		/** Count of critique→edit revision passes; 0 for first draft. */
+		revision: integer("revision").notNull().default(0),
+		status: text("status").notNull().default("generated"),
 		externalPostId: text("external_post_id"),
 		postedAt: timestamp("posted_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true })
@@ -196,21 +233,21 @@ export const broadcasts = pgTable(
 	},
 	(table) => [
 		check(
-			"broadcasts_status_check",
-			sql`${table.status} IN ('drafted', 'approved', 'posted', 'failed')`,
+			"posts_status_check",
+			sql`${table.status} IN ('generated', 'in_review', 'approved', 'posted', 'rejected', 'failed')`,
 		),
 		check(
-			"broadcasts_funnel_layer_check",
+			"posts_funnel_layer_check",
 			sql`${table.funnelLayer} IN ('tofu', 'mofu', 'bofu')`,
 		),
 		check(
-			"broadcasts_kind_check",
+			"posts_kind_check",
 			sql`${table.kind} IN ('text', 'thread', 'image', 'video')`,
 		),
-		index("broadcasts_campaign_idx").on(table.campaignId),
-		index("broadcasts_idea_key_idx").on(table.ideaKey),
-		index("broadcasts_funnel_layer_idx").on(table.funnelLayer),
-		index("broadcasts_account_idx").on(table.accountId),
+		index("posts_campaign_idx").on(table.campaignId),
+		index("posts_idea_key_idx").on(table.ideaKey),
+		index("posts_funnel_layer_idx").on(table.funnelLayer),
+		index("posts_account_idx").on(table.accountId),
 		pgPolicy("tenant_isolation", {
 			using: accountOwnershipPredicate,
 			withCheck: accountOwnershipPredicate,
@@ -223,7 +260,7 @@ export const broadcasts = pgTable(
 // ---------------------------------------------------------------------------
 
 /**
- * post_metrics — append-only engagement snapshots for a broadcast (POST_METRICS_APPEND_ONLY).
+ * post_metrics — append-only engagement snapshots for a post (POST_METRICS_APPEND_ONLY).
  * Written ONLY by the metrics ingest path; never mutated. `impressions` may be null on
  * X free-tier (the KPI falls back to engagement-per-follower — see spec §5).
  */
@@ -231,13 +268,13 @@ export const postMetrics = pgTable(
 	"post_metrics",
 	{
 		id: uuid("id").defaultRandom().primaryKey(),
-		/** Owning billing account (tenancy axis), stamped from the parent broadcast. */
+		/** Owning billing account (tenancy axis), stamped from the parent post. */
 		accountId: text("account_id")
 			.notNull()
 			.references(() => billingAccounts.id, { onDelete: "cascade" }),
-		broadcastId: uuid("broadcast_id")
+		postId: uuid("post_id")
 			.notNull()
-			.references(() => broadcasts.id),
+			.references(() => posts.id),
 		channel: text("channel").notNull(),
 		capturedAt: timestamp("captured_at", { withTimezone: true })
 			.notNull()
@@ -249,8 +286,8 @@ export const postMetrics = pgTable(
 		followersAtCapture: integer("followers_at_capture"),
 	},
 	(table) => [
-		index("post_metrics_broadcast_captured_idx").on(
-			table.broadcastId,
+		index("post_metrics_post_captured_idx").on(
+			table.postId,
 			table.capturedAt,
 		),
 		index("post_metrics_account_idx").on(table.accountId),

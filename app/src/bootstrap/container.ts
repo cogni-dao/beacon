@@ -220,7 +220,7 @@ export interface Container {
   webSearchCapability: WebSearchCapability;
   /** Social broadcast + metrics capability (growth-loop v0) — fakes in test, real X when X_API_BEARER_TOKEN set */
   socialXCapability: SocialXCapability;
-  /** Broadcast capability — posts variants + persists `broadcasts` (NO post_metrics writes) */
+  /** Broadcast capability — posts variants + persists `posts` (NO post_metrics writes) */
   broadcastCapability: BroadcastCapability;
   /** Repo capability for AI tools - requires COGNI_REPO_PATH */
   repoCapability: RepoCapability;
@@ -575,7 +575,7 @@ function createContainer(): Container {
 
   // SocialXCapability (growth-loop v0): fakes in test, real X when X_API_BEARER_TOKEN set.
   const socialXCapability = createSocialXCapability(env);
-  // BroadcastCapability: posts variants + persists `broadcasts` (service-role, no RLS in v0).
+  // BroadcastCapability: posts variants + persists `posts` (service-role, no RLS in v0).
   // NO_POST_METRICS_WRITE: this capability never touches `post_metrics`.
   const broadcastCapability = createBroadcastCapability({
     socialX: socialXCapability,

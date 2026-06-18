@@ -45,7 +45,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { broadcasts, campaigns, postMetrics } from "@/shared/db/schema";
+import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 import type { RequestContext } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
@@ -118,7 +118,7 @@ export type CampaignSummary = z.infer<typeof CampaignSummarySchema>;
 
 /**
  * Load every cached `post_metrics` snapshot for one campaign's posted
- * broadcasts. RLS_SCOPED_READS: runs inside `withTenantScope` under the session
+ * `posts`. RLS_SCOPED_READS: runs inside `withTenantScope` under the session
  * user's GUC so the policy filters rows to the user's account(s) — never
  * service-role (which would bypass RLS and leak across accounts). Identical
  * reduction to the resolver bridge so the lens KPI matches the resolution KPI.
@@ -134,17 +134,14 @@ async function loadCampaignSnapshots(
   const actorId = userActor(userId as UserId);
 
   return withTenantScope(db, actorId, async (tx) => {
-    const broadcastRows = await tx
-      .select({ id: broadcasts.id })
-      .from(broadcasts)
+    const postRows = await tx
+      .select({ id: posts.id })
+      .from(posts)
       .where(
-        and(
-          eq(broadcasts.campaignId, campaignId),
-          eq(broadcasts.status, "posted")
-        )
+        and(eq(posts.campaignId, campaignId), eq(posts.status, "posted"))
       );
-    const broadcastIds = broadcastRows.map((r) => r.id);
-    if (broadcastIds.length === 0) {
+    const postIds = postRows.map((r) => r.id);
+    if (postIds.length === 0) {
       return { snapshots: [], postedBroadcasts: 0 };
     }
 
@@ -157,7 +154,7 @@ async function loadCampaignSnapshots(
         followersAtCapture: postMetrics.followersAtCapture,
       })
       .from(postMetrics)
-      .where(inArray(postMetrics.broadcastId, broadcastIds));
+      .where(inArray(postMetrics.postId, postIds));
 
     const snapshots: PostMetricSnapshot[] = rows.map((r) => ({
       impressions: r.impressions ?? null,
@@ -166,7 +163,7 @@ async function loadCampaignSnapshots(
       replies: r.replies ?? 0,
       followersAtCapture: r.followersAtCapture ?? null,
     }));
-    return { snapshots, postedBroadcasts: broadcastIds.length };
+    return { snapshots, postedBroadcasts: postIds.length };
   });
 }
 

@@ -7,7 +7,7 @@
  *   `campaigns` records (RLS-scoped) with their CURRENT engagement KPI computed
  *   independently from cached `post_metrics`. The lifecycle `status` is the owned
  *   column now, not a derivation from loop counters.
- * Scope: Composes an RLS-scoped Postgres read of `campaigns` + `broadcasts` +
+ * Scope: Composes an RLS-scoped Postgres read of `campaigns` + `posts` +
  *   `post_metrics` and the pure `computeEngagementKpi`. No business logic beyond
  *   mapping; the KPI math lives in `@cogni/knowledge-store`.
  * Invariants:
@@ -16,7 +16,7 @@
  *   - READ_ONLY: no writes; the lens only observes the loop (CRUD is the API route).
  *   - STATUS_FROM_TABLE: the lifecycle `status` is the owned `campaigns.status`
  *     column — NOT derived from post/snapshot counters.
- *   - RLS_SCOPED_READS: every read (campaigns/broadcasts/post_metrics) runs inside
+ *   - RLS_SCOPED_READS: every read (campaigns/posts/post_metrics) runs inside
  *     `withTenantScope` under the session user's GUC — RLS filters rows to the user's
  *     billing account(s). NEVER the service-role DB (that leaks every account's rows).
  *     The campaign LIST now comes from the owned Postgres table (the campaigns→Postgres
@@ -36,7 +36,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { resolveAppDb } from "@/bootstrap/container";
-import { broadcasts, campaigns, postMetrics } from "@/shared/db/schema";
+import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 
 const DEFAULT_TARGET_RATE = 0.02;
 
@@ -128,31 +128,31 @@ async function loadCampaignSnapshots(
 
 	// RLS_SCOPED_READS: filter to the session user's account(s) via the GUC.
 	return withTenantScope(db, actorId, async (tx) => {
-		const broadcastRows = await tx
-			.select({ id: broadcasts.id, funnelLayer: broadcasts.funnelLayer })
-			.from(broadcasts)
+		const postRows = await tx
+			.select({ id: posts.id, funnelLayer: posts.funnelLayer })
+			.from(posts)
 			.where(
 				and(
-					eq(broadcasts.campaignId, campaignId),
-					eq(broadcasts.status, "posted"),
+					eq(posts.campaignId, campaignId),
+					eq(posts.status, "posted"),
 				),
 			);
 
-		if (broadcastRows.length === 0) {
+		if (postRows.length === 0) {
 			return { snapshots: [], postedBroadcasts: 0, byLayer, postedByLayer };
 		}
 
 		const layerOf = new Map<string, FunnelLayer>();
-		for (const r of broadcastRows) {
+		for (const r of postRows) {
 			const layer = asFunnelLayer(r.funnelLayer);
 			layerOf.set(r.id, layer);
 			postedByLayer[layer] += 1;
 		}
-		const broadcastIds = broadcastRows.map((r) => r.id);
+		const postIds = postRows.map((r) => r.id);
 
 		const rows = await tx
 			.select({
-				broadcastId: postMetrics.broadcastId,
+				postId: postMetrics.postId,
 				impressions: postMetrics.impressions,
 				likes: postMetrics.likes,
 				reposts: postMetrics.reposts,
@@ -160,7 +160,7 @@ async function loadCampaignSnapshots(
 				followersAtCapture: postMetrics.followersAtCapture,
 			})
 			.from(postMetrics)
-			.where(inArray(postMetrics.broadcastId, broadcastIds));
+			.where(inArray(postMetrics.postId, postIds));
 
 		const snapshots: PostMetricSnapshot[] = [];
 		for (const r of rows) {
@@ -172,13 +172,13 @@ async function loadCampaignSnapshots(
 				followersAtCapture: r.followersAtCapture ?? null,
 			};
 			snapshots.push(snapshot);
-			const layer = layerOf.get(r.broadcastId) ?? "tofu";
+			const layer = layerOf.get(r.postId) ?? "tofu";
 			byLayer[layer].push(snapshot);
 		}
 
 		return {
 			snapshots,
-			postedBroadcasts: broadcastIds.length,
+			postedBroadcasts: postIds.length,
 			byLayer,
 			postedByLayer,
 		};
@@ -359,28 +359,28 @@ async function loadCampaignPosts(
 
 	// RLS_SCOPED_READS: filter to the session user's account(s) via the GUC.
 	const { rows, latest } = await withTenantScope(db, actorId, async (tx) => {
-		const broadcastRows = await tx
+		const postRows = await tx
 			.select({
-				id: broadcasts.id,
-				channel: broadcasts.channel,
-				funnelLayer: broadcasts.funnelLayer,
-				topic: broadcasts.topic,
-				angle: broadcasts.angle,
-				text: broadcasts.text,
-				status: broadcasts.status,
-				externalPostId: broadcasts.externalPostId,
-				postedAt: broadcasts.postedAt,
+				id: posts.id,
+				channel: posts.channel,
+				funnelLayer: posts.funnelLayer,
+				topic: posts.topic,
+				angle: posts.angle,
+				text: posts.text,
+				status: posts.status,
+				externalPostId: posts.externalPostId,
+				postedAt: posts.postedAt,
 			})
-			.from(broadcasts)
-			.where(eq(broadcasts.campaignId, campaignId));
-		if (broadcastRows.length === 0) {
-			return { rows: broadcastRows, latest: new Map<string, never>() };
+			.from(posts)
+			.where(eq(posts.campaignId, campaignId));
+		if (postRows.length === 0) {
+			return { rows: postRows, latest: new Map<string, never>() };
 		}
 
-		const ids = broadcastRows.map((r) => r.id);
+		const ids = postRows.map((r) => r.id);
 		const metricRows = await tx
 			.select({
-				broadcastId: postMetrics.broadcastId,
+				postId: postMetrics.postId,
 				capturedAt: postMetrics.capturedAt,
 				impressions: postMetrics.impressions,
 				likes: postMetrics.likes,
@@ -388,20 +388,20 @@ async function loadCampaignPosts(
 				replies: postMetrics.replies,
 			})
 			.from(postMetrics)
-			.where(inArray(postMetrics.broadcastId, ids));
+			.where(inArray(postMetrics.postId, ids));
 
-		// Keep only the latest snapshot per broadcast.
-		const latestByBroadcast = new Map<string, (typeof metricRows)[number]>();
+		// Keep only the latest snapshot per post.
+		const latestByPost = new Map<string, (typeof metricRows)[number]>();
 		for (const m of metricRows) {
-			const cur = latestByBroadcast.get(m.broadcastId);
+			const cur = latestByPost.get(m.postId);
 			if (
 				!cur ||
 				(m.capturedAt?.getTime() ?? 0) > (cur.capturedAt?.getTime() ?? 0)
 			) {
-				latestByBroadcast.set(m.broadcastId, m);
+				latestByPost.set(m.postId, m);
 			}
 		}
-		return { rows: broadcastRows, latest: latestByBroadcast };
+		return { rows: postRows, latest: latestByPost };
 	});
 
 	if (rows.length === 0) return [];

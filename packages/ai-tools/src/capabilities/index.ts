@@ -65,7 +65,7 @@ export type {
   ScheduleInfo,
   ScheduleUpdateParams,
 } from "./schedule";
-// Broadcast capability (per beacon-growth-loop spec — persists `broadcasts` only)
+// Broadcast capability (per beacon-growth-loop spec — persists `posts` only)
 export {
   BROADCAST_KINDS,
   BroadcastInputSchema,
