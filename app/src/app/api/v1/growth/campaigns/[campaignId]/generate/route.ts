@@ -120,6 +120,7 @@ export const POST = wrapRouteHandlerWithLogging<{
       const campaignRows = await tx
         .select({
           campaignId: campaigns.campaignId,
+          brief: campaigns.brief,
           voice: campaigns.voice,
           coreTopic: campaigns.coreTopic,
           icp: campaigns.icp,
@@ -158,6 +159,7 @@ export const POST = wrapRouteHandlerWithLogging<{
 
     const strategy: CampaignStrategy = {
       campaignId: campaignRow.campaignId,
+      brief: campaignRow.brief,
       voice: campaignRow.voice,
       coreTopic: campaignRow.coreTopic,
       icp: campaignRow.icp,
