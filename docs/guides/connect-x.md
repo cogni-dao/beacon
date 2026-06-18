@@ -3,84 +3,82 @@
 
 # Connect X (Twitter) — node operator setup
 
-This walks a **node operator** through the one-time setup that lets **every tenant**
-link their own X account to this node. See `docs/spec/platform-connections.md` for the
-architecture.
+One-time setup so **every tenant** can link their own X account. Architecture:
+`docs/spec/platform-connections.md`.
 
-## Mental model (read this first)
+## Mental model
 
-- You register **ONE** X app for the whole node. It is **not** per-tenant.
-- That one app has a single `client_id` + `client_secret` (→ `X_OAUTH_CLIENT_ID` /
-  `X_OAUTH_CLIENT_SECRET`).
-- **Each tenant authorizes against that one app** and grants access to *their own*
-  X account. We store each tenant's **user-context token** encrypted in the
-  `connections` table (per-tenant, AEAD-encrypted, RLS-isolated).
-- One OAuth app → many per-user authorizations. This is standard OAuth; you do **not**
-  create an app per tenant.
+- You register **ONE** X app for the whole node (not per-tenant). Its `client_id` +
+  `client_secret` become `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET`.
+- Each tenant authorizes against that one app and grants access to *their own* account;
+  we store each tenant's user-context token encrypted per-tenant in `connections`.
+- The node posts/reads **as the tenant's account**. There is no app-level bearer token —
+  an app-only X token cannot `POST /2/tweets`.
 
-> The node posts/reads **as the tenant's linked account**, using that tenant's token.
-> There is no shared "node bearer token" — X app-only bearer tokens **cannot post**
-> (`POST /2/tweets` requires user context), so per-tenant OAuth is the only viable model.
+## 1. Create the X app — the callback is the part that bites
 
-## 1. Create the X app (once)
+X Developer Portal → your Project → **+ Add App** (or use an existing one) →
+**User authentication settings → Set up / Edit**. A new or cloned app has **no OAuth
+configured** (and may ship junk placeholder callbacks like `integromat.com/...` from a
+Make/Zapier template). **You must set all of this yourself:**
 
-1. Go to the [X Developer Portal](https://developer.x.com) → your Project → **+ Add App**
-   (or use an existing app).
-2. Open **User authentication settings** → **Set up**:
-   - **App permissions:** Read and write (needed to post).
-   - **Type of App:** **Web App, Automated App or Bot** (confidential client — it has a secret).
-   - **Callback URI / Redirect URL:** `<APP_BASE_URL>/api/v1/connections/x/callback`
-     (e.g. `https://your-node.example.com/api/v1/connections/x/callback`). Must match exactly.
-   - **Website URL:** your node's URL.
-3. Save. Under **Keys and tokens → OAuth 2.0 Client ID and Client Secret**, copy both.
+| Field | Value |
+|---|---|
+| **App permissions** | **Read and write** (needed to post; don't add Direct Messages) |
+| **Type of App** | **Web App, Automated App or Bot** (confidential client → issues a Client Secret) |
+| **Callback URI / Redirect URL** | **delete any existing/placeholder URLs**, then add the **exact** URL for the env you're testing (see below) |
+| **Website URL** | the node URL (e.g. `https://beacon-test.cognidao.org`) |
 
-## 2. Set the secrets (self-serve, node owner)
+**Callback URL — must match character-for-character (scheme + host + path, no trailing slash):**
 
-The shapes are declared in `.cogni/secrets-catalog.yaml`; the node owner sets the **values**
-self-serve via the operator — they never land in a file, shell history, or chat. This needs a
-`can_manage_secrets` grant on the node + your operator API key. Full mechanics:
-`docs/guides/add-secret.md` §3. (beacon node id: `f97f68f2-8406-4a3b-b5a9-d579b779f19d`.)
+- candidate-a (testing): `https://beacon-test.cognidao.org/api/v1/connections/x/callback`
+- production: `https://beacon.cognidao.org/api/v1/connections/x/callback`
 
-Set all three for the target env (candidate-a):
+> ⚠️ If the registered callback doesn't exactly match what the node sends, X aborts on its
+> **own** authorize page with *"Something went wrong — You weren't able to give access to the
+> App"* — **before** it ever returns to the node. 99% of first-time failures are this field.
 
-```bash
-NODE=f97f68f2-8406-4a3b-b5a9-d579b779f19d
-OP=https://cognidao.org   # operator host
+Save → **Keys and tokens → OAuth 2.0 Client ID and Client Secret** → copy both.
 
-# 1) CONNECTIONS_ENCRYPTION_KEY — generated, 64 hex chars (required; connect 500s without it)
-printf '%s' "$(openssl rand -hex 32)" | jq -Rs '{key:"CONNECTIONS_ENCRYPTION_KEY",value:.,op:"set"}' |
-  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
-    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-
+## 2. Set the secrets
 
-# 2) X_OAUTH_CLIENT_ID — paste from the X app (Keys and tokens → OAuth 2.0 Client ID)
-read -rsp "X_OAUTH_CLIENT_ID: " V; echo
-printf '%s' "$V" | jq -Rs '{key:"X_OAUTH_CLIENT_ID",value:.,op:"set"}' |
-  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
-    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-; unset V
+Only two secrets are node-owned: **`X_OAUTH_CLIENT_ID`** and **`X_OAUTH_CLIENT_SECRET`**.
+`CONNECTIONS_ENCRYPTION_KEY` is **substrate-minted per env — do not set it** (see `bug.5039`).
 
-# 3) X_OAUTH_CLIENT_SECRET — paste the OAuth 2.0 Client Secret
-read -rsp "X_OAUTH_CLIENT_SECRET: " V; echo
-printf '%s' "$V" | jq -Rs '{key:"X_OAUTH_CLIENT_SECRET",value:.,op:"set"}' |
-  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
-    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-; unset V
-```
+The value-write path depends on the env, because the node is registered against production:
 
-ESO + Reloader roll the values into the candidate-a pod (no `kubectl`). If you get
-`503 secrets_plane_config_missing`, the operator hasn't enabled the self-serve writer on
-candidate-a yet — ping the operator team. If `CONNECTIONS_ENCRYPTION_KEY` is unset, the connect
-route fails fast with a 500 and stores nothing.
+- **production:** self-serve via the operator — granted `secrets_manager`, `POST
+  https://cognidao.org/api/v1/nodes/<node-id>/secrets {key,value,op:"set"}` with your API key
+  (`docs/guides/add-secret.md` §3).
+- **candidate-a / preview:** the self-serve writer can't reach these for a prod-registered node,
+  so use the operator-admin CLI against that env's OpenBao (needs the env kubeconfig):
+
+  ```bash
+  export KUBECONFIG=<cogni-template>/.local/candidate-a-kubeconfig.yaml
+  kubectl -n openbao port-forward svc/openbao 8200:8200 &
+  export BAO_ADDR=http://127.0.0.1:8200
+  export BAO_TOKEN=$(bao write -field=token auth/kubernetes/login \
+    role=candidate-a-writer jwt=$(kubectl create token openbao-operator -n default))
+  printf '%s' "$CLIENT_ID"     | pnpm secrets:set candidate-a beacon X_OAUTH_CLIENT_ID
+  printf '%s' "$CLIENT_SECRET" | pnpm secrets:set candidate-a beacon X_OAUTH_CLIENT_SECRET
+  ```
+
+  `beacon-env-secrets` extracts the whole `cogni/<env>/beacon` path, so new keys flow in with
+  no operator-side change; Reloader rolls the pod. (`docs/guides/secrets-add-new.md` §3–8.)
 
 ## 3. Verify
 
-1. Deploy (the migrate initContainer applies migration `0033`, adding the `x` provider).
-2. Sign in, open **Profile → Social Accounts → X → Connect**.
-3. You are redirected to X, approve, and land back on `/profile?connected=x` showing your `@handle`.
-4. The encrypted token is now in `connections`; the broker auto-refreshes it.
+1. Deploy/flight (the migrate initContainer applies the connections migration adding the `x` provider).
+2. Sign in → **Profile → Social Accounts → X → Connect**.
+3. You're redirected to X, approve, and land on `/profile?connected=x` showing your `@handle`.
 
 ## Troubleshooting
 
-- **Redirected back with `?error=connect_failed`:** callback URL mismatch, expired/tampered
-  state cookie (>5 min), or token exchange failed. Check the app's callback URL matches
-  `<APP_BASE_URL>/api/v1/connections/x/callback` exactly.
-- **`Provider not available: x`:** `X_OAUTH_CLIENT_ID`/`SECRET` not set in this env.
-- **Server configuration error (500) on Connect:** `CONNECTIONS_ENCRYPTION_KEY` not set.
+- **X's own page: *"Something went wrong — You weren't able to give access to the App"*** →
+  the X app's **Callback URI doesn't match** the node's (wrong/placeholder URL, trailing slash,
+  http vs https, or wrong env). Fix the callback in §1. This is the most common failure.
+- **Back on the node with `?error=connect_failed`** → state cookie expired (>5 min) or the
+  token exchange failed (wrong Client Secret, or app permissions not "Read and write").
+- **`Provider not available: x`** → `X_OAUTH_CLIENT_ID`/`SECRET` not set in this env.
+- **`Server configuration error` (500) on Connect** → `CONNECTIONS_ENCRYPTION_KEY` missing in
+  the env (substrate should mint it; check it's present in the pod).
