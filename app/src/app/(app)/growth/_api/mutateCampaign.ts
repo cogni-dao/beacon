@@ -18,9 +18,15 @@ export type CampaignStatus = "draft" | "active" | "paused" | "done";
 export interface CreateCampaignInput {
   campaignId: string;
   title: string;
-  brief: string;
-  targetRate: number;
-  evaluateAt: string;
+  /**
+   * The campaign's DEFINE DNA — voice + topic + audience + objective. This is
+   * what the AI reads on every research/generate run; the KPI mechanics
+   * (target rate, evaluate-by) are defaulted server-side, not collected here.
+   */
+  coreTopic: string;
+  voice: string;
+  icp: string;
+  objective: string;
 }
 
 export interface CreateCampaignResponse {
