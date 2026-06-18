@@ -246,6 +246,13 @@
       "when": 1781814948872,
       "tag": "0034_outgoing_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781817768620,
+      "tag": "0035_cuddly_bucky",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,7 @@ import {
 import { parseMcpConfigFromEnv } from "@cogni/langgraph-graphs";
 import {
   COGNI_SYSTEM_PRINCIPAL_USER_ID,
+  decodeAeadKey,
   initAnalytics,
   shutdownAnalytics,
 } from "@cogni/node-shared";
@@ -99,6 +100,7 @@ import {
   ViemTreasuryAdapter,
 } from "@/adapters/server";
 import { ServiceDrizzleAccountService } from "@/adapters/server/accounts/drizzle.adapter";
+import { getPlatformConnector } from "@/adapters/server/connections/registry";
 import {
   AggregatingModelCatalog,
   ProviderResolver,
@@ -803,18 +805,38 @@ function createContainer(): Container {
   // Undefined when CONNECTIONS_ENCRYPTION_KEY not set
   const connectionBroker: ConnectionBrokerPort | undefined = (() => {
     if (!env.CONNECTIONS_ENCRYPTION_KEY) return undefined;
-    const keyBuf = Buffer.from(env.CONNECTIONS_ENCRYPTION_KEY, "hex");
-    if (keyBuf.length !== 32) {
+    let keyBuf: Buffer;
+    try {
+      // Accepts 64-hex (dev) or base64-of-32-bytes (substrate-minted).
+      keyBuf = decodeAeadKey(env.CONNECTIONS_ENCRYPTION_KEY);
+    } catch {
       log.warn(
-        "CONNECTIONS_ENCRYPTION_KEY must be 64 hex chars (32 bytes). BYO-AI disabled."
+        "CONNECTIONS_ENCRYPTION_KEY must be 32 bytes (64 hex chars or base64). BYO-AI disabled."
       );
       return undefined;
     }
+    // Provider-specific token refresh — wired from the platform connector registry.
+    // Adding a platform connector with a refresh() makes its tokens auto-refresh here.
+    const refreshFns: Record<
+      string,
+      (refreshToken: string) => Promise<{
+        access: string;
+        refresh: string;
+        expires: number;
+        accountId?: string;
+      }>
+    > = {};
+    const xConnector = getPlatformConnector("x");
+    if (xConnector) {
+      refreshFns.x = (token: string) => xConnector.refresh(token);
+    }
+
     return new DrizzleConnectionBrokerAdapter({
       db: db as unknown as import("drizzle-orm/node-postgres").NodePgDatabase,
       encryptionKey: keyBuf,
       encryptionKeyId: "v1",
       log,
+      refreshFns,
     });
   })();
 
@@ -979,3 +1001,10 @@ export function resolveAppDb(): Database {
 export function resolveServiceDb(): Database {
   return getServiceDb();
 }
+
+/**
+ * Resolve a platform connector (X, …) by provider key, or null if unknown/unconfigured.
+ * Re-exported through bootstrap so app routes reach the adapter registry without
+ * importing `@/adapters/server` directly (app→adapters boundary).
+ */
+export { getPlatformConnector } from "@/adapters/server/connections/registry";

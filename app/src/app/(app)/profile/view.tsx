@@ -29,6 +29,7 @@ import {
   GitHubIcon,
   GoogleIcon,
   PageContainer,
+  XIcon,
 } from "@/components";
 import { OpenAIIcon } from "@/features/ai/icons/providers/OpenAIIcon";
 
@@ -183,6 +184,10 @@ const FEEDBACK_MESSAGES: Record<
   },
   link_failed: {
     text: "Account linking failed. Please try again.",
+    variant: "error",
+  },
+  connect_failed: {
+    text: "Connecting that account failed. Please try again.",
     variant: "error",
   },
 };
@@ -531,13 +536,17 @@ export function ProfileView(): ReactElement {
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [ollamaApiKey, setOllamaApiKey] = useState("");
   const [ollamaError, setOllamaError] = useState("");
+  const [xConnected, setXConnected] = useState(false);
+  const [xHandle, setXHandle] = useState<string | null>(null);
+  const [xLoading, setXLoading] = useState(false);
 
   // Read feedback query params and strip them to prevent re-display on refresh
   const linkedProvider = searchParams.get("linked");
+  const connectedProvider = searchParams.get("connected");
   const error = searchParams.get("error");
 
   useEffect(() => {
-    if (linkedProvider || error) {
+    if (linkedProvider || connectedProvider || error) {
       if (linkedProvider) {
         // Re-validate session so RainbowKit picks up the still-valid SIWE auth
         void updateSession();
@@ -545,7 +554,7 @@ export function ProfileView(): ReactElement {
       // Strip query params after reading — prevents re-display on refresh/back
       router.replace("/profile");
     }
-  }, [linkedProvider, error, router, updateSession]);
+  }, [linkedProvider, connectedProvider, error, router, updateSession]);
 
   // Fetch profile data + configured providers in parallel
   useEffect(() => {
@@ -597,6 +606,24 @@ export function ProfileView(): ReactElement {
         if (data) setOllamaConnected(data.connected);
       })
       .catch(() => {});
+
+    // Check X (Twitter) platform connection status
+    fetch("/api/v1/connections/x/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          data: {
+            connected: boolean;
+            accounts: Array<{ handle: string | null }>;
+          } | null
+        ) => {
+          if (data) {
+            setXConnected(data.connected);
+            setXHandle(data.accounts[0]?.handle ?? null);
+          }
+        }
+      )
+      .catch(() => {});
   }, []);
 
   const walletAddress = session?.user?.walletAddress ?? null;
@@ -620,8 +647,14 @@ export function ProfileView(): ReactElement {
       <h1 className="font-semibold text-2xl text-foreground">Profile</h1>
       <div className="border-border border-b" />
 
-      {/* Feedback banner for linking results */}
-      <FeedbackBanner linkedProvider={linkedProvider} error={error} />
+      {/* Feedback banner for linking + connection results */}
+      <FeedbackBanner
+        linkedProvider={
+          linkedProvider ??
+          (connectedProvider ? connectedProvider.toUpperCase() : null)
+        }
+        error={error}
+      />
 
       {/* ── Profile section (display name + avatar color, no divider between) ── */}
 
@@ -720,6 +753,58 @@ export function ProfileView(): ReactElement {
           </SettingRow>
         );
       })}
+
+      {/* ── Social Accounts ── */}
+
+      <SectionHeading>Social Accounts</SectionHeading>
+
+      <SettingRow
+        icon={<XIcon className="size-5" />}
+        label="X"
+        description={
+          xConnected
+            ? "Your X account is connected."
+            : "Connect your X account so this node can post and gather metrics."
+        }
+      >
+        {xConnected ? (
+          <div className="flex items-center gap-2">
+            <ConnectedBadge login={xHandle ?? "Connected"} />
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={xLoading}
+              onClick={async () => {
+                setXLoading(true);
+                try {
+                  const res = await fetch("/api/v1/connections/x/disconnect", {
+                    method: "POST",
+                  });
+                  if (res.ok) {
+                    setXConnected(false);
+                    setXHandle(null);
+                  }
+                } finally {
+                  setXLoading(false);
+                }
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // Top-level navigation — the connect route 302s to X's OAuth page.
+              window.location.href = "/api/v1/connections/x/connect";
+            }}
+          >
+            Connect
+          </Button>
+        )}
+      </SettingRow>
 
       {/* ── AI Providers (BYO-AI) ── */}
 
