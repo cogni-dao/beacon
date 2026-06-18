@@ -34,26 +34,41 @@ architecture.
    - **Website URL:** your node's URL.
 3. Save. Under **Keys and tokens → OAuth 2.0 Client ID and Client Secret**, copy both.
 
-## 2. Set the secrets
+## 2. Set the secrets (self-serve, node owner)
 
-The shapes are declared in `.cogni/secrets-catalog.yaml`; you set the **values** out-of-band
-(never commit them). Per `docs/guides/add-secret.md` §3:
+The shapes are declared in `.cogni/secrets-catalog.yaml`; the node owner sets the **values**
+self-serve via the operator — they never land in a file, shell history, or chat. This needs a
+`can_manage_secrets` grant on the node + your operator API key. Full mechanics:
+`docs/guides/add-secret.md` §3. (beacon node id: `f97f68f2-8406-4a3b-b5a9-d579b779f19d`.)
 
-```bash
-# ops path (per env + node slug):
-pnpm secrets:set <env> <node-slug> CONNECTIONS_ENCRYPTION_KEY
-pnpm secrets:set <env> <node-slug> X_OAUTH_CLIENT_ID
-pnpm secrets:set <env> <node-slug> X_OAUTH_CLIENT_SECRET
-# self-serve path (node owner): POST /api/v1/nodes/<id>/secrets
-```
-
-`CONNECTIONS_ENCRYPTION_KEY` must be 64 hex chars. Generate it with:
+Set all three for the target env (candidate-a):
 
 ```bash
-openssl rand -hex 32
+NODE=f97f68f2-8406-4a3b-b5a9-d579b779f19d
+OP=https://cognidao.org   # operator host
+
+# 1) CONNECTIONS_ENCRYPTION_KEY — generated, 64 hex chars (required; connect 500s without it)
+printf '%s' "$(openssl rand -hex 32)" | jq -Rs '{key:"CONNECTIONS_ENCRYPTION_KEY",value:.,op:"set"}' |
+  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
+    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-
+
+# 2) X_OAUTH_CLIENT_ID — paste from the X app (Keys and tokens → OAuth 2.0 Client ID)
+read -rsp "X_OAUTH_CLIENT_ID: " V; echo
+printf '%s' "$V" | jq -Rs '{key:"X_OAUTH_CLIENT_ID",value:.,op:"set"}' |
+  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
+    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-; unset V
+
+# 3) X_OAUTH_CLIENT_SECRET — paste the OAuth 2.0 Client Secret
+read -rsp "X_OAUTH_CLIENT_SECRET: " V; echo
+printf '%s' "$V" | jq -Rs '{key:"X_OAUTH_CLIENT_SECRET",value:.,op:"set"}' |
+  curl -fsS -X POST "$OP/api/v1/nodes/$NODE/secrets" \
+    -H "Authorization: Bearer $YOUR_OPERATOR_API_KEY" -H "content-type: application/json" --data-binary @-; unset V
 ```
 
-If it is unset, the connect route fails fast with a 500 and stores nothing.
+ESO + Reloader roll the values into the candidate-a pod (no `kubectl`). If you get
+`503 secrets_plane_config_missing`, the operator hasn't enabled the self-serve writer on
+candidate-a yet — ping the operator team. If `CONNECTIONS_ENCRYPTION_KEY` is unset, the connect
+route fails fast with a 500 and stores nothing.
 
 ## 3. Verify
 
