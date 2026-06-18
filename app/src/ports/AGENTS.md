@@ -46,6 +46,7 @@ Does NOT re-export packages with `node:` transitive dependencies.
 - GraphExecutorPort, PreflightCreditCheckFn, GraphRunRequest (with `modelRef: ModelRef`), GraphRunResult, GraphFinal (with optional `structuredOutput`)
 - ModelProviderPort, ModelCatalogPort, ModelProviderResolverPort, ModelOption, ModelRef, ModelCapabilities
 - ConnectionBrokerPort (with `ConnectionScope: { actorId, tenantId }`)
+- PlatformConnectorPort (control-plane: OAuth connect/exchange/refresh + account identity), PlatformAccount, PlatformCredentialBlob, PlatformGating, PlatformRefreshResult
 - LlmChargeDetail, ChatDeltaEvent, LlmError, LlmErrorKind, isLlmError
 - PaymentAttemptUserRepository, PaymentAttemptServiceRepository, OnChainVerifier
 - MetricsQueryPort, AiTelemetryPort, LangfusePort, Clock

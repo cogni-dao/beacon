@@ -73,6 +73,7 @@ export const EVENT_NAMES = {
   ADAPTER_LITELLM_USAGE_ERROR: "adapter.litellm.usage_error",
   ADAPTER_MIMIR_ERROR: "adapter.mimir.error",
   ADAPTER_TAVILY_ERROR: "adapter.tavily.error",
+  ADAPTER_X_ERROR: "adapter.x.error",
   ADAPTER_LANGGRAPH_INPROC_ERROR: "adapter.langgraph_inproc.error",
   ADAPTER_GIT_LS_FILES_ERROR: "adapter.git_ls_files.error",
   ADAPTER_GIT_LS_FILES_LIST: "adapter.git_ls_files.list",
@@ -103,6 +104,10 @@ export const EVENT_NAMES = {
 
   // Governance Domain
   GOVERNANCE_SYNC_COMPLETE: "governance.sync.complete",
+
+  // Growth Domain (beacon growth loop — broadcast/measure/verify)
+  GROWTH_METRICS_INGEST_COMPLETE: "growth.metrics_ingest.complete",
+  GROWTH_RESOLVE_COMPLETE: "growth.resolve.complete",
 
   // Sandbox Execution Events
   SANDBOX_EXECUTION_STARTED: "sandbox.execution.started",

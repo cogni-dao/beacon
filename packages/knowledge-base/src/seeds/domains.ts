@@ -48,4 +48,22 @@ export const BASE_DOMAIN_SEEDS: NewDomain[] = [
     description:
       "Restaurant / venue reservation knowledge for the resy node domain.",
   },
+  {
+    id: "beacon-campaigns",
+    name: "Beacon Campaigns",
+    description:
+      "Growth-campaign hypotheses (metric:engagement) and their resolved outcomes for the beacon growth loop.",
+  },
+  {
+    id: "beacon-post-performance",
+    name: "Beacon Post Performance",
+    description:
+      "Per-post / per-angle engagement findings that serve as evidence_for beacon campaign hypotheses.",
+  },
+  {
+    id: "beacon-brand-voice",
+    name: "Beacon Brand Voice",
+    description:
+      "Durable brand-voice rules — winning hooks, angles, formats, and timing per audience + channel. Every PLAN recalls this domain.",
+  },
 ];

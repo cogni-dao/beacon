@@ -33,6 +33,34 @@ export {
   POET_GRAPH_NAME,
 } from "./graphs/index";
 
+// Re-export the growth-research workflow (beacon growth loop RESEARCH activity).
+export {
+  type CampaignStrategy,
+  type CompleteFn,
+  parseFindings,
+  type RecallPlaybookFn,
+  RESEARCH_FINDING_KINDS,
+  type ResearchFinding,
+  type ResearchFindingKind,
+  runGrowthResearch,
+  type RunGrowthResearchInput,
+} from "./graphs/index";
+
+// Re-export the growth-generate workflow (beacon growth loop GENERATE activity).
+export {
+  type DraftPost,
+  FUNNEL_LAYER_GUIDANCE,
+  FUNNEL_LAYERS,
+  type FunnelLayer,
+  type FunnelTargets,
+  GENERATE_PROMPT,
+  type GenerateFinding,
+  parseDraftPosts,
+  resolveLayerCount,
+  runGrowthGenerate,
+  type RunGrowthGenerateInput,
+} from "./graphs/index";
+
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 
