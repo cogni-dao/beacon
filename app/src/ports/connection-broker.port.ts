@@ -55,4 +55,19 @@ export interface ConnectionBrokerPort {
     connectionId: string,
     scope: ConnectionScope
   ): Promise<ResolvedConnection>;
+
+  /**
+   * Resolve the single ACTIVE connection for a (billing account, provider)
+   * pair — the tool-side resolution path the data plane needs. Finds the
+   * active, non-revoked connection within the caller's tenant scope, then
+   * resolves it (decrypt + expiry refresh) exactly like {@link resolve}.
+   *
+   * @returns the resolved connection, or null when the tenant has none active.
+   * @throws if a found connection cannot be decrypted or fails verification.
+   */
+  resolveActive(
+    billingAccountId: string,
+    provider: string,
+    scope: ConnectionScope
+  ): Promise<ResolvedConnection | null>;
 }

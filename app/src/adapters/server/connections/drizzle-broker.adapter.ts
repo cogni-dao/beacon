@@ -184,6 +184,40 @@ export class DrizzleConnectionBrokerAdapter implements ConnectionBrokerPort {
     };
   }
 
+  async resolveActive(
+    billingAccountId: string,
+    provider: string,
+    scope: { actorId: string; tenantId: string }
+  ): Promise<ResolvedConnection | null> {
+    // Find the active, non-revoked connection within the caller's tenant scope.
+    // withTenantScope sets the RLS context; status='active' skips needs_reauth/
+    // expired rows so the data plane never resolves a known-broken connection.
+    const rows = await withTenantScope(
+      this
+        .db as unknown as import("drizzle-orm/postgres-js").PostgresJsDatabase,
+      scope.actorId as ActorId,
+      async (tx) =>
+        tx
+          .select({ id: connections.id })
+          .from(connections)
+          .where(
+            and(
+              eq(connections.billingAccountId, billingAccountId),
+              eq(connections.provider, provider),
+              eq(connections.status, "active"),
+              isNull(connections.revokedAt)
+            )
+          )
+          .limit(1)
+    );
+
+    const row = rows[0];
+    if (!row) return null;
+
+    // Delegate to resolve() so decrypt + expiry-refresh + last_used_at all run.
+    return this.resolve(row.id, scope);
+  }
+
   private async refreshAndPersist(
     connectionId: string,
     billingAccountId: string,

@@ -129,3 +129,81 @@ export interface SocialXCapability {
    */
   readMetrics(externalIds: readonly string[]): Promise<PostMetricSnapshot[]>;
 }
+
+/**
+ * Non-secret profile snapshot for a linked X account, read live through the
+ * account's own user-context token. DISPLAY_IS_NONSECRET: no credentials here.
+ */
+export const XAccountProfileSchema = z.object({
+  externalAccountId: z.string().min(1).describe("Platform-stable X user id"),
+  handle: z.string().min(1).describe("@username"),
+  displayName: z.string().describe("Account display name"),
+  followers: z.number().int().min(0).describe("Follower count at read time"),
+  following: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Following count (when exposed)"),
+  postCount: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Lifetime post count (when exposed)"),
+  avatarUrl: z.string().url().optional().describe("Profile image URL"),
+});
+export type XAccountProfile = z.infer<typeof XAccountProfileSchema>;
+
+/** One recent post on the linked account's own timeline, with public metrics. */
+export const XRecentPostSchema = z.object({
+  externalId: z.string().min(1).describe("Channel-native post id"),
+  text: z.string().describe("Post body"),
+  createdAt: z.string().datetime().describe("ISO-8601 post timestamp"),
+  likes: z.number().int().min(0).describe("Like count"),
+  reposts: z.number().int().min(0).describe("Repost/retweet count"),
+  replies: z.number().int().min(0).describe("Reply count"),
+  impressions: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Impressions (absent on X free-tier)"),
+});
+export type XRecentPost = z.infer<typeof XRecentPostSchema>;
+
+/** Live read of a linked X account: profile + recent-post engagement. */
+export const XAccountMetricsSchema = z.object({
+  profile: XAccountProfileSchema,
+  recentPosts: z.array(XRecentPostSchema).describe("Most-recent original posts"),
+  fetchedAt: z.string().datetime().describe("ISO-8601 capture timestamp"),
+});
+export type XAccountMetrics = z.infer<typeof XAccountMetricsSchema>;
+
+/** Options for a live account-metrics read. */
+export interface ReadAccountMetricsOptions {
+  /** Max recent posts to fetch. X requires 5–100; capability default is 10. */
+  readonly limit?: number;
+}
+
+/**
+ * Read-only insight surface for ONE linked X account, resolved per-tenant via
+ * the connection broker (the account's own user-context token — never an
+ * app-level bearer).
+ *
+ * Distinct from SocialXCapability.readMetrics, which reads engagement for
+ * node-authored post ids: this reads the linked account's OWN profile + recent
+ * timeline straight from X, so a tenant can see their real metrics.
+ */
+export interface XInsightsCapability {
+  /**
+   * Read the authenticated account's profile + recent-post public metrics.
+   *
+   * @param opts - Optional read tuning (recent-post limit)
+   * @returns Profile snapshot + recent-post engagement
+   * @throws If the read fails (auth, network, provider error)
+   */
+  readAccountMetrics(
+    opts?: ReadAccountMetricsOptions
+  ): Promise<XAccountMetrics>;
+}
