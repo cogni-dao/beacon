@@ -93,6 +93,7 @@ import {
   type MimirAdapterConfig,
   MimirMetricsAdapter,
   RedisRunStreamAdapter,
+  SandboxPoster,
   SystemClock,
   TemporalScheduleControlAdapter,
   UserDrizzleAccountService,
@@ -156,6 +157,7 @@ import type {
   PaymentAttemptUserRepository,
   ProviderFundingPort,
   RunStreamPort,
+  SandboxPosterPort,
   ServiceAccountService,
   ThreadPersistencePort,
   TreasuryReadPort,
@@ -232,6 +234,12 @@ export interface Container {
    * routes never import adapters/server (the per-tenant metrics route uses this).
    */
   xInsightsForToken(accessToken: string): XInsightsCapability;
+  /**
+   * Build a fake sandbox poster bound to a broker-resolved token. Construction
+   * stays in the composition root so app routes never import adapters/server.
+   * Records posts with no external send (the sandbox posting-pipeline harness).
+   */
+  sandboxPosterForToken(token: string): SandboxPosterPort;
   /** Repo capability for AI tools - requires COGNI_REPO_PATH */
   repoCapability: RepoCapability;
   /** Tool source with real implementations for AI tool execution */
@@ -901,6 +909,8 @@ function createContainer(): Container {
     broadcastCapability,
     xInsightsForToken: (accessToken: string): XInsightsCapability =>
       new XSocialAdapter({ accessToken }),
+    sandboxPosterForToken: (token: string): SandboxPosterPort =>
+      new SandboxPoster(token),
     repoCapability,
     toolSource,
     knowledgeContributionService,

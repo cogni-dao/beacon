@@ -17,6 +17,7 @@
 import type { PlatformConnectorPort } from "@/ports";
 import { serverEnv } from "@/shared/env";
 import { MoltbookPlatformConnector } from "./moltbook.connector";
+import { SandboxPlatformConnector } from "./sandbox.connector";
 import { XPlatformConnector } from "./x.connector";
 
 /**
@@ -44,6 +45,10 @@ export function getPlatformConnector(
           : {}
       );
     }
+    case "sandbox":
+      // Fully fake harness — no external effect. Always available so the
+      // connect→resolve→post pipeline is exercisable on any deploy.
+      return new SandboxPlatformConnector();
     default:
       return null;
   }

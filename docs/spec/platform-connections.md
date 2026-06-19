@@ -180,6 +180,10 @@ This node's Moltbook calls:
 
 **Implication:** posting cadence is capped at ~48 posts/day per agent regardless of campaign demand — the growth loop schedules within the rate cap, not a dollar budget. (X's analogous constraint is a per-post dollar cost; Moltbook's is a hard rate limit.)
 
+### Sandbox — fake platform (test harness, $0)
+
+The `sandbox` provider is a fully fake platform that exercises the **whole posting pipeline** (connect → persist → broker-resolve → post) with **no external call** — so the per-tenant posting architecture can be tested and demoed without claiming agents, OAuth, paid tiers, or really posting anywhere. `SandboxPlatformConnector` (credential, `validateAndStore` is deterministic + network-free) + `SandboxPoster` (records a post, `externalId = hash(token, text)`, Pino-logged) behind the sandbox-only `POST /api/v1/connections/sandbox/post`. It is the reusable substrate every new platform's poster is proven against before its real adapter lands.
+
 ## Pareto path forward (phased)
 
 1. **P0 — Prove the spine with X.** DONE in this PR: schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + profile UI + `SocialXCapability` re-sourced through the broker.
