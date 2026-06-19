@@ -14,7 +14,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   Check,
@@ -78,62 +78,36 @@ interface XAccountMetricsView {
   fetchedAt: string;
 }
 
-/* ─── X insights snapshot cache (read-cost discipline) ────────────────
- * The X metrics read is a paid platform call (see docs/spec/platform-connections.md
- * §Read-cost governance). The insights card must NOT fetch X on passive render —
- * it serves the last snapshot and refetches only on an explicit user action.
- * The card is owner-only (the metrics route resolves the caller's own connection),
- * so the snapshot lives client-side keyed by the viewer's wallet; a server-side
- * cache + scheduled refresh is the deferred next increment (spec item 3). The
- * snapshot holds only public profile/post metrics — no tokens, no secrets. */
-const X_METRICS_CACHE_PREFIX = "beacon:x-metrics:";
-
-function readCachedXMetrics(walletAddress: string): XAccountMetricsView | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(
-      `${X_METRICS_CACHE_PREFIX}${walletAddress}`
-    );
-    return raw ? (JSON.parse(raw) as XAccountMetricsView) : null;
-  } catch {
-    return null;
-  }
+/* ─── X insights (read-cost discipline) ───────────────────────────────
+ * The X metrics read is a paid platform call. The cost boundary lives in the
+ * route, NOT here: a plain GET serves the server-cached snapshot ($0 platform);
+ * only `?refresh=1` spends a real read. So the card fetches the cheap cached
+ * snapshot on mount and the Refresh button hits the paid path. The route also
+ * reports a circuit-breaker `status` (needs_billing/rate_limited) so we can show
+ * "needs credits" instead of re-calling a broken connection. See
+ * docs/spec/platform-connections.md §Read-cost governance. */
+interface XMetricsResponse {
+  linked: boolean;
+  /** Connection health: active | needs_billing | rate_limited | … */
+  status?: string;
+  metrics?: XAccountMetricsView | null;
+  /** True when serving a stale snapshot because the connection is circuit-broken. */
+  stale?: boolean;
+  /** Coarse error code on a transient read failure (snapshot still served). */
+  error?: string;
 }
 
-function writeCachedXMetrics(
-  walletAddress: string,
-  metrics: XAccountMetricsView
-): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      `${X_METRICS_CACHE_PREFIX}${walletAddress}`,
-      JSON.stringify(metrics)
-    );
-  } catch {
-    // Best-effort: a full/blocked localStorage just means no cross-reload cache.
-  }
-}
-
-function clearCachedXMetrics(walletAddress: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(`${X_METRICS_CACHE_PREFIX}${walletAddress}`);
-  } catch {
-    // ignore
-  }
-}
-
-/** React Query fetcher for the paid X read — throws so RQ surfaces the error. */
-async function fetchXAccountMetrics(): Promise<XAccountMetricsView> {
-  const res = await fetch("/api/v1/connections/x/metrics");
+/** Fetch the metrics route. `refresh` toggles the paid platform read. */
+async function fetchXMetrics(refresh: boolean): Promise<XMetricsResponse> {
+  const res = await fetch(
+    `/api/v1/connections/x/metrics${refresh ? "?refresh=1" : ""}`
+  );
+  const body = (await res
+    .json()
+    .catch(() => null)) as XMetricsResponse | null;
+  if (body) return body; // route returns a body (incl. last snapshot) even on 502
   if (!res.ok) throw new Error(`x metrics read failed (${res.status})`);
-  const data = (await res.json()) as {
-    linked: boolean;
-    metrics?: XAccountMetricsView;
-  } | null;
-  if (!data?.linked || !data.metrics) throw new Error("x metrics unavailable");
-  return data.metrics;
+  return { linked: false };
 }
 
 /** Coarse "updated N ago" label for the snapshot timestamp. */
@@ -777,29 +751,29 @@ export function ProfileView(): ReactElement {
 
   const walletAddress = session?.user?.walletAddress ?? null;
 
-  // X insights are a paid X read (docs/spec/platform-connections.md §Read-cost
-  // governance). React Query owns fetch/cache/loading/error; `enabled: false`
-  // means it NEVER fires on render — only the explicit refetch() below spends a
-  // call. `initialData` seeds the in-memory cache from the last snapshot so a
-  // cold page load still shows data with zero platform calls (the one bit React
-  // Query needs a persister plugin for — server-side snapshot is the durable
-  // home, deferred to read-cost item 3).
+  // X insights: the cost boundary is the route, not here. The mount query hits
+  // the PLAIN GET — which the route serves from its server-side snapshot with
+  // ZERO platform calls — so rendering the card is free. The Refresh button runs
+  // a mutation against `?refresh=1`, the only path that spends a paid read.
   const queryClient = useQueryClient();
-  const xMetricsQuery = useQuery<XAccountMetricsView, Error>({
+  const xMetricsQuery = useQuery<XMetricsResponse, Error>({
     queryKey: ["x-metrics", walletAddress],
-    queryFn: fetchXAccountMetrics,
-    enabled: false,
+    queryFn: () => fetchXMetrics(false),
+    enabled: xConnected && !!walletAddress,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: Number.POSITIVE_INFINITY,
-    initialData: () =>
-      walletAddress ? (readCachedXMetrics(walletAddress) ?? undefined) : undefined,
   });
-  const xMetrics = xMetricsQuery.data ?? null;
-
-  // Persist each fetched snapshot so it survives a reload (see initialData above).
-  useEffect(() => {
-    if (walletAddress && xMetrics) writeCachedXMetrics(walletAddress, xMetrics);
-  }, [walletAddress, xMetrics]);
+  const refreshXMetrics = useMutation({
+    mutationFn: () => fetchXMetrics(true),
+    onSuccess: (data) =>
+      queryClient.setQueryData(["x-metrics", walletAddress], data),
+  });
+  const xMetrics = xMetricsQuery.data?.metrics ?? null;
+  const xStatus = xMetricsQuery.data?.status;
+  const xNeedsCredits =
+    xStatus === "needs_billing" || xStatus === "rate_limited";
+  const xRefreshFailed =
+    refreshXMetrics.isError || !!xMetricsQuery.data?.error;
 
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
@@ -960,7 +934,6 @@ export function ProfileView(): ReactElement {
                     queryClient.removeQueries({
                       queryKey: ["x-metrics", walletAddress],
                     });
-                    if (walletAddress) clearCachedXMetrics(walletAddress);
                   }
                 } finally {
                   setXLoading(false);
@@ -984,9 +957,10 @@ export function ProfileView(): ReactElement {
         )}
       </SettingRow>
 
-      {/* X insights — served from the last cached snapshot; the refresh button is
-          the only path that spends a paid X read (read-cost discipline, owner-only
-          card). See docs/spec/platform-connections.md §Read-cost governance. */}
+      {/* X insights — the route serves a cached snapshot for free; Refresh is the
+          only path that spends a paid X read, and a circuit-broken connection
+          (needs_billing/rate_limited) is never re-called. See
+          docs/spec/platform-connections.md §Read-cost governance. */}
       {xConnected && (
         <div className="space-y-3 rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between gap-3">
@@ -997,31 +971,37 @@ export function ProfileView(): ReactElement {
               <div className="text-muted-foreground text-xs">
                 {xMetrics
                   ? `Updated ${formatRelativeTime(xMetrics.fetchedAt)}`
-                  : "Not loaded — reading X costs credits, so we fetch only on request."}
+                  : "Not loaded yet — click Refresh to read X."}
               </div>
             </div>
             <Button
               variant="outline"
               size="sm"
-              disabled={xMetricsQuery.isFetching}
+              disabled={refreshXMetrics.isPending || xNeedsCredits}
               onClick={() => {
-                void xMetricsQuery.refetch();
+                refreshXMetrics.mutate();
               }}
             >
               <RefreshCw
                 className={
-                  xMetricsQuery.isFetching ? "animate-spin" : undefined
+                  refreshXMetrics.isPending ? "animate-spin" : undefined
                 }
               />
               {xMetrics ? "Refresh" : "Load insights"}
             </Button>
           </div>
 
-          {xMetricsQuery.isError && (
+          {xNeedsCredits ? (
             <p className="text-destructive text-xs">
-              Couldn&apos;t load X insights. The X app may need pay-per-use
-              credits — try again later.
+              X reads are paused — the X app needs a positive pay-per-use credit
+              balance. Reconnect once it&apos;s funded.
             </p>
+          ) : (
+            xRefreshFailed && (
+              <p className="text-destructive text-xs">
+                Couldn&apos;t refresh X insights — try again later.
+              </p>
+            )
           )}
 
           {xMetrics && (

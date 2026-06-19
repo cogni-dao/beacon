@@ -70,4 +70,53 @@ export interface ConnectionBrokerPort {
     provider: string,
     scope: ConnectionScope
   ): Promise<ResolvedConnection | null>;
+
+  /**
+   * Read the cached read-state for a (billing account, provider) pair WITHOUT
+   * decrypting credentials or making any platform call. Returns the most recent
+   * non-revoked connection regardless of status — so a `needs_billing` /
+   * `rate_limited` row still surfaces its last-known snapshot. This is the
+   * zero-cost path the data plane serves on passive views (read-cost governance).
+   *
+   * @returns the read-state, or null when the tenant has no connection.
+   */
+  getReadState(
+    billingAccountId: string,
+    provider: string,
+    scope: ConnectionScope
+  ): Promise<ConnectionReadState | null>;
+
+  /**
+   * Persist the result of a paid read: the snapshot (which also stamps
+   * `fetched_at`) and/or a status transition (the read-cost circuit-breaker
+   * marks `needs_billing` / `rate_limited` / re-arms to `active`). Never touches
+   * credentials. Tenant-scoped via RLS.
+   */
+  recordRead(
+    connectionId: string,
+    update: ConnectionReadUpdate,
+    scope: ConnectionScope
+  ): Promise<void>;
+}
+
+/** Circuit-breaker-relevant connection statuses the data plane sets. */
+export type ConnectionReadStatus = "active" | "needs_billing" | "rate_limited";
+
+/** Cached read-state for a connection — no credentials, safe to serve to the UI. */
+export interface ConnectionReadState {
+  readonly connectionId: string;
+  /** Health/circuit-breaker status, legible without decryption. */
+  readonly status: string;
+  /** Last cached read payload (public metrics only), or null if never read. */
+  readonly snapshot: unknown;
+  /** When the snapshot was last refreshed, or null if never read. */
+  readonly fetchedAt: Date | null;
+}
+
+/** Write to a connection's read-state. Either field may be omitted. */
+export interface ConnectionReadUpdate {
+  /** New snapshot to cache; supplying it also stamps `fetched_at = now`. */
+  readonly snapshot?: unknown;
+  /** Status transition (circuit-breaker mark or re-arm). */
+  readonly status?: ConnectionReadStatus;
 }

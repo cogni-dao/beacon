@@ -3,13 +3,14 @@
 
 /**
  * Module: `@tests/unit/app/profile-x-insights-readcost`
- * Purpose: Lock the read-cost invariant on the profile X insights card — the paid
- *   X metrics read MUST NOT fire on passive render; it fires only on an explicit
- *   user action (the Refresh / Load button).
+ * Purpose: The profile X insights card serves the route's cached snapshot on
+ *   mount (the plain, $0 GET) and only hits the PAID `?refresh=1` path on an
+ *   explicit Refresh click. The real cost boundary is the route — guarded
+ *   separately in connections-metrics-readcost.spec.ts — but the UI must not
+ *   reach for the paid path on render.
  * Scope: Unit test for src/app/(app)/profile/view.tsx metrics fetch behavior.
- *   Does not test OAuth linking, the broker, or the live X adapter.
- * Invariants: INV-READCOST-NO-FETCH-ON-RENDER — GET /api/v1/connections/x/metrics
- *   is never called during mount; exactly one call per explicit refresh.
+ * Invariants: INV-READCOST-NO-PAID-FETCH-ON-RENDER — the card never requests
+ *   `?refresh=1` during mount; exactly one such request per explicit refresh.
  * Side-effects: none (mocked fetch + boundaries)
  * Links: src/app/(app)/profile/view.tsx, docs/spec/platform-connections.md
  * @vitest-environment jsdom
@@ -68,7 +69,22 @@ vi.mock("@/features/ai/icons/providers/OpenAIIcon", () => ({
 
 import { ProfileView } from "@/app/(app)/profile/view";
 
-/** Build a fetch mock that records calls and answers the mount status probes. */
+const snapshot = (followers: number) => ({
+  linked: true,
+  status: "active",
+  metrics: {
+    profile: {
+      externalAccountId: "1",
+      handle: "@me",
+      displayName: "Me",
+      followers,
+    },
+    recentPosts: [],
+    fetchedAt: new Date().toISOString(),
+  },
+});
+
+/** Fetch mock that records calls and answers the mount status probes. */
 function installFetchMock(): { calls: string[] } {
   const calls: string[] = [];
   const json = (body: unknown) =>
@@ -100,20 +116,9 @@ function installFetchMock(): { calls: string[] } {
     if (url.endsWith("/api/auth/providers")) {
       return json({});
     }
-    if (url.endsWith("/api/v1/connections/x/metrics")) {
-      return json({
-        linked: true,
-        metrics: {
-          profile: {
-            externalAccountId: "1",
-            handle: "@me",
-            displayName: "Me",
-            followers: 42,
-          },
-          recentPosts: [],
-          fetchedAt: new Date().toISOString(),
-        },
-      });
+    // The metrics route: plain GET = cached snapshot ($0); ?refresh=1 = paid read.
+    if (url.includes("/api/v1/connections/x/metrics")) {
+      return json(url.includes("refresh=1") ? snapshot(43) : snapshot(42));
     }
     // ownership, codex/status, openai-compatible/status …
     return json({ connected: false });
@@ -135,44 +140,43 @@ function renderView(): void {
   );
 }
 
+const refreshCalls = (calls: string[]) =>
+  calls.filter((u) => u.includes("/x/metrics") && u.includes("refresh=1"));
+
 describe("Profile X insights — read-cost discipline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.clear();
   });
 
-  it("does NOT call the paid X metrics read on passive render", async () => {
+  it("renders the cached snapshot on mount WITHOUT hitting the paid refresh path", async () => {
     const { calls } = installFetchMock();
 
     renderView();
 
-    // Wait until the connection-status probes have settled and the card is shown.
+    // The cheap cached GET populates the card on mount.
     await waitFor(() => {
-      expect(screen.getByText("X insights")).toBeInTheDocument();
+      expect(screen.getByText("42")).toBeInTheDocument();
     });
 
-    // The whole point: zero metrics calls during mount + status hydration.
-    expect(calls.filter((u) => u.endsWith("/x/metrics"))).toHaveLength(0);
-    // The card invites an explicit load rather than auto-fetching.
-    expect(
-      screen.getByRole("button", { name: /load insights/i })
-    ).toBeInTheDocument();
+    // The plain GET happened; the paid ?refresh=1 path did NOT.
+    expect(calls.some((u) => u.includes("/x/metrics"))).toBe(true);
+    expect(refreshCalls(calls)).toHaveLength(0);
   });
 
-  it("fetches X metrics exactly once on an explicit refresh click", async () => {
+  it("hits ?refresh=1 exactly once on an explicit refresh click", async () => {
     const { calls } = installFetchMock();
 
     renderView();
     await waitFor(() => {
-      expect(screen.getByText("X insights")).toBeInTheDocument();
+      expect(screen.getByText("42")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /load insights/i }));
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("42")).toBeInTheDocument(); // follower count rendered
+      expect(screen.getByText("43")).toBeInTheDocument(); // fresh follower count
     });
 
-    expect(calls.filter((u) => u.endsWith("/x/metrics"))).toHaveLength(1);
+    expect(refreshCalls(calls)).toHaveLength(1);
   });
 });

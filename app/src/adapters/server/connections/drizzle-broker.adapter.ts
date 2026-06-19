@@ -22,7 +22,12 @@ import { type AeadAAD, aeadDecrypt, aeadEncrypt } from "@cogni/node-shared";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { Logger } from "pino";
-import type { ConnectionBrokerPort, ResolvedConnection } from "@/ports";
+import type {
+  ConnectionBrokerPort,
+  ConnectionReadState,
+  ConnectionReadUpdate,
+  ResolvedConnection,
+} from "@/ports";
 
 /** Parsed credential blob shape (provider-agnostic) */
 interface CredentialBlob {
@@ -218,6 +223,70 @@ export class DrizzleConnectionBrokerAdapter implements ConnectionBrokerPort {
 
     // Delegate to resolve() so decrypt + expiry-refresh + last_used_at all run.
     return this.resolve(row.id, scope);
+  }
+
+  async getReadState(
+    billingAccountId: string,
+    provider: string,
+    scope: { actorId: string; tenantId: string }
+  ): Promise<ConnectionReadState | null> {
+    // Most recent non-revoked connection for this provider — ANY status, so a
+    // circuit-broken (needs_billing/rate_limited) row still serves its snapshot.
+    // No decrypt, no platform call: this is the zero-cost passive-view path.
+    const rows = await withTenantScope(
+      this
+        .db as unknown as import("drizzle-orm/postgres-js").PostgresJsDatabase,
+      scope.actorId as ActorId,
+      async (tx) =>
+        tx
+          .select({
+            id: connections.id,
+            status: connections.status,
+            snapshot: connections.metricsSnapshot,
+            fetchedAt: connections.metricsFetchedAt,
+          })
+          .from(connections)
+          .where(
+            and(
+              eq(connections.billingAccountId, billingAccountId),
+              eq(connections.provider, provider),
+              isNull(connections.revokedAt)
+            )
+          )
+          .orderBy(desc(connections.createdAt))
+          .limit(1)
+    );
+
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      connectionId: row.id,
+      status: row.status,
+      snapshot: row.snapshot ?? null,
+      fetchedAt: row.fetchedAt ?? null,
+    };
+  }
+
+  async recordRead(
+    connectionId: string,
+    update: ConnectionReadUpdate,
+    scope: { actorId: string; tenantId: string }
+  ): Promise<void> {
+    const set = {
+      ...(update.snapshot !== undefined
+        ? { metricsSnapshot: update.snapshot, metricsFetchedAt: new Date() }
+        : {}),
+      ...(update.status ? { status: update.status } : {}),
+    };
+    if (Object.keys(set).length === 0) return;
+
+    await withTenantScope(
+      this
+        .db as unknown as import("drizzle-orm/postgres-js").PostgresJsDatabase,
+      scope.actorId as ActorId,
+      async (tx) =>
+        tx.update(connections).set(set).where(eq(connections.id, connectionId))
+    );
   }
 
   private async refreshAndPersist(
