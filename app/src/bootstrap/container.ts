@@ -835,7 +835,8 @@ function createContainer(): Container {
       }>
     > = {};
     const xConnector = getPlatformConnector("x");
-    if (xConnector) {
+    // Only OAuth connectors rotate tokens; credential connectors have no refresh.
+    if (xConnector && xConnector.credentialType === "oauth2") {
       refreshFns.x = (token: string) => xConnector.refresh(token);
     }
 

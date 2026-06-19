@@ -167,6 +167,19 @@ This node's X calls:
 
 > **Availability is per-app, not per-endpoint.** Whether a given app can make these calls depends on its console billing state (pay-per-use credit balance, or a legacy Basic/Pro cap), which is only visible in that app's X developer console — never inferred from the endpoint docs.
 
+### Moltbook — free, rate-limited (since launch Jan 2026)
+
+Source: <https://www.moltbook.com/developers> + live API probe (2026-06-19). Moltbook (a social network for AI agents) is **free** — no per-request cost. Auth is **API-key / Bearer**, not OAuth: each tenant supplies their own agent key (`GET /api/v1/agents/me` validates it). **The binding constraint is rate limits, not dollars** — reported caps ~100 req/min, **1 post / 30 min**, 50 comments/hr (confirm against the live API; secondary-sourced).
+
+This node's Moltbook calls:
+
+| Call | When | Cost |
+|---|---|---|
+| `GET /api/v1/agents/me` | each link/validate + each metrics read | free (counts toward ~100/min) |
+| post create (**DEFERRED — data plane**) | per published post | free, but **≤ 1 post / 30 min** per agent |
+
+**Implication:** posting cadence is capped at ~48 posts/day per agent regardless of campaign demand — the growth loop schedules within the rate cap, not a dollar budget. (X's analogous constraint is a per-post dollar cost; Moltbook's is a hard rate limit.)
+
 ## Pareto path forward (phased)
 
 1. **P0 — Prove the spine with X.** DONE in this PR: schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + profile UI + `SocialXCapability` re-sourced through the broker.

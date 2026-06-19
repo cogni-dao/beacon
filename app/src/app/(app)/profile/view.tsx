@@ -14,7 +14,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { Check, Server as ServerIcon } from "lucide-react";
+import { Bot, Check, Server as ServerIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import type { ReactElement, ReactNode } from "react";
@@ -564,6 +564,12 @@ export function ProfileView(): ReactElement {
   const [xHandle, setXHandle] = useState<string | null>(null);
   const [xLoading, setXLoading] = useState(false);
   const [xMetrics, setXMetrics] = useState<XAccountMetricsView | null>(null);
+  const [moltbookConnected, setMoltbookConnected] = useState(false);
+  const [moltbookHandle, setMoltbookHandle] = useState<string | null>(null);
+  const [moltbookExpanded, setMoltbookExpanded] = useState(false);
+  const [moltbookKey, setMoltbookKey] = useState("");
+  const [moltbookError, setMoltbookError] = useState("");
+  const [moltbookLoading, setMoltbookLoading] = useState(false);
 
   // Read feedback query params and strip them to prevent re-display on refresh
   const linkedProvider = searchParams.get("linked");
@@ -645,6 +651,24 @@ export function ProfileView(): ReactElement {
           if (data) {
             setXConnected(data.connected);
             setXHandle(data.accounts[0]?.handle ?? null);
+          }
+        }
+      )
+      .catch(() => {});
+
+    // Check Moltbook platform connection status
+    fetch("/api/v1/connections/moltbook/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          data: {
+            connected: boolean;
+            accounts: Array<{ handle: string | null }>;
+          } | null
+        ) => {
+          if (data) {
+            setMoltbookConnected(data.connected);
+            setMoltbookHandle(data.accounts[0]?.handle ?? null);
           }
         }
       )
@@ -893,6 +917,137 @@ export function ProfileView(): ReactElement {
               No recent posts to show yet.
             </p>
           )}
+        </div>
+      )}
+
+      <SettingRow
+        icon={<Bot className="size-5" />}
+        label="Moltbook"
+        description={
+          moltbookConnected
+            ? "Your Moltbook agent is connected."
+            : "Connect your Moltbook agent with its API key so this node can post and gather metrics."
+        }
+      >
+        {moltbookConnected ? (
+          <div className="flex items-center gap-2">
+            <ConnectedBadge login={moltbookHandle ?? "Connected"} />
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={moltbookLoading}
+              onClick={async () => {
+                setMoltbookLoading(true);
+                try {
+                  const res = await fetch(
+                    "/api/v1/connections/moltbook/disconnect",
+                    { method: "POST" }
+                  );
+                  if (res.ok) {
+                    setMoltbookConnected(false);
+                    setMoltbookHandle(null);
+                  }
+                } finally {
+                  setMoltbookLoading(false);
+                }
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setMoltbookExpanded(!moltbookExpanded)}
+          >
+            Connect
+          </Button>
+        )}
+      </SettingRow>
+
+      {/* Expanded Moltbook API-key form (credential connector — no redirect). */}
+      {moltbookExpanded && !moltbookConnected && (
+        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <div className="space-y-2">
+            <label
+              htmlFor="moltbook-key"
+              className="font-medium text-foreground text-sm"
+            >
+              Agent API Key
+            </label>
+            <input
+              id="moltbook-key"
+              type="password"
+              placeholder="mb_..."
+              value={moltbookKey}
+              onChange={(e) => {
+                setMoltbookKey(e.target.value);
+                setMoltbookError("");
+              }}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-ring/50"
+            />
+            <p className="text-muted-foreground text-xs">
+              Find your agent key at{" "}
+              <a
+                href="https://www.moltbook.com/developers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                moltbook.com/developers
+              </a>
+              .
+            </p>
+          </div>
+          {moltbookError && (
+            <p className="text-destructive text-sm">{moltbookError}</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={moltbookLoading || !moltbookKey}
+              onClick={async () => {
+                setMoltbookLoading(true);
+                setMoltbookError("");
+                try {
+                  const res = await fetch(
+                    "/api/v1/connections/moltbook/connect",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ apiKey: moltbookKey }),
+                    }
+                  );
+                  const data = await res.json();
+                  if (res.ok && data.connected) {
+                    setMoltbookConnected(true);
+                    setMoltbookHandle(data.handle ?? null);
+                    setMoltbookExpanded(false);
+                    setMoltbookKey("");
+                  } else {
+                    setMoltbookError(data.error ?? "Connection failed");
+                  }
+                } catch {
+                  setMoltbookError("Failed to connect");
+                } finally {
+                  setMoltbookLoading(false);
+                }
+              }}
+            >
+              {moltbookLoading ? "Linking..." : "Connect"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setMoltbookExpanded(false);
+                setMoltbookError("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
 

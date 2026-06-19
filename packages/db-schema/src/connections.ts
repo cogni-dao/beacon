@@ -43,6 +43,7 @@ const CONNECTION_PROVIDERS = [
   "bluesky",
   // Social platforms (see docs/spec/platform-connections.md)
   "x",
+  "moltbook",
 ] as const;
 
 /** Connection health — legible without decrypting the credential blob. */

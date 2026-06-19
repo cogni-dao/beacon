@@ -269,6 +269,10 @@ export const serverSchema = z.object({
   // Optional — X linking disabled when unset. See docs/spec/platform-connections.md.
   X_OAUTH_CLIENT_ID: optionalString,
   X_OAUTH_CLIENT_SECRET: optionalString,
+  // Moltbook (API-key connector). Optional base override; defaults to the
+  // official production API in the connector. No app credentials needed —
+  // each tenant supplies their own agent key.
+  MOLTBOOK_API_BASE_URL: optionalString,
 
   // PostHog product analytics — required
   // See docs/guides/posthog-setup.md for setup

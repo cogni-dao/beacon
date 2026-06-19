@@ -1,0 +1,2 @@
+ALTER TABLE "connections" DROP CONSTRAINT "connections_provider_check";--> statement-breakpoint
+ALTER TABLE "connections" ADD CONSTRAINT "connections_provider_check" CHECK ("connections"."provider" IN ('openai-chatgpt', 'openai-compatible', 'github', 'google', 'bluesky', 'x', 'moltbook'));
