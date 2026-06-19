@@ -85,6 +85,15 @@ export {
   GrowthGenerateStateAnnotation,
 } from "./growth-generate/state";
 export { GROWTH_GENERATE_TOOL_IDS } from "./growth-generate/tools";
+// Growth-chat catalog graph — the watchable marketing-strategist ReAct agent for the
+// campaign detail page. Recall-only knowledge tools; grounds advice in the seeded
+// campaign playbook recalled live from Doltgres (graphId `langgraph:growth-chat`).
+export {
+  createGrowthChatGraph,
+  GROWTH_CHAT_GRAPH_NAME,
+} from "./growth-chat/graph";
+export { GROWTH_CHAT_SYSTEM_PROMPT } from "./growth-chat/prompts";
+export { GROWTH_CHAT_TOOL_IDS } from "./growth-chat/tools";
 // Shared graph types
 export type {
   CreateReactAgentGraphOptions,

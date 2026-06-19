@@ -13,8 +13,11 @@
  * Invariants:
  *   - THREADLESS: never reads/writes the thread list; one ephemeral session.
  *   - REUSE_ONLY: imports shared chat infra as-is; does not modify it.
- *   - DEFAULT_GRAPH: targets the standard chat graph (DEFAULT_GRAPH_ID) so the
- *     panel works regardless of any in-flight growth-specific graph.
+ *   - GROWTH_CHAT_GRAPH: targets the dedicated marketing-strategist catalog graph
+ *     `langgraph:growth-chat` (NOT generic brain). It recalls the seeded campaign
+ *     playbook live, so the tool-feed shows real knowledge_search/knowledge_read.
+ *   - CAMPAIGN_AWARE: the campaign title + brief seed the opening user turn so the
+ *     strategist grounds its first recall on THIS campaign.
  *   - TOOL_FEED_INSIDE_RUNTIME: the live feed reads thread state via useToolFeed,
  *     so it must render inside ChatRuntimeProvider's runtime tree.
  * Side-effects: IO (chat API via the runtime; model list via React Query).
@@ -25,16 +28,50 @@
 
 "use client";
 
-import type { ModelRef } from "@cogni/ai-core";
+import type { GraphId, ModelRef } from "@cogni/ai-core";
+import type { UIMessage } from "ai";
 import { signOut } from "next-auth/react";
 import { type ReactElement, useMemo } from "react";
 
 import { Thread } from "@/components";
 import { ChatRuntimeProvider } from "@/features/ai/chat/providers/ChatRuntimeProvider.client";
-import { DEFAULT_GRAPH_ID, useModels } from "@/features/ai/public";
+import { useModels } from "@/features/ai/public";
 
 import { ToolFeed } from "./tool-feed/ToolFeed";
 import { useToolFeed } from "./tool-feed/useToolFeed";
+
+/**
+ * The dedicated marketing-strategist catalog graph the panel watches. Recalls the
+ * seeded campaign playbook (beacon-brand-voice / beacon-campaigns /
+ * beacon-post-performance) live, so the tool-feed shows real knowledge tool calls.
+ */
+const GROWTH_CHAT_GRAPH_ID: GraphId = "langgraph:growth-chat";
+
+/**
+ * Seed the opening user turn with the campaign so the strategist's first recall is
+ * grounded on THIS campaign. Sent as a normal user message (the runtime forwards
+ * the latest user text to the route); the system prompt drives the recall recipe.
+ */
+function campaignOpeningMessages(
+  title: string,
+  brief: string
+): UIMessage[] {
+  const text = [
+    `Campaign: ${title}`,
+    "",
+    "Brief:",
+    brief.trim() || "(no brief provided)",
+    "",
+    "Recall this brand's playbook for the topics above, then assess this campaign across funnel, voice, hooks, cadence, and metric — recommend what to do next.",
+  ].join("\n");
+  return [
+    {
+      id: "campaign-context",
+      role: "user",
+      parts: [{ type: "text", text }],
+    },
+  ];
+}
 
 /**
  * Lives INSIDE ChatRuntimeProvider so it can subscribe to the running thread.
@@ -56,8 +93,12 @@ function ChatPanelBody(): ReactElement {
 }
 
 export interface CampaignChatPanelProps {
-  /** Campaign context — seeds the system intent so the agent stays on-task. */
+  /** Campaign id — surfaced for tooling/analytics, not sent to the model. */
   campaignId: string;
+  /** Campaign title — seeds the strategist's opening turn so recall is on-topic. */
+  title: string;
+  /** Campaign brief — seeds the strategist's opening turn so recall is on-topic. */
+  brief: string;
 }
 
 /**
@@ -69,8 +110,17 @@ export interface CampaignChatPanelProps {
  */
 export function CampaignChatPanel({
   campaignId,
+  title,
+  brief,
 }: CampaignChatPanelProps): ReactElement {
   const modelsQuery = useModels();
+
+  // Seed the opening user turn with this campaign so the strategist's first
+  // playbook recall is grounded on it (stable across renders).
+  const initialMessages = useMemo(
+    () => campaignOpeningMessages(title, brief),
+    [title, brief]
+  );
 
   // Resolve a model ref from the SERVER list only (INV-NO-CLIENT-INVENTED-MODEL-IDS):
   // prefer the server default, else the first free model.
@@ -95,12 +145,12 @@ export function CampaignChatPanel({
     >
       <div>
         <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          Watch the AI work
+          Watch the marketing strategist
         </h2>
         <p className="text-muted-foreground text-xs">
-          Ask the agent to research or draft — its text and tool calls stream
-          live below. This is an ephemeral session (nothing is saved to your
-          chat history).
+          Ask the strategist to critique this campaign — it recalls the brand
+          playbook live, so you can watch its knowledge lookups stream in the
+          feed below. Ephemeral session (nothing is saved to your chat history).
         </p>
       </div>
 
@@ -115,9 +165,9 @@ export function CampaignChatPanel({
       ) : (
         <ChatRuntimeProvider
           modelRef={modelRef}
-          selectedGraph={DEFAULT_GRAPH_ID}
+          selectedGraph={GROWTH_CHAT_GRAPH_ID}
           defaultModelId={defaultModelId}
-          initialMessages={[]}
+          initialMessages={initialMessages}
           initialStateKey={null}
           onAuthExpired={() => signOut()}
         >

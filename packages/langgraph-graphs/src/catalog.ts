@@ -36,6 +36,12 @@ import {
   FRONTEND_TESTER_GRAPH_NAME,
 } from "./graphs/frontend-tester/graph";
 import {
+  createGrowthChatGraph,
+  GROWTH_CHAT_GRAPH_NAME,
+} from "./graphs/growth-chat/graph";
+import { GROWTH_CHAT_SYSTEM_PROMPT } from "./graphs/growth-chat/prompts";
+import { GROWTH_CHAT_TOOL_IDS } from "./graphs/growth-chat/tools";
+import {
   createGrowthGenerateGraph,
   GROWTH_GENERATE_GRAPH_NAME,
 } from "./graphs/growth-generate/graph";
@@ -208,6 +214,24 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
   },
 
   /**
+   * Growth-chat graph — a watchable marketing-strategist ReAct agent for the
+   * campaign detail page. Recall-only knowledge tools (knowledge_search /
+   * knowledge_read): it grounds every recommendation in the seeded campaign
+   * playbook (beacon-brand-voice / beacon-campaigns / beacon-post-performance)
+   * recalled live from Doltgres, then critiques funnel·voice·hooks·cadence·metric.
+   * graphId is `langgraph:growth-chat`; the CampaignChatPanel watches it so the
+   * live tool-feed shows real knowledge_search/knowledge_read calls.
+   */
+  [GROWTH_CHAT_GRAPH_NAME]: {
+    displayName: "Growth Chat",
+    description:
+      "Marketing strategist — recalls the seeded campaign playbook and critiques funnel, voice, hooks, cadence, and metric",
+    toolIds: GROWTH_CHAT_TOOL_IDS as readonly string[],
+    graphFactory: createGrowthChatGraph,
+    systemPrompt: GROWTH_CHAT_SYSTEM_PROMPT,
+  },
+
+  /**
    * PR Review graph - single-call structured output for PR evaluation.
    * No tools — evidence is pre-fetched and passed as message content.
    */
@@ -309,6 +333,7 @@ export const LANGGRAPH_GRAPH_IDS = {
   research: `${LANGGRAPH_PROVIDER_ID}:${RESEARCH_GRAPH_NAME}`,
   content: `${LANGGRAPH_PROVIDER_ID}:${CONTENT_GRAPH_NAME}`,
   "growth-generate": `${LANGGRAPH_PROVIDER_ID}:${GROWTH_GENERATE_GRAPH_NAME}`,
+  "growth-chat": `${LANGGRAPH_PROVIDER_ID}:${GROWTH_CHAT_GRAPH_NAME}`,
   "pr-review": `${LANGGRAPH_PROVIDER_ID}:${PR_REVIEW_GRAPH_NAME}`,
   browser: `${LANGGRAPH_PROVIDER_ID}:${BROWSER_GRAPH_NAME}`,
   "frontend-tester": `${LANGGRAPH_PROVIDER_ID}:${FRONTEND_TESTER_GRAPH_NAME}`,

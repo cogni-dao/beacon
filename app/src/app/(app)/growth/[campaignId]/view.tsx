@@ -131,7 +131,11 @@ export function CampaignDetailView({
           (no thread persistence). */}
       <Card>
         <CardContent className="pt-6">
-          <CampaignChatPanel campaignId={campaign.campaignId} />
+          <CampaignChatPanel
+            campaignId={campaign.campaignId}
+            title={campaign.title}
+            brief={campaign.brief}
+          />
         </CardContent>
       </Card>
     </div>

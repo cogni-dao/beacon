@@ -12,7 +12,9 @@
  *   messages without a live backend — exactly the streamed events the chat route
  *   emits, reshaped into assistant-ui ThreadMessage parts.
  * Invariants:
- *   - THREADLESS: panel passes empty initialMessages + null initialStateKey.
+ *   - GROWTH_CHAT_GRAPH: panel targets `langgraph:growth-chat` (NOT generic brain).
+ *   - CAMPAIGN_AWARE: panel seeds the opening user turn with the campaign title+brief
+ *     and passes null initialStateKey (ephemeral, no thread persistence).
  *   - TOOL_FEED_RENDERS: streamed tool events surface as feed rows with state.
  * Side-effects: none (mocked dependencies)
  * Links: src/app/(app)/growth/_components/CampaignChatPanel.tsx,
@@ -215,7 +217,11 @@ describe("CampaignChatPanel", () => {
   function renderPanel() {
     return render(
       <QueryClientProvider client={queryClient}>
-        <CampaignChatPanel campaignId="camp-123" />
+        <CampaignChatPanel
+          campaignId="camp-123"
+          title="Launch the widget"
+          brief="Drive signups for the new widget across the funnel."
+        />
       </QueryClientProvider>
     );
   }
@@ -244,13 +250,24 @@ describe("CampaignChatPanel", () => {
     });
     expect(screen.getByTestId("thread")).toBeInTheDocument();
 
-    // THREADLESS wiring: empty initialMessages + null initialStateKey, standard graph.
-    expect(capturedProviderProps.initialMessages).toEqual([]);
+    // GROWTH_CHAT wiring: targets the dedicated marketing-strategist graph,
+    // ephemeral (null stateKey), and seeds the opening turn with campaign context.
+    expect(capturedProviderProps.selectedGraph).toBe("langgraph:growth-chat");
     expect(capturedProviderProps.initialStateKey).toBeNull();
-    expect(capturedProviderProps.selectedGraph).toBe("langgraph:brain");
     expect(
       (capturedProviderProps.modelRef as { modelId: string }).modelId
     ).toBe("free-1");
+
+    // CAMPAIGN_AWARE: the seeded opening user message carries title + brief.
+    const seeded = capturedProviderProps.initialMessages as Array<{
+      role: string;
+      parts: Array<{ type: string; text: string }>;
+    }>;
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].role).toBe("user");
+    const text = seeded[0].parts.map((p) => p.text).join("\n");
+    expect(text).toContain("Launch the widget");
+    expect(text).toContain("Drive signups for the new widget");
   });
 
   it("renders the live tool feed when fed mock streamed tool events", async () => {

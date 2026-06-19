@@ -72,6 +72,15 @@ export {
   GROWTH_GENERATE_TOOL_IDS,
 } from "./graphs/index";
 
+// Re-export the growth-chat CATALOG GRAPH (the watchable marketing-strategist
+// ReAct agent for the campaign page; graphId `langgraph:growth-chat`).
+export {
+  createGrowthChatGraph,
+  GROWTH_CHAT_GRAPH_NAME,
+  GROWTH_CHAT_SYSTEM_PROMPT,
+  GROWTH_CHAT_TOOL_IDS,
+} from "./graphs/index";
+
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 
