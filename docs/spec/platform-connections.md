@@ -135,6 +135,38 @@ The abstraction is uniform; the per-platform *gates* are not. Design for gracefu
 
 Implication: ship **X first** (simplest auth, validates the whole pipeline end-to-end), keep IG/TikTok connectors behind `review_pending` status until external approval lands. The registry lets you do this without touching shared code.
 
+## Cost basis (required per platform — STANDARD)
+
+> **CONNECTOR_COST_DOCUMENTED:** no platform connector ships without this table. Every call the node makes on a tenant's behalf costs money, and rollout/operating cost is dominated by platform API pricing, not code. Record it at connector-add time with a **dated source link** so the growth loop's unit economics are legible before a single tenant is onboarded.
+
+For each platform document: the billing model, every distinct API call the node's connector + data plane makes, the resource/request each maps to, and its unit price.
+
+### X (Twitter) — pay-per-use credits (since Feb 2026)
+
+Source: <https://docs.x.com/x-api/getting-started/pricing> (fetched 2026-06-19), [pay-per-use launch announcement](https://devcommunity.x.com/t/announcing-the-launch-of-x-api-pay-per-use-pricing/256476). X retired **new** Free/Basic/Pro signups in Feb 2026; new apps load credits and are charged per request. Legacy Basic ($200/mo, 10K posts) / Pro ($5K/mo, 1M posts) remain only for **existing** subscribers; legacy free users were migrated to pay-per-use with a one-time $10 voucher; only vetted "public-utility" apps keep free scaled access. **Pay-per-use requires a positive credit balance — calls fail without one.**
+
+Unit prices (per resource, deduplicated within a 24-hour UTC day):
+
+| Op | Resource class | Unit |
+|---|---|---|
+| read | Users, DMs, Followers/Following, Trends | $0.010 |
+| read | Posts, Lists, Spaces, Media, Analytics | $0.005 |
+| read | "Owned reads" (authenticated user owns the app) | $0.001 |
+| write | content create (standard) | $0.015 |
+| write | content create (**with URL**) | $0.200 |
+
+This node's X calls:
+
+| Call | When | Resources | Cost / call |
+|---|---|---|---|
+| `GET /2/users/me` (+`public_metrics`) | each profile insights render | 1 User | $0.010 (≤$0.001 owned) |
+| `GET /2/users/:id/tweets` (limit 10, `public_metrics`) | each profile insights render | ≤10 Posts | ≤$0.050 (≤$0.010 owned) |
+| `POST /2/tweets` (**DEFERRED — SA4**) | per published post | 1 write | $0.015, or **$0.200 if the post carries a URL** |
+
+**Per profile-render read cost ≈ $0.011–$0.060** (owned → standard), minus same-UTC-day dedup; `public_metrics` ride on the User/Post object, so there is no extra Analytics charge. The **$0.200 with-URL write** dominates posting economics — growth posts almost always carry a link, so size campaign budgets on **$0.20/post, not $0.015**.
+
+> **Availability is per-app, not per-endpoint.** Whether a given app can make these calls depends on its console billing state (pay-per-use credit balance, or a legacy Basic/Pro cap), which is only visible in that app's X developer console — never inferred from the endpoint docs.
+
 ## Pareto path forward (phased)
 
 1. **P0 — Prove the spine with X.** DONE in this PR: schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + profile UI + `SocialXCapability` re-sourced through the broker.
