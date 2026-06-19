@@ -27,6 +27,7 @@ import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
 import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
 
 import { CampaignActions } from "../_components/CampaignActions";
+import { CampaignChatPanel } from "../_components/CampaignChatPanel";
 import { CampaignControls } from "../_components/CampaignControls";
 import {
   campaignStatusInfo,
@@ -124,6 +125,19 @@ export function CampaignDetailView({
           />
         ))}
       </div>
+
+      {/* Live AI chat + tool-usage feed — watch the agent research/draft in real
+          time instead of staring at a stalled action button. Ephemeral session
+          (no thread persistence). */}
+      <Card>
+        <CardContent className="pt-6">
+          <CampaignChatPanel
+            campaignId={campaign.campaignId}
+            title={campaign.title}
+            brief={campaign.brief}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

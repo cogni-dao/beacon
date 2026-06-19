@@ -61,6 +61,26 @@ export {
   type RunGrowthGenerateInput,
 } from "./graphs/index";
 
+// Re-export the growth-generate CATALOG GRAPH (the GENERATE activity made
+// dashboard-visible + schedulable; graphId `langgraph:growth-generate`).
+export {
+  createGrowthGenerateGraph,
+  type GrowthGenerateConfig,
+  GROWTH_GENERATE_GRAPH_NAME,
+  type GrowthGenerateState,
+  GrowthGenerateStateAnnotation,
+  GROWTH_GENERATE_TOOL_IDS,
+} from "./graphs/index";
+
+// Re-export the growth-chat CATALOG GRAPH (the watchable marketing-strategist
+// ReAct agent for the campaign page; graphId `langgraph:growth-chat`).
+export {
+  createGrowthChatGraph,
+  GROWTH_CHAT_GRAPH_NAME,
+  GROWTH_CHAT_SYSTEM_PROMPT,
+  GROWTH_CHAT_TOOL_IDS,
+} from "./graphs/index";
+
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 

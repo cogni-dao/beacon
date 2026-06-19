@@ -55,8 +55,10 @@ export {
   runGrowthResearch,
   type RunGrowthResearchInput,
 } from "./growth-research/workflow";
-// Growth-generate workflow (beacon growth loop GENERATE activity — pure, on-demand;
-// NOT a catalog graph: invoked directly by the generate route, no Temporal).
+// Growth-generate (beacon growth loop GENERATE activity). The pure `runGrowthGenerate`
+// workflow stays the SHARED core (the generate route still calls it directly); the
+// catalog graph below wraps it so the activity is dashboard-visible + schedulable on a
+// cron via GraphRunWorkflow (graphId `langgraph:growth-generate`). See docs/guides/node-temporal.md.
 export {
   FUNNEL_LAYER_GUIDANCE,
   FUNNEL_LAYERS,
@@ -72,6 +74,26 @@ export {
   runGrowthGenerate,
   type RunGrowthGenerateInput,
 } from "./growth-generate/workflow";
+// Growth-generate catalog graph (the GENERATE activity made schedulable/dashboard-visible).
+export {
+  createGrowthGenerateGraph,
+  GROWTH_GENERATE_GRAPH_NAME,
+} from "./growth-generate/graph";
+export {
+  type GrowthGenerateConfig,
+  type GrowthGenerateState,
+  GrowthGenerateStateAnnotation,
+} from "./growth-generate/state";
+export { GROWTH_GENERATE_TOOL_IDS } from "./growth-generate/tools";
+// Growth-chat catalog graph — the watchable marketing-strategist ReAct agent for the
+// campaign detail page. Recall-only knowledge tools; grounds advice in the seeded
+// campaign playbook recalled live from Doltgres (graphId `langgraph:growth-chat`).
+export {
+  createGrowthChatGraph,
+  GROWTH_CHAT_GRAPH_NAME,
+} from "./growth-chat/graph";
+export { GROWTH_CHAT_SYSTEM_PROMPT } from "./growth-chat/prompts";
+export { GROWTH_CHAT_TOOL_IDS } from "./growth-chat/tools";
 // Shared graph types
 export type {
   CreateReactAgentGraphOptions,
