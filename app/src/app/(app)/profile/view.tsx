@@ -14,7 +14,13 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { Bot, Check, FlaskConical, Server as ServerIcon } from "lucide-react";
+import {
+  Bot,
+  Check,
+  FlaskConical,
+  RefreshCw,
+  Server as ServerIcon,
+} from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import type { ReactElement, ReactNode } from "react";
@@ -69,6 +75,66 @@ interface XAccountMetricsView {
   };
   recentPosts: XRecentPostView[];
   fetchedAt: string;
+}
+
+/* ─── X insights snapshot cache (read-cost discipline) ────────────────
+ * The X metrics read is a paid platform call (see docs/spec/platform-connections.md
+ * §Read-cost governance). The insights card must NOT fetch X on passive render —
+ * it serves the last snapshot and refetches only on an explicit user action.
+ * The card is owner-only (the metrics route resolves the caller's own connection),
+ * so the snapshot lives client-side keyed by the viewer's wallet; a server-side
+ * cache + scheduled refresh is the deferred next increment (spec item 3). The
+ * snapshot holds only public profile/post metrics — no tokens, no secrets. */
+const X_METRICS_CACHE_PREFIX = "beacon:x-metrics:";
+
+function readCachedXMetrics(walletAddress: string): XAccountMetricsView | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(
+      `${X_METRICS_CACHE_PREFIX}${walletAddress}`
+    );
+    return raw ? (JSON.parse(raw) as XAccountMetricsView) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedXMetrics(
+  walletAddress: string,
+  metrics: XAccountMetricsView
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${X_METRICS_CACHE_PREFIX}${walletAddress}`,
+      JSON.stringify(metrics)
+    );
+  } catch {
+    // Best-effort: a full/blocked localStorage just means no cross-reload cache.
+  }
+}
+
+function clearCachedXMetrics(walletAddress: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(`${X_METRICS_CACHE_PREFIX}${walletAddress}`);
+  } catch {
+    // ignore
+  }
+}
+
+/** Coarse "updated N ago" label for the snapshot timestamp. */
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 interface OwnershipAttribution {
@@ -564,6 +630,8 @@ export function ProfileView(): ReactElement {
   const [xHandle, setXHandle] = useState<string | null>(null);
   const [xLoading, setXLoading] = useState(false);
   const [xMetrics, setXMetrics] = useState<XAccountMetricsView | null>(null);
+  const [xMetricsLoading, setXMetricsLoading] = useState(false);
+  const [xMetricsError, setXMetricsError] = useState(false);
   const [moltbookConnected, setMoltbookConnected] = useState(false);
   const [moltbookHandle, setMoltbookHandle] = useState<string | null>(null);
   const [moltbookExpanded, setMoltbookExpanded] = useState(false);
@@ -697,24 +765,46 @@ export function ProfileView(): ReactElement {
       .catch(() => {});
   }, []);
 
-  // Once X is connected, read the linked account's live profile + recent-post
-  // metrics (broker-resolved per-tenant token; never an app-level bearer).
+  const walletAddress = session?.user?.walletAddress ?? null;
+
+  // Hydrate the X insights card from the last cached snapshot — NO platform call
+  // on passive render (the read is paid; see docs/spec/platform-connections.md
+  // §Read-cost governance). On disconnect, drop the snapshot.
   useEffect(() => {
-    if (!xConnected) {
+    if (!xConnected || !walletAddress) {
       setXMetrics(null);
+      setXMetricsError(false);
       return;
     }
-    fetch("/api/v1/connections/x/metrics")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { linked: boolean; metrics?: XAccountMetricsView } | null) => {
-        if (data?.linked && data.metrics) setXMetrics(data.metrics);
-      })
-      .catch(() => {
-        // Metrics are best-effort — the connection row still renders without them.
-      });
-  }, [xConnected]);
+    setXMetrics(readCachedXMetrics(walletAddress));
+  }, [xConnected, walletAddress]);
 
-  const walletAddress = session?.user?.walletAddress ?? null;
+  // Explicit, user-initiated refresh — the only path that spends a paid X read.
+  const refreshXMetrics = useCallback(async () => {
+    if (!walletAddress) return;
+    setXMetricsLoading(true);
+    setXMetricsError(false);
+    try {
+      const res = await fetch("/api/v1/connections/x/metrics");
+      const data = res.ok
+        ? ((await res.json()) as {
+            linked: boolean;
+            metrics?: XAccountMetricsView;
+          } | null)
+        : null;
+      if (data?.linked && data.metrics) {
+        setXMetrics(data.metrics);
+        writeCachedXMetrics(walletAddress, data.metrics);
+      } else {
+        setXMetricsError(true);
+      }
+    } catch {
+      setXMetricsError(true);
+    } finally {
+      setXMetricsLoading(false);
+    }
+  }, [walletAddress]);
+
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
   const avatarLetter = displayName.charAt(0).toUpperCase();
@@ -871,6 +961,8 @@ export function ProfileView(): ReactElement {
                   if (res.ok) {
                     setXConnected(false);
                     setXHandle(null);
+                    setXMetrics(null);
+                    if (walletAddress) clearCachedXMetrics(walletAddress);
                   }
                 } finally {
                   setXLoading(false);
@@ -894,50 +986,91 @@ export function ProfileView(): ReactElement {
         )}
       </SettingRow>
 
-      {/* Live X account metrics — broker-resolved per-tenant read (read-only). */}
-      {xConnected && xMetrics && (
+      {/* X insights — served from the last cached snapshot; the refresh button is
+          the only path that spends a paid X read (read-cost discipline, owner-only
+          card). See docs/spec/platform-connections.md §Read-cost governance. */}
+      {xConnected && (
         <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="truncate font-medium text-foreground text-sm">
-                {xMetrics.profile.displayName}
+              <div className="font-medium text-foreground text-sm">
+                X insights
               </div>
-              <div className="truncate text-muted-foreground text-xs">
-                {xMetrics.profile.handle}
+              <div className="text-muted-foreground text-xs">
+                {xMetrics
+                  ? `Updated ${formatRelativeTime(xMetrics.fetchedAt)}`
+                  : "Not loaded — reading X costs credits, so we fetch only on request."}
               </div>
             </div>
-            <div className="shrink-0 text-right">
-              <div className="font-semibold text-foreground text-sm tabular-nums">
-                {xMetrics.profile.followers.toLocaleString()}
-              </div>
-              <div className="text-muted-foreground text-xs">followers</div>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={xMetricsLoading}
+              onClick={() => {
+                void refreshXMetrics();
+              }}
+            >
+              <RefreshCw
+                className={xMetricsLoading ? "animate-spin" : undefined}
+              />
+              {xMetrics ? "Refresh" : "Load insights"}
+            </Button>
           </div>
-          {xMetrics.recentPosts.length > 0 ? (
-            <ul className="space-y-2">
-              {xMetrics.recentPosts.map((post) => (
-                <li
-                  key={post.externalId}
-                  className="rounded-md border border-border/60 p-3"
-                >
-                  <p className="line-clamp-2 text-foreground text-sm">
-                    {post.text}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
-                    <span>{post.likes.toLocaleString()} likes</span>
-                    <span>{post.reposts.toLocaleString()} reposts</span>
-                    <span>{post.replies.toLocaleString()} replies</span>
-                    {typeof post.impressions === "number" && (
-                      <span>{post.impressions.toLocaleString()} impressions</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No recent posts to show yet.
+
+          {xMetricsError && (
+            <p className="text-destructive text-xs">
+              Couldn&apos;t load X insights. The X app may need pay-per-use
+              credits — try again later.
             </p>
+          )}
+
+          {xMetrics && (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-foreground text-sm">
+                    {xMetrics.profile.displayName}
+                  </div>
+                  <div className="truncate text-muted-foreground text-xs">
+                    {xMetrics.profile.handle}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-semibold text-foreground text-sm tabular-nums">
+                    {xMetrics.profile.followers.toLocaleString()}
+                  </div>
+                  <div className="text-muted-foreground text-xs">followers</div>
+                </div>
+              </div>
+              {xMetrics.recentPosts.length > 0 ? (
+                <ul className="space-y-2">
+                  {xMetrics.recentPosts.map((post) => (
+                    <li
+                      key={post.externalId}
+                      className="rounded-md border border-border/60 p-3"
+                    >
+                      <p className="line-clamp-2 text-foreground text-sm">
+                        {post.text}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
+                        <span>{post.likes.toLocaleString()} likes</span>
+                        <span>{post.reposts.toLocaleString()} reposts</span>
+                        <span>{post.replies.toLocaleString()} replies</span>
+                        {typeof post.impressions === "number" && (
+                          <span>
+                            {post.impressions.toLocaleString()} impressions
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  No recent posts to show yet.
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

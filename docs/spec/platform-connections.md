@@ -188,16 +188,11 @@ The `sandbox` provider is a fully fake platform that exercises the **whole posti
 
 **Live evidence (candidate-a, 2026-06-19):** the per-tenant X insights read returns **HTTP 402** when the X app has no credit balance (`XSocialAdapter → read_account_metrics_failed`, `ConnectionsMetricsRoute → metrics_read_failed err:"code 402"`). The link/store path is unaffected — only the *read* is paywalled. Confirms: every metrics read is a paid platform call.
 
-Current behavior to fix (not yet built — **do not over-engineer**):
-
-- The profile card fetches `GET /api/v1/connections/x/metrics` **on every mount** (`useEffect [xConnected]`) — no cache, so each page view is a fresh paid call. Today's 402 isn't billed, but once funded each render charges ≈$0.01–$0.06.
-- A failing app (402/403/429) keeps getting called on every view — no backoff.
-
 Smallest responsible increment, in priority order (do the cheap ones first; defer the rest):
 
-1. **Don't fetch on passive render.** Serve the card from the last stored snapshot; only refetch on an explicit user action or a scheduled job. This alone removes the spam.
-2. **Short-circuit known-bad connections.** On 402/403/429, mark the connection (`needs_billing`/`rate_limited`) and stop calling until cooldown/operator re-arm; surface "X app needs credits" instead of a blank card.
-3. **Persist what we paid for** (a `connection_read_cache` row keyed by connection + resource + `fetched_at`) only if/when reads actually run on a cadence.
+1. **Don't fetch on passive render.** ✅ **SHIPPED.** The profile insights card no longer fetches `GET /api/v1/connections/x/metrics` on mount. It hydrates from the last snapshot and refetches **only** on an explicit Refresh / Load click — so a passive page view costs **$0** (was ≈$0.01–$0.06/render). The snapshot is held client-side (the card is owner-only — the route resolves the caller's own connection), keyed by the viewer's wallet, holding only public profile/post metrics (no tokens). Locked by `profile-x-insights-readcost.spec.tsx` (asserts zero `/x/metrics` calls on mount, exactly one per refresh). A server-side snapshot + scheduled refresh is deferred to item 3.
+2. **Short-circuit known-bad connections.** On 402/403/429, mark the connection (`needs_billing`/`rate_limited`) and stop calling until cooldown/operator re-arm; surface "X app needs credits" instead of a blank card. *Partial UX today:* a failed Refresh shows a coarse "X app may need pay-per-use credits" line (no auto-retry, since reads are now explicit) — but the connection is not yet persistently marked/cooled-down. Still to build: the persistent mark + backoff.
+3. **Persist what we paid for** (a `connection_read_cache` row keyed by connection + resource + `fetched_at`, RLS-scoped by `billing_account_id`) only if/when reads actually run on a cadence — this is also the home for the server-side snapshot that lets a scheduled job populate the card without a viewer present.
 
 Design note (deferred, not approved to build): the clean home for this is *declarative* — the port advertises `costClass` + `ttlSeconds` per read, and **one** generic read-through/circuit-break wrapper enforces it for every connector (adapters stay dumb fetchers). Capture, don't build, until the loop demands it.
 
