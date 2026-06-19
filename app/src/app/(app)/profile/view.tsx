@@ -14,6 +14,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   Check,
@@ -121,6 +122,18 @@ function clearCachedXMetrics(walletAddress: string): void {
   } catch {
     // ignore
   }
+}
+
+/** React Query fetcher for the paid X read — throws so RQ surfaces the error. */
+async function fetchXAccountMetrics(): Promise<XAccountMetricsView> {
+  const res = await fetch("/api/v1/connections/x/metrics");
+  if (!res.ok) throw new Error(`x metrics read failed (${res.status})`);
+  const data = (await res.json()) as {
+    linked: boolean;
+    metrics?: XAccountMetricsView;
+  } | null;
+  if (!data?.linked || !data.metrics) throw new Error("x metrics unavailable");
+  return data.metrics;
 }
 
 /** Coarse "updated N ago" label for the snapshot timestamp. */
@@ -629,9 +642,6 @@ export function ProfileView(): ReactElement {
   const [xConnected, setXConnected] = useState(false);
   const [xHandle, setXHandle] = useState<string | null>(null);
   const [xLoading, setXLoading] = useState(false);
-  const [xMetrics, setXMetrics] = useState<XAccountMetricsView | null>(null);
-  const [xMetricsLoading, setXMetricsLoading] = useState(false);
-  const [xMetricsError, setXMetricsError] = useState(false);
   const [moltbookConnected, setMoltbookConnected] = useState(false);
   const [moltbookHandle, setMoltbookHandle] = useState<string | null>(null);
   const [moltbookExpanded, setMoltbookExpanded] = useState(false);
@@ -767,43 +777,29 @@ export function ProfileView(): ReactElement {
 
   const walletAddress = session?.user?.walletAddress ?? null;
 
-  // Hydrate the X insights card from the last cached snapshot — NO platform call
-  // on passive render (the read is paid; see docs/spec/platform-connections.md
-  // §Read-cost governance). On disconnect, drop the snapshot.
-  useEffect(() => {
-    if (!xConnected || !walletAddress) {
-      setXMetrics(null);
-      setXMetricsError(false);
-      return;
-    }
-    setXMetrics(readCachedXMetrics(walletAddress));
-  }, [xConnected, walletAddress]);
+  // X insights are a paid X read (docs/spec/platform-connections.md §Read-cost
+  // governance). React Query owns fetch/cache/loading/error; `enabled: false`
+  // means it NEVER fires on render — only the explicit refetch() below spends a
+  // call. `initialData` seeds the in-memory cache from the last snapshot so a
+  // cold page load still shows data with zero platform calls (the one bit React
+  // Query needs a persister plugin for — server-side snapshot is the durable
+  // home, deferred to read-cost item 3).
+  const queryClient = useQueryClient();
+  const xMetricsQuery = useQuery<XAccountMetricsView, Error>({
+    queryKey: ["x-metrics", walletAddress],
+    queryFn: fetchXAccountMetrics,
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
+    initialData: () =>
+      walletAddress ? (readCachedXMetrics(walletAddress) ?? undefined) : undefined,
+  });
+  const xMetrics = xMetricsQuery.data ?? null;
 
-  // Explicit, user-initiated refresh — the only path that spends a paid X read.
-  const refreshXMetrics = useCallback(async () => {
-    if (!walletAddress) return;
-    setXMetricsLoading(true);
-    setXMetricsError(false);
-    try {
-      const res = await fetch("/api/v1/connections/x/metrics");
-      const data = res.ok
-        ? ((await res.json()) as {
-            linked: boolean;
-            metrics?: XAccountMetricsView;
-          } | null)
-        : null;
-      if (data?.linked && data.metrics) {
-        setXMetrics(data.metrics);
-        writeCachedXMetrics(walletAddress, data.metrics);
-      } else {
-        setXMetricsError(true);
-      }
-    } catch {
-      setXMetricsError(true);
-    } finally {
-      setXMetricsLoading(false);
-    }
-  }, [walletAddress]);
+  // Persist each fetched snapshot so it survives a reload (see initialData above).
+  useEffect(() => {
+    if (walletAddress && xMetrics) writeCachedXMetrics(walletAddress, xMetrics);
+  }, [walletAddress, xMetrics]);
 
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
@@ -961,7 +957,9 @@ export function ProfileView(): ReactElement {
                   if (res.ok) {
                     setXConnected(false);
                     setXHandle(null);
-                    setXMetrics(null);
+                    queryClient.removeQueries({
+                      queryKey: ["x-metrics", walletAddress],
+                    });
                     if (walletAddress) clearCachedXMetrics(walletAddress);
                   }
                 } finally {
@@ -1005,19 +1003,21 @@ export function ProfileView(): ReactElement {
             <Button
               variant="outline"
               size="sm"
-              disabled={xMetricsLoading}
+              disabled={xMetricsQuery.isFetching}
               onClick={() => {
-                void refreshXMetrics();
+                void xMetricsQuery.refetch();
               }}
             >
               <RefreshCw
-                className={xMetricsLoading ? "animate-spin" : undefined}
+                className={
+                  xMetricsQuery.isFetching ? "animate-spin" : undefined
+                }
               />
               {xMetrics ? "Refresh" : "Load insights"}
             </Button>
           </div>
 
-          {xMetricsError && (
+          {xMetricsQuery.isError && (
             <p className="text-destructive text-xs">
               Couldn&apos;t load X insights. The X app may need pay-per-use
               credits — try again later.

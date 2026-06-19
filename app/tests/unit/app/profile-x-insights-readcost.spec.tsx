@@ -16,6 +16,7 @@
  * @internal
  */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
@@ -122,6 +123,18 @@ function installFetchMock(): { calls: string[] } {
   return { calls };
 }
 
+/** Render the view inside a fresh QueryClient (the card uses useQuery). */
+function renderView(): void {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ProfileView />
+    </QueryClientProvider>
+  );
+}
+
 describe("Profile X insights — read-cost discipline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -131,7 +144,7 @@ describe("Profile X insights — read-cost discipline", () => {
   it("does NOT call the paid X metrics read on passive render", async () => {
     const { calls } = installFetchMock();
 
-    render(<ProfileView />);
+    renderView();
 
     // Wait until the connection-status probes have settled and the card is shown.
     await waitFor(() => {
@@ -149,7 +162,7 @@ describe("Profile X insights — read-cost discipline", () => {
   it("fetches X metrics exactly once on an explicit refresh click", async () => {
     const { calls } = installFetchMock();
 
-    render(<ProfileView />);
+    renderView();
     await waitFor(() => {
       expect(screen.getByText("X insights")).toBeInTheDocument();
     });
