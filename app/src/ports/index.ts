@@ -90,6 +90,10 @@ export type {
   PlatformRefreshResult,
 } from "./platform-connector.port";
 export type {
+  SandboxPosterPort,
+  SandboxPostResult,
+} from "./sandbox-poster.port";
+export type {
   GovernanceRun,
   GovernanceStatusPort,
   UpcomingRun,

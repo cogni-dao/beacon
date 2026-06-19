@@ -14,7 +14,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { Bot, Check, Server as ServerIcon } from "lucide-react";
+import { Bot, Check, FlaskConical, Server as ServerIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import type { ReactElement, ReactNode } from "react";
@@ -570,6 +570,10 @@ export function ProfileView(): ReactElement {
   const [moltbookKey, setMoltbookKey] = useState("");
   const [moltbookError, setMoltbookError] = useState("");
   const [moltbookLoading, setMoltbookLoading] = useState(false);
+  const [sandboxConnected, setSandboxConnected] = useState(false);
+  const [sandboxHandle, setSandboxHandle] = useState<string | null>(null);
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxLastPostId, setSandboxLastPostId] = useState<string | null>(null);
 
   // Read feedback query params and strip them to prevent re-display on refresh
   const linkedProvider = searchParams.get("linked");
@@ -669,6 +673,24 @@ export function ProfileView(): ReactElement {
           if (data) {
             setMoltbookConnected(data.connected);
             setMoltbookHandle(data.accounts[0]?.handle ?? null);
+          }
+        }
+      )
+      .catch(() => {});
+
+    // Check Sandbox (fake platform) connection status
+    fetch("/api/v1/connections/sandbox/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          data: {
+            connected: boolean;
+            accounts: Array<{ handle: string | null }>;
+          } | null
+        ) => {
+          if (data) {
+            setSandboxConnected(data.connected);
+            setSandboxHandle(data.accounts[0]?.handle ?? null);
           }
         }
       )
@@ -1049,6 +1071,102 @@ export function ProfileView(): ReactElement {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Sandbox: fake platform to exercise the link → post pipeline (no real send). */}
+      <SettingRow
+        icon={<FlaskConical className="size-5" />}
+        label="Sandbox (test)"
+        description={
+          sandboxConnected
+            ? "Fake platform linked — post here to exercise the pipeline with no real send."
+            : "Link a fake account to test the connect → post pipeline without posting anywhere."
+        }
+      >
+        {sandboxConnected ? (
+          <div className="flex items-center gap-2">
+            <ConnectedBadge login={sandboxHandle ?? "Connected"} />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sandboxLoading}
+              onClick={async () => {
+                setSandboxLoading(true);
+                try {
+                  const res = await fetch("/api/v1/connections/sandbox/post", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      text: `Test post from beacon at ${new Date().toISOString()}`,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.posted) {
+                    setSandboxLastPostId(data.result?.externalId ?? "ok");
+                  }
+                } finally {
+                  setSandboxLoading(false);
+                }
+              }}
+            >
+              Send test post
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={sandboxLoading}
+              onClick={async () => {
+                setSandboxLoading(true);
+                try {
+                  const res = await fetch(
+                    "/api/v1/connections/sandbox/disconnect",
+                    { method: "POST" }
+                  );
+                  if (res.ok) {
+                    setSandboxConnected(false);
+                    setSandboxHandle(null);
+                    setSandboxLastPostId(null);
+                  }
+                } finally {
+                  setSandboxLoading(false);
+                }
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={sandboxLoading}
+            onClick={async () => {
+              setSandboxLoading(true);
+              try {
+                const res = await fetch("/api/v1/connections/sandbox/connect", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ apiKey: "demo" }),
+                });
+                const data = await res.json();
+                if (res.ok && data.connected) {
+                  setSandboxConnected(true);
+                  setSandboxHandle(data.handle ?? null);
+                }
+              } finally {
+                setSandboxLoading(false);
+              }
+            }}
+          >
+            Connect
+          </Button>
+        )}
+      </SettingRow>
+
+      {sandboxConnected && sandboxLastPostId && (
+        <p className="py-2 text-muted-foreground text-xs tabular-nums">
+          Last test post recorded: <span className="font-mono">{sandboxLastPostId}</span>
+        </p>
       )}
 
       {/* ── AI Providers (BYO-AI) ── */}

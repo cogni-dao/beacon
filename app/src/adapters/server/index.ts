@@ -73,6 +73,8 @@ export {
   XSocialAdapter,
   type XSocialConfig,
 } from "./social/x.adapter";
+// Fake sandbox poster — exercises the posting pipeline with no external send.
+export { SandboxPoster } from "./social/sandbox.poster";
 export { DrizzleAiTelemetryAdapter } from "./ai-telemetry/drizzle.adapter";
 export {
   type CreateTraceWithIOParams,

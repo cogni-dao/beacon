@@ -44,6 +44,9 @@ const CONNECTION_PROVIDERS = [
   // Social platforms (see docs/spec/platform-connections.md)
   "x",
   "moltbook",
+  // Fake platform for exercising the connect→resolve→post pipeline with no
+  // external calls (test harness; see docs/spec/platform-connections.md).
+  "sandbox",
 ] as const;
 
 /** Connection health — legible without decrypting the credential blob. */
