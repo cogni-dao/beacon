@@ -36,6 +36,11 @@ import {
   FRONTEND_TESTER_GRAPH_NAME,
 } from "./graphs/frontend-tester/graph";
 import {
+  createGrowthGenerateGraph,
+  GROWTH_GENERATE_GRAPH_NAME,
+} from "./graphs/growth-generate/graph";
+import { GROWTH_GENERATE_TOOL_IDS } from "./graphs/growth-generate/tools";
+import {
   createOperatorGraph,
   GIT_REVIEWER_GRAPH_NAME,
   OPERATING_REVIEW_GRAPH_NAME,
@@ -188,6 +193,21 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
   },
 
   /**
+   * Growth-generate graph — the GENERATE activity of the beacon growth loop, as a
+   * dashboard-visible, schedulable catalog graph. Wraps the pure `runGrowthGenerate`
+   * (one LLM call per funnel layer) to POPULATE THE FUNNEL across TOFU/MOFU/BOFU.
+   * Per docs/guides/node-temporal.md: AI work is a graph, run on cron by the shared
+   * worker. graphId is `langgraph:growth-generate` (a stable shared seam).
+   */
+  [GROWTH_GENERATE_GRAPH_NAME]: {
+    displayName: "Growth Generate",
+    description:
+      "Growth-loop GENERATE activity — populates the funnel (TOFU/MOFU/BOFU) with grounded draft posts; volume derived from funnel targets",
+    toolIds: GROWTH_GENERATE_TOOL_IDS as readonly string[],
+    graphFactory: createGrowthGenerateGraph,
+  },
+
+  /**
    * PR Review graph - single-call structured output for PR evaluation.
    * No tools — evidence is pre-fetched and passed as message content.
    */
@@ -288,6 +308,7 @@ export const LANGGRAPH_GRAPH_IDS = {
   ponderer: `${LANGGRAPH_PROVIDER_ID}:${PONDERER_GRAPH_NAME}`,
   research: `${LANGGRAPH_PROVIDER_ID}:${RESEARCH_GRAPH_NAME}`,
   content: `${LANGGRAPH_PROVIDER_ID}:${CONTENT_GRAPH_NAME}`,
+  "growth-generate": `${LANGGRAPH_PROVIDER_ID}:${GROWTH_GENERATE_GRAPH_NAME}`,
   "pr-review": `${LANGGRAPH_PROVIDER_ID}:${PR_REVIEW_GRAPH_NAME}`,
   browser: `${LANGGRAPH_PROVIDER_ID}:${BROWSER_GRAPH_NAME}`,
   "frontend-tester": `${LANGGRAPH_PROVIDER_ID}:${FRONTEND_TESTER_GRAPH_NAME}`,
