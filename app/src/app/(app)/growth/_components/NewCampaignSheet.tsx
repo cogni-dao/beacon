@@ -3,12 +3,19 @@
 
 /**
  * Module: `@app/(app)/growth/_components/NewCampaignSheet`
- * Purpose: "+ New campaign" affordance for `/growth` — a trigger button + a
- *   slide-over Sheet form (title, brief, target rate, evaluateAt) that POSTs a new
- *   account-owned campaign, then refreshes the lens. Mirrors `AddDomainSheet`.
+ * Purpose: "+ New campaign" affordance for `/growth` — the DEFINE step. A trigger
+ *   button + a slide-over form that captures the campaign's durable DNA
+ *   (core topic · voice · ICP · objective) — the strategy the AI injects into every
+ *   research/generate run. KPI mechanics (target rate, evaluate-by) and the slug are
+ *   handled server-side / auto-derived; they are NOT user inputs.
  * Scope: Local form state + the create mutation. Refreshes via `router.refresh()`.
+ * Invariants:
+ *   - DEFINE_IS_THE_DNA: the four fields are what ground all downstream AI output;
+ *     the form makes that explicit and pushes for specificity.
+ *   - NO_DEV_MECHANICS_IN_UX: no hypothesis jargon, no target-rate, no evaluate-by,
+ *     no exposed slug — those are defaulted/derived, never asked of the user.
  * Side-effects: IO (POST /api/v1/growth/campaigns via createCampaign).
- * Links: ./_api/mutateCampaign.ts, ../knowledge/_components/AddDomainSheet.tsx
+ * Links: ./_api/mutateCampaign.ts, docs/research/marketing-platforms-landscape.md (DEFINE)
  * @internal
  */
 
@@ -31,7 +38,7 @@ import { createCampaign } from "../_api/mutateCampaign";
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Slugify a free-text title into a campaign-id candidate. */
+/** Slugify a free-text title into a campaign-id candidate (hidden from the user). */
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -40,35 +47,67 @@ function slugify(value: string): string {
     .slice(0, 64);
 }
 
-/** Default budget deadline: 30 days out, at midnight UTC. */
-function defaultEvaluateAt(): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + 30);
-  return d.toISOString().slice(0, 10); // yyyy-mm-dd for a date input
+/** One labelled multi-line DEFINE field with grounded helper copy. */
+function DefineField({
+  id,
+  label,
+  hint,
+  placeholder,
+  value,
+  onChange,
+  rows = 2,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+}): ReactElement {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor={id}
+        className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
+      >
+        {label}
+      </label>
+      <textarea
+        id={id}
+        rows={rows}
+        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[var(--ring-width-sm)] focus-visible:ring-ring"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={1000}
+        required
+      />
+      <span className="text-muted-foreground text-xs">{hint}</span>
+    </div>
+  );
 }
 
 export function NewCampaignSheet(): ReactElement {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [campaignId, setCampaignId] = useState("");
-  const [idTouched, setIdTouched] = useState(false);
   const [title, setTitle] = useState("");
-  const [brief, setBrief] = useState("");
-  const [targetPct, setTargetPct] = useState("2");
-  const [evaluateDate, setEvaluateDate] = useState(defaultEvaluateAt());
+  const [coreTopic, setCoreTopic] = useState("");
+  const [voice, setVoice] = useState("");
+  const [icp, setIcp] = useState("");
+  const [objective, setObjective] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-derive the slug from the title until the user edits the id directly.
-  const effectiveId = idTouched ? campaignId : slugify(title);
+  // The slug is auto-derived and never shown — it's machine plumbing, not UX.
+  const campaignId = slugify(title);
 
   const reset = () => {
-    setCampaignId("");
-    setIdTouched(false);
     setTitle("");
-    setBrief("");
-    setTargetPct("2");
-    setEvaluateDate(defaultEvaluateAt());
+    setCoreTopic("");
+    setVoice("");
+    setIcp("");
+    setObjective("");
     setError(null);
     setSubmitting(false);
   };
@@ -78,15 +117,14 @@ export function NewCampaignSheet(): ReactElement {
     setOpen(next);
   };
 
-  const targetRate = Number(targetPct) / 100;
-  const idValid = ID_PATTERN.test(effectiveId);
+  const idValid = ID_PATTERN.test(campaignId);
   const titleValid = title.trim().length >= 1 && title.length <= 200;
-  const briefValid = brief.trim().length >= 1 && brief.length <= 4000;
-  const rateValid =
-    Number.isFinite(targetRate) && targetRate > 0 && targetRate <= 1;
-  const dateValid = evaluateDate.length > 0;
-  const canSubmit =
-    idValid && titleValid && briefValid && rateValid && dateValid && !submitting;
+  const filled =
+    coreTopic.trim().length >= 1 &&
+    voice.trim().length >= 1 &&
+    icp.trim().length >= 1 &&
+    objective.trim().length >= 1;
+  const canSubmit = idValid && titleValid && filled && !submitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,12 +133,12 @@ export function NewCampaignSheet(): ReactElement {
     setError(null);
     try {
       await createCampaign({
-        campaignId: effectiveId,
+        campaignId,
         title: title.trim(),
-        brief: brief.trim(),
-        targetRate,
-        // Resolve the date to end-of-day UTC so the deadline is inclusive.
-        evaluateAt: new Date(`${evaluateDate}T23:59:59.000Z`).toISOString(),
+        coreTopic: coreTopic.trim(),
+        voice: voice.trim(),
+        icp: icp.trim(),
+        objective: objective.trim(),
       });
       reset();
       setOpen(false);
@@ -126,11 +164,12 @@ export function NewCampaignSheet(): ReactElement {
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle className="text-lg leading-snug">
-            New campaign
+            Define your campaign
           </SheetTitle>
           <span className="text-muted-foreground text-xs">
-            Files a falsifiable hypothesis + an account-owned campaign record. Starts
-            in <code className="font-mono">draft</code>.
+            These four fields are your campaign&apos;s DNA — the AI uses them on{" "}
+            <strong className="text-foreground">every single post</strong> it
+            writes. Specific in, sharp out; vague in, generic out. Make them great.
           </span>
         </SheetHeader>
 
@@ -140,7 +179,7 @@ export function NewCampaignSheet(): ReactElement {
               htmlFor="campaign-title"
               className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
             >
-              Title
+              Campaign name
             </label>
             <Input
               id="campaign-title"
@@ -153,88 +192,41 @@ export function NewCampaignSheet(): ReactElement {
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="campaign-id"
-              className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
-            >
-              Campaign ID
-            </label>
-            <Input
-              id="campaign-id"
-              className="h-9 font-mono text-sm"
-              placeholder="cogni-owns-its-ai"
-              value={effectiveId}
-              onChange={(e) => {
-                setIdTouched(true);
-                setCampaignId(e.target.value.toLowerCase());
-              }}
-              autoComplete="off"
-              spellCheck={false}
-              required
-            />
-            <span className="text-muted-foreground text-xs">
-              Lowercase slug{" "}
-              <code className="font-mono">[a-z0-9][a-z0-9-]*</code> · auto-derived
-              from the title.
-            </span>
-          </div>
+          <DefineField
+            id="campaign-topic"
+            label="Core topic"
+            hint="The one subject every post orbits."
+            placeholder="Why technical founders should own their AI infrastructure instead of renting it."
+            value={coreTopic}
+            onChange={setCoreTopic}
+          />
 
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="campaign-brief"
-              className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
-            >
-              Brief
-            </label>
-            <textarea
-              id="campaign-brief"
-              className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[var(--ring-width-sm)] focus-visible:ring-ring"
-              placeholder="The audience + angle + funnel-stage framing of the hypothesis."
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              maxLength={4000}
-              required
-            />
-          </div>
+          <DefineField
+            id="campaign-voice"
+            label="Voice"
+            hint="Tone, attitude, vocabulary — how it should sound."
+            placeholder="Direct, a little contrarian, founder-to-founder. Concrete over corporate. No hype, no emoji."
+            value={voice}
+            onChange={setVoice}
+          />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="campaign-target"
-                className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
-              >
-                Target rate %
-              </label>
-              <Input
-                id="campaign-target"
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="100"
-                className="h-9 text-sm tabular-nums"
-                value={targetPct}
-                onChange={(e) => setTargetPct(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="campaign-evaluate"
-                className="font-medium text-muted-foreground text-xs uppercase tracking-wider"
-              >
-                Evaluate by
-              </label>
-              <Input
-                id="campaign-evaluate"
-                type="date"
-                className="h-9 text-sm"
-                value={evaluateDate}
-                onChange={(e) => setEvaluateDate(e.target.value)}
-                required
-              />
-            </div>
-          </div>
+          <DefineField
+            id="campaign-icp"
+            label="Audience (ICP)"
+            hint="Who exactly are you talking to? The more specific, the better."
+            placeholder="Technical startup founders who distrust marketing fluff and care about owning their stack."
+            value={icp}
+            onChange={setIcp}
+          />
+
+          <DefineField
+            id="campaign-objective"
+            label="Objective"
+            hint="What should they think, feel, or do after reading?"
+            placeholder="Believe Cogni is the credible way to own your AI — and follow for more."
+            value={objective}
+            onChange={setObjective}
+          />
 
           {error && (
             <p
@@ -263,7 +255,7 @@ export function NewCampaignSheet(): ReactElement {
               disabled={!canSubmit}
             >
               <Plus className="size-3.5" />
-              {submitting ? "Creating…" : "Create"}
+              {submitting ? "Creating…" : "Create campaign"}
             </Button>
           </div>
         </form>

@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components";
 import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
 import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
 
+import { CampaignActions } from "../_components/CampaignActions";
 import { CampaignControls } from "../_components/CampaignControls";
 import {
   campaignStatusInfo,
@@ -87,12 +88,15 @@ export function CampaignDetailView({
               status={campaign.status}
             />
           </div>
-          {/* Trigger toggles (comments / DMs / reposts → signal-started workflows)
-              and schedule control are roadmap — see design §3. */}
+          {/* Honesty: "Activate" only persists status today — it does NOT auto-run
+              the loop. The autonomous driver (heartbeat → research/generate/post on
+              active campaigns) is a later PR. Until then, advance the loop manually
+              with the actions below. */}
           <p className="text-muted-foreground text-xs">
-            Schedule control + triggers (comments, DMs, reposts) &mdash; heartbeat
-            PR.
+            Activating marks intent only &mdash; it does not auto-run yet (autonomous
+            heartbeat is a later PR). Advance the loop manually here:
           </p>
+          <CampaignActions campaignId={campaign.campaignId} />
         </CardContent>
       </Card>
 

@@ -68,18 +68,33 @@ const CAMPAIGN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 // Wire contracts (Zod boundaries)
 // ---------------------------------------------------------------------------
 
+/** Default predicted engagement rate when the user doesn't set one (they shouldn't). */
+const DEFAULT_TARGET_RATE = 0.02;
+/** Default hypothesis-resolution horizon: 30 days out. */
+const DEFAULT_EVALUATE_DAYS = 30;
+
 const CreateCampaignInputSchema = z.object({
-  /** Slug for the campaign — becomes `campaign:<id>` + `metric:engagement:<id>`. */
+  /** Slug — auto-derived from the title in the UI; never shown to the user. */
   campaignId: z
     .string()
     .regex(CAMPAIGN_ID_RE, "campaignId must be a lowercase slug (a-z0-9-)"),
   title: z.string().min(1).max(200),
-  /** The audience + angle + funnel-stage framing of the hypothesis. */
-  brief: z.string().min(1).max(4000),
-  /** Predicted engagement RATE the campaign must hit, fraction in (0,1]. */
-  targetRate: z.number().positive().max(1),
-  /** Budget deadline — when the hypothesis resolves (ISO 8601). */
-  evaluateAt: z.string().datetime(),
+  // --- DEFINE: the campaign's durable DNA, injected into every AI prompt ---
+  /** Core subject the campaign orbits. */
+  coreTopic: z.string().min(1).max(500).optional(),
+  /** Brand voice / tone the AI must write in. */
+  voice: z.string().min(1).max(1000).optional(),
+  /** Ideal-customer profile — who, specifically, this talks to. */
+  icp: z.string().min(1).max(1000).optional(),
+  /** What the campaign is trying to get the audience to do. */
+  objective: z.string().min(1).max(1000).optional(),
+  // --- EDO/KPI mechanics: defaulted server-side, NOT collected from the user ---
+  /** Legacy free-text brief; composed from the DNA fields when absent. */
+  brief: z.string().min(1).max(4000).optional(),
+  /** Predicted engagement RATE; defaulted — not a user input. */
+  targetRate: z.number().positive().max(1).optional(),
+  /** Hypothesis-resolution deadline; defaulted — not a user input. */
+  evaluateAt: z.string().datetime().optional(),
 });
 
 const CampaignKpiSchema = z.object({
@@ -264,14 +279,34 @@ export const POST = wrapRouteHandlerWithLogging(
 
     const hypothesisId = `campaign:${input.campaignId}`;
     const resolutionStrategy = `${METRIC_ENGAGEMENT_PREFIX}${input.campaignId}`;
-    const evaluateAt = new Date(input.evaluateAt);
+
+    // EDO/KPI mechanics are DEFAULTED — the user never sets them.
+    const targetRate = input.targetRate ?? DEFAULT_TARGET_RATE;
+    const evaluateAt = input.evaluateAt
+      ? new Date(input.evaluateAt)
+      : new Date(Date.now() + DEFAULT_EVALUATE_DAYS * 24 * 60 * 60 * 1000);
+
+    // The brief stored on the record is composed from the DEFINE DNA when the
+    // caller didn't pass a free-text brief — so the detail page + downstream
+    // grounding always have a human-readable summary.
+    const brief =
+      input.brief?.trim() ||
+      [
+        input.objective && `Objective: ${input.objective.trim()}`,
+        input.icp && `Audience: ${input.icp.trim()}`,
+        input.coreTopic && `Topic: ${input.coreTopic.trim()}`,
+        input.voice && `Voice: ${input.voice.trim()}`,
+      ]
+        .filter(Boolean)
+        .join("\n") ||
+      input.title;
 
     // The hypothesis content is the durable home for the predicted rate; the
-    // resolver parses `target_rate` from it. Brief recalls brand-voice.
+    // resolver parses `target_rate` from it.
     const content = [
-      input.brief.trim(),
+      brief,
       "",
-      `target_rate=${input.targetRate}`,
+      `target_rate=${targetRate}`,
       `Recall beacon-brand-voice for winning angles/hooks/formats before producing.`,
     ].join("\n");
 
@@ -308,8 +343,13 @@ export const POST = wrapRouteHandlerWithLogging(
           accountId: account.id,
           campaignId: input.campaignId,
           title: input.title,
-          brief: input.brief,
-          targetRate: input.targetRate,
+          brief,
+          // DEFINE DNA — what the AI reads on every research/generate run.
+          coreTopic: input.coreTopic ?? null,
+          voice: input.voice ?? null,
+          icp: input.icp ?? null,
+          objective: input.objective ?? null,
+          targetRate,
           status: "draft",
           evaluateAt,
         });
@@ -331,7 +371,7 @@ export const POST = wrapRouteHandlerWithLogging(
           hypothesisId: hypothesis.id,
           resolutionStrategy,
           status: "draft",
-          evaluateAt: input.evaluateAt,
+          evaluateAt: evaluateAt.toISOString(),
           committed: true,
         },
         { status: 201 }

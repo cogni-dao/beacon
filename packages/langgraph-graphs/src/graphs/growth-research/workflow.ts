@@ -34,6 +34,12 @@ import {
 export interface CampaignStrategy {
   /** Campaign slug — stamped onto every persisted finding by the caller. */
   campaignId: string;
+  /**
+   * The human's plain-English campaign brief (the `campaigns.brief` field the
+   * create form actually collects). This is the PRIMARY grounding in v0 — the
+   * structured fields below are optional refinements layered on top of it.
+   */
+  brief?: string | null;
   /** Brand voice / tone; nullable on the row. */
   voice?: string | null;
   /** Core subject the campaign orbits; nullable. */
@@ -81,10 +87,11 @@ const FINDING_KIND_SET: ReadonlySet<string> = new Set(RESEARCH_FINDING_KINDS);
 /** Render the campaign strategy as a compact, labelled brief for the model. */
 function renderStrategy(s: CampaignStrategy): string {
   const lines = [
-    `core_topic: ${s.coreTopic?.trim() || "(unspecified)"}`,
-    `voice: ${s.voice?.trim() || "(unspecified)"}`,
-    `icp: ${s.icp?.trim() || "(unspecified)"}`,
-    `objective: ${s.objective?.trim() || "(unspecified)"}`,
+    `brief (the campaign description — ground everything in this): ${s.brief?.trim() || "(none given)"}`,
+    `core_topic: ${s.coreTopic?.trim() || "(derive from the brief)"}`,
+    `voice: ${s.voice?.trim() || "(derive from the brief)"}`,
+    `icp: ${s.icp?.trim() || "(derive from the brief)"}`,
+    `objective: ${s.objective?.trim() || "(derive from the brief)"}`,
   ];
   return lines.join("\n");
 }

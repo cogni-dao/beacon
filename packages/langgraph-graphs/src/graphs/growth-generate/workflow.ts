@@ -104,10 +104,11 @@ export function resolveLayerCount(
 /** Render the campaign strategy as a compact, labelled brief for the model. */
 function renderStrategy(s: CampaignStrategy): string {
   return [
-    `core_topic: ${s.coreTopic?.trim() || "(unspecified)"}`,
-    `voice: ${s.voice?.trim() || "(unspecified)"}`,
-    `icp: ${s.icp?.trim() || "(unspecified)"}`,
-    `objective: ${s.objective?.trim() || "(unspecified)"}`,
+    `brief (the campaign description — ground every post in this): ${s.brief?.trim() || "(none given)"}`,
+    `core_topic: ${s.coreTopic?.trim() || "(derive from the brief)"}`,
+    `voice: ${s.voice?.trim() || "(derive from the brief)"}`,
+    `icp: ${s.icp?.trim() || "(derive from the brief)"}`,
+    `objective: ${s.objective?.trim() || "(derive from the brief)"}`,
   ].join("\n");
 }
 

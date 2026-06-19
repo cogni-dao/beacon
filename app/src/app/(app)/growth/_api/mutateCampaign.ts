@@ -3,12 +3,14 @@
 
 /**
  * Module: `@app/(app)/growth/_api/mutateCampaign`
- * Purpose: Client-side fetch wrappers for the growth campaign CRUD endpoints —
- *   create (POST), status toggle (PATCH), and delete (DELETE). Cookie-session only.
+ * Purpose: Client-side fetch wrappers for the growth campaign endpoints — create
+ *   (POST), status toggle (PATCH), delete (DELETE), and the on-demand loop
+ *   activities research + generate (POST). Cookie-session only.
  * Scope: Thin `fetch` wrappers + error normalization. No UI state, no cache wiring
  *   (callers refresh via `router.refresh()`).
- * Side-effects: IO (HTTP to /api/v1/growth/campaigns[/:campaignId]).
+ * Side-effects: IO (HTTP to /api/v1/growth/campaigns[/:campaignId][/research|/generate]).
  * Links: app/src/app/api/v1/growth/campaigns/route.ts + [campaignId]/route.ts
+ *   + [campaignId]/research/route.ts + [campaignId]/generate/route.ts
  * @internal
  */
 
@@ -18,9 +20,15 @@ export type CampaignStatus = "draft" | "active" | "paused" | "done";
 export interface CreateCampaignInput {
   campaignId: string;
   title: string;
-  brief: string;
-  targetRate: number;
-  evaluateAt: string;
+  /**
+   * The campaign's DEFINE DNA — voice + topic + audience + objective. This is
+   * what the AI reads on every research/generate run; the KPI mechanics
+   * (target rate, evaluate-by) are defaulted server-side, not collected here.
+   */
+  coreTopic: string;
+  voice: string;
+  icp: string;
+  objective: string;
 }
 
 export interface CreateCampaignResponse {
@@ -76,4 +84,34 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
   if (!response.ok && response.status !== 204) {
     throw new Error(await readError(response, "Failed to delete campaign"));
   }
+}
+
+async function runActivity(
+  campaignId: string,
+  activity: "research" | "generate",
+  resultKey: "findings" | "posts",
+  fallback: string
+): Promise<number> {
+  const response = await fetch(
+    `/api/v1/growth/campaigns/${encodeURIComponent(campaignId)}/${activity}`,
+    { method: "POST", credentials: "same-origin", cache: "no-store" }
+  );
+  if (!response.ok) {
+    throw new Error(await readError(response, fallback));
+  }
+  const body = (await response.json().catch(() => ({}))) as {
+    findings?: unknown[];
+    posts?: unknown[];
+  };
+  return body[resultKey]?.length ?? 0;
+}
+
+/** Run the RESEARCH activity; returns how many findings it produced. */
+export async function runResearch(campaignId: string): Promise<number> {
+  return runActivity(campaignId, "research", "findings", "Research failed");
+}
+
+/** Run the GENERATE activity; returns how many post drafts it produced. */
+export async function generatePosts(campaignId: string): Promise<number> {
+  return runActivity(campaignId, "generate", "posts", "Generate failed");
 }
