@@ -86,6 +86,9 @@ importers:
       '@cogni/ingestion-core':
         specifier: workspace:*
         version: link:../packages/ingestion-core
+      '@cogni/knowledge-base':
+        specifier: workspace:*
+        version: link:../packages/knowledge-base
       '@cogni/knowledge-store':
         specifier: workspace:*
         version: link:../packages/knowledge-store

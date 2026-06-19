@@ -18,15 +18,18 @@ export type { NewWorkItemRow, WorkItemRow } from "./schema.js";
 // work_items lifecycle store. Per-node packages re-export from here so the
 // schema cannot drift across nodes (spike.5004).
 export {
-  citations,
-  domains,
-  knowledge,
-  knowledgeContributionCommits,
-  knowledgeContributions,
-  sources,
-  workItems,
+	citations,
+	domains,
+	knowledge,
+	knowledgeContributionCommits,
+	knowledgeContributions,
+	sources,
+	workItems,
 } from "./schema.js";
 
 // Seeds
 export { BASE_KNOWLEDGE_SEEDS } from "./seeds/base.js";
 export { BASE_DOMAIN_SEEDS } from "./seeds/domains.js";
+// Beacon growth-loop v0 marketing-campaign playbook seeds (3 growth domains +
+// 2 choosable example playbooks). Applied the same way BASE_KNOWLEDGE_SEEDS is.
+export { GROWTH_PLAYBOOK_SEEDS } from "./seeds/growth-playbook.js";
