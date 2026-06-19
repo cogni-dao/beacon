@@ -19,7 +19,7 @@ import { withTenantScope } from "@cogni/db-client";
 import { connections } from "@cogni/db-schema";
 import type { ActorId } from "@cogni/ids";
 import { type AeadAAD, aeadDecrypt, aeadEncrypt } from "@cogni/node-shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { Logger } from "pino";
 import type { ConnectionBrokerPort, ResolvedConnection } from "@/ports";
@@ -208,6 +208,8 @@ export class DrizzleConnectionBrokerAdapter implements ConnectionBrokerPort {
               isNull(connections.revokedAt)
             )
           )
+          // Deterministic when a tenant has multiple active accounts: newest link.
+          .orderBy(desc(connections.createdAt))
           .limit(1)
     );
 
