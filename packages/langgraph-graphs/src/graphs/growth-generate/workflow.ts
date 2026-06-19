@@ -28,7 +28,12 @@
  * @public
  */
 
-import type { CampaignStrategy, CompleteFn, RecallPlaybookFn } from "../growth-research/workflow";
+import {
+  type CampaignStrategy,
+  type CompleteFn,
+  extractJsonArray,
+  type RecallPlaybookFn,
+} from "../growth-research/workflow";
 import {
   FUNNEL_LAYER_GUIDANCE,
   FUNNEL_LAYERS,
@@ -149,7 +154,7 @@ export function parseDraftPosts(
 ): DraftPost[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw.trim());
+    parsed = JSON.parse(extractJsonArray(raw));
   } catch {
     return [];
   }

@@ -111,13 +111,36 @@ async function safeRecall(
 }
 
 /**
+ * Extract a JSON array from a model response that may be wrapped in markdown code
+ * fences or surrounded by prose. gpt-4o-mini frequently returns ```json [...] ```
+ * (or a sentence + the array) despite "return ONLY a JSON array" — without this,
+ * the parse fails and the activity silently produces ZERO rows. Shared by the
+ * generate workflow's parser too.
+ */
+export function extractJsonArray(raw: string): string {
+  let s = raw.trim();
+  // Strip a leading ```/```json fence and a trailing ``` fence.
+  s = s
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  // If prose surrounds the array, slice to the outermost [ ... ].
+  const start = s.indexOf("[");
+  const end = s.lastIndexOf("]");
+  if (start !== -1 && end !== -1 && end > start) {
+    s = s.slice(start, end + 1);
+  }
+  return s;
+}
+
+/**
  * Parse the model's JSON array into typed findings. Tolerant: ignores non-JSON,
  * drops rows missing a valid kind or content, trims content. Never throws.
  */
 export function parseFindings(raw: string): ResearchFinding[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw.trim());
+    parsed = JSON.parse(extractJsonArray(raw));
   } catch {
     return [];
   }
