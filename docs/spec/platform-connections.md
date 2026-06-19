@@ -184,6 +184,23 @@ This node's Moltbook calls:
 
 The `sandbox` provider is a fully fake platform that exercises the **whole posting pipeline** (connect → persist → broker-resolve → post) with **no external call** — so the per-tenant posting architecture can be tested and demoed without claiming agents, OAuth, paid tiers, or really posting anywhere. `SandboxPlatformConnector` (credential, `validateAndStore` is deterministic + network-free) + `SandboxPoster` (records a post, `externalId = hash(token, text)`, Pino-logged) behind the sandbox-only `POST /api/v1/connections/sandbox/post`. It is the reusable substrate every new platform's poster is proven against before its real adapter lands.
 
+## Read-cost governance (concern logged — keep it lean)
+
+**Live evidence (candidate-a, 2026-06-19):** the per-tenant X insights read returns **HTTP 402** when the X app has no credit balance (`XSocialAdapter → read_account_metrics_failed`, `ConnectionsMetricsRoute → metrics_read_failed err:"code 402"`). The link/store path is unaffected — only the *read* is paywalled. Confirms: every metrics read is a paid platform call.
+
+Current behavior to fix (not yet built — **do not over-engineer**):
+
+- The profile card fetches `GET /api/v1/connections/x/metrics` **on every mount** (`useEffect [xConnected]`) — no cache, so each page view is a fresh paid call. Today's 402 isn't billed, but once funded each render charges ≈$0.01–$0.06.
+- A failing app (402/403/429) keeps getting called on every view — no backoff.
+
+Smallest responsible increment, in priority order (do the cheap ones first; defer the rest):
+
+1. **Don't fetch on passive render.** Serve the card from the last stored snapshot; only refetch on an explicit user action or a scheduled job. This alone removes the spam.
+2. **Short-circuit known-bad connections.** On 402/403/429, mark the connection (`needs_billing`/`rate_limited`) and stop calling until cooldown/operator re-arm; surface "X app needs credits" instead of a blank card.
+3. **Persist what we paid for** (a `connection_read_cache` row keyed by connection + resource + `fetched_at`) only if/when reads actually run on a cadence.
+
+Design note (deferred, not approved to build): the clean home for this is *declarative* — the port advertises `costClass` + `ttlSeconds` per read, and **one** generic read-through/circuit-break wrapper enforces it for every connector (adapters stay dumb fetchers). Capture, don't build, until the loop demands it.
+
 ## Pareto path forward (phased)
 
 1. **P0 — Prove the spine with X.** DONE in this PR: schema delta + `PlatformConnectorPort` + `XConnector` + generic OAuth shell + profile UI + `SocialXCapability` re-sourced through the broker.
