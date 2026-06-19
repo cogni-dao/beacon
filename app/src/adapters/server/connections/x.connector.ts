@@ -16,8 +16,8 @@
  */
 
 import type {
+  OAuthPlatformConnector,
   PlatformAccount,
-  PlatformConnectorPort,
   PlatformCredentialBlob,
   PlatformRefreshResult,
 } from "@/ports";
@@ -36,7 +36,7 @@ export interface XConnectorConfig {
   readonly clientSecret: string;
 }
 
-export class XPlatformConnector implements PlatformConnectorPort {
+export class XPlatformConnector implements OAuthPlatformConnector {
   readonly provider = "x";
   readonly credentialType = "oauth2";
   readonly scopes = X_SCOPES;

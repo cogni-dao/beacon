@@ -53,19 +53,31 @@ export interface PlatformGating {
   readonly accountKind?: "business_required";
 }
 
-/**
- * Control-plane connector for a single platform provider.
- * Stateless: the caller carries PKCE state across the OAuth redirect.
- */
-export interface PlatformConnectorPort {
-  /** Registry key — matches connections.provider (e.g. "x"). */
-  readonly provider: string;
-  /** Credential type stored on the connection (e.g. "oauth2"). */
-  readonly credentialType: string;
-  /** OAuth scopes requested at authorize time. */
+/** Normalized result of a successful link — what the persistence layer stores. */
+export interface PlatformLinkResult {
+  readonly blob: PlatformCredentialBlob;
+  readonly account: PlatformAccount;
   readonly scopes: readonly string[];
+  readonly expiresAt: Date | null;
+}
+
+/** Fields every connector declares regardless of credential model. */
+interface PlatformConnectorBase {
+  /** Registry key — matches connections.provider (e.g. "x", "moltbook"). */
+  readonly provider: string;
   /** App-review / posting reality for graceful degradation downstream. */
   readonly gating: PlatformGating;
+}
+
+/**
+ * OAuth 2.0 connector (redirect + code exchange). The generic connect (GET) +
+ * callback routes drive this shape: redirect → exchange → fetchAccount.
+ * Stateless: the caller carries PKCE state across the redirect.
+ */
+export interface OAuthPlatformConnector extends PlatformConnectorBase {
+  readonly credentialType: "oauth2";
+  /** OAuth scopes requested at authorize time. */
+  readonly scopes: readonly string[];
 
   /**
    * Build the provider authorize URL plus the PKCE/state the caller must carry
@@ -100,3 +112,30 @@ export interface PlatformConnectorPort {
    */
   refresh(refreshToken: string): Promise<PlatformRefreshResult>;
 }
+
+/**
+ * Credential connector (user-supplied secret, no redirect). The generic connect
+ * (POST) route drives this shape: the user submits an API key / app-password,
+ * the connector validates it against the platform and returns the link result.
+ * For platforms whose API is Bearer/API-key, not OAuth (e.g. Moltbook).
+ */
+export interface CredentialPlatformConnector extends PlatformConnectorBase {
+  readonly credentialType: "api_key" | "app_password";
+
+  /**
+   * Validate a user-supplied secret against the platform and produce the stored
+   * blob + non-secret display account. The single round-trip both proves the
+   * secret works and fetches the identity.
+   * @throws if the secret is invalid or the platform is unreachable.
+   */
+  validateAndStore(secret: string): Promise<PlatformLinkResult>;
+}
+
+/**
+ * Control-plane connector for a single platform provider. The connect route
+ * dispatches on `credentialType`: `oauth2` → redirect flow; credential → POST
+ * validate flow.
+ */
+export type PlatformConnectorPort =
+  | OAuthPlatformConnector
+  | CredentialPlatformConnector;

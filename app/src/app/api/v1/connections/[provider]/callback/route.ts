@@ -16,23 +16,16 @@
  * @public
  */
 
-import { randomUUID, timingSafeEqual } from "node:crypto";
-import { withTenantScope } from "@cogni/db-client";
-import { connections } from "@cogni/db-schema";
-import { type UserId, userActor } from "@cogni/ids";
-import { aeadEncrypt, decodeAeadKey } from "@cogni/node-shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { timingSafeEqual } from "node:crypto";
+import type { UserId } from "@cogni/ids";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import {
-  getContainer,
-  getPlatformConnector,
-  resolveAppDb,
-} from "@/bootstrap/container";
+import { getContainer, getPlatformConnector } from "@/bootstrap/container";
 import { getOrCreateBillingAccountForUser } from "@/lib/auth/mapping";
 import { getServerSessionUser } from "@/lib/auth/server";
 import { serverEnv } from "@/shared/env";
 import { makeLogger } from "@/shared/observability";
+import { persistPlatformConnection } from "../_persist";
 import {
   CONN_STATE_COOKIE,
   CONN_STATE_PATH,
@@ -101,6 +94,11 @@ export async function GET(
 
   const connector = getPlatformConnector(provider);
   if (!connector) return fail(req, provider, "provider_unavailable");
+  // This route is the OAuth redirect flow; credential connectors link via
+  // POST /api/v1/connections/[provider]/connect instead.
+  if (connector.credentialType !== "oauth2") {
+    return fail(req, provider, "not_oauth_provider");
+  }
 
   // Exchange + identity fetch (network IO).
   let blob: Awaited<ReturnType<typeof connector.exchangeCode>>["blob"];
@@ -141,54 +139,18 @@ export async function GET(
     userId: session.id,
   });
 
-  // Encrypt with AAD binding. Persist the stable external account id inside the
-  // blob too (matches openai-codex) so the broker surfaces it as
-  // credentials.accountId for the future per-tenant posting path.
-  const connectionId = randomUUID();
-  const storedBlob = { ...blob, account_id: account.externalAccountId };
-  const encrypted = aeadEncrypt(
-    JSON.stringify(storedBlob),
-    {
-      billing_account_id: billingAccount.id,
-      connection_id: connectionId,
-      provider,
-    },
-    // Accepts 64-hex (dev) or base64-of-32-bytes (substrate-minted).
-    decodeAeadKey(encKeyHex)
-  );
-
-  const db = resolveAppDb();
+  // Encrypt + store via the shared persistence path (one storage path for OAuth
+  // and credential connectors alike).
+  let connectionId: string;
   try {
-    await withTenantScope(db, userActor(session.id as UserId), async (tx) => {
-      // Revoke any prior active connection for this exact handle (re-link replaces).
-      await tx
-        .update(connections)
-        .set({ revokedAt: new Date(), revokedByUserId: session.id })
-        .where(
-          and(
-            eq(connections.billingAccountId, billingAccount.id),
-            eq(connections.provider, provider),
-            eq(connections.externalAccountId, account.externalAccountId),
-            isNull(connections.revokedAt)
-          )
-        );
-
-      await tx.insert(connections).values({
-        id: connectionId,
-        billingAccountId: billingAccount.id,
-        provider,
-        credentialType: connector.credentialType,
-        encryptedCredentials: encrypted,
-        encryptionKeyId: "v1",
-        scopes: [...scopes],
-        externalAccountId: account.externalAccountId,
-        externalHandle: account.handle,
-        displayLabel: account.displayLabel,
-        status: "active",
-        createdByUserId: session.id,
-        ...(expiresAt ? { expiresAt } : {}),
-      });
-    });
+    ({ connectionId } = await persistPlatformConnection({
+      provider,
+      credentialType: connector.credentialType,
+      userId: session.id,
+      billingAccountId: billingAccount.id,
+      link: { blob, account, scopes, expiresAt },
+      encKeyHex,
+    }));
   } catch (err) {
     // Log the root cause only — never the Drizzle wrapper (dumps encrypted blob).
     const cause =

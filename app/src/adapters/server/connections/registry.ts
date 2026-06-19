@@ -16,6 +16,7 @@
 
 import type { PlatformConnectorPort } from "@/ports";
 import { serverEnv } from "@/shared/env";
+import { MoltbookPlatformConnector } from "./moltbook.connector";
 import { XPlatformConnector } from "./x.connector";
 
 /**
@@ -33,6 +34,15 @@ export function getPlatformConnector(
         clientId: env.X_OAUTH_CLIENT_ID,
         clientSecret: env.X_OAUTH_CLIENT_SECRET,
       });
+    }
+    case "moltbook": {
+      // No app-level credentials: Moltbook is API-key, the tenant brings their
+      // own agent key. Always available; an optional base override aids testing.
+      return new MoltbookPlatformConnector(
+        env.MOLTBOOK_API_BASE_URL
+          ? { apiBaseUrl: env.MOLTBOOK_API_BASE_URL }
+          : {}
+      );
     }
     default:
       return null;

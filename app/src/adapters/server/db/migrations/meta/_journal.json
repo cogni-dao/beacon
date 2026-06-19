@@ -253,6 +253,13 @@
       "when": 1781817768620,
       "tag": "0035_cuddly_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781833856252,
+      "tag": "0036_living_titanium_man",
+      "breakpoints": true
     }
   ]
 }
