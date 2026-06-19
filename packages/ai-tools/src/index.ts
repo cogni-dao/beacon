@@ -47,6 +47,7 @@ export type {
   PostContentResult,
   PostMetricSnapshot,
   PrSummary,
+  ReadAccountMetricsOptions,
   RecordOutcomeParams,
   RecordOutcomeResult,
   RepoCapability,
@@ -76,6 +77,10 @@ export type {
   WorkItemInfo,
   WorkItemQueryParams,
   WorkItemTransitionResult,
+  XAccountMetrics,
+  XAccountProfile,
+  XInsightsCapability,
+  XRecentPost,
 } from "./capabilities";
 // Capabilities
 export {
@@ -95,6 +100,9 @@ export {
   systemClock,
   X_API_VERSION,
   X_MAX_TEXT_LENGTH,
+  XAccountMetricsSchema,
+  XAccountProfileSchema,
+  XRecentPostSchema,
 } from "./capabilities";
 // Tool catalog
 export {

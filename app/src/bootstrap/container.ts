@@ -21,6 +21,7 @@ import type {
   RepoCapability,
   SocialXCapability,
   WebSearchCapability,
+  XInsightsCapability,
 } from "@cogni/ai-tools";
 import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
 import type { AttributionStore } from "@cogni/attribution-ledger";
@@ -98,6 +99,7 @@ import {
   UserDrizzlePaymentAttemptRepository,
   ViemEvmOnchainClient,
   ViemTreasuryAdapter,
+  XSocialAdapter,
 } from "@/adapters/server";
 import { ServiceDrizzleAccountService } from "@/adapters/server/accounts/drizzle.adapter";
 import { getPlatformConnector } from "@/adapters/server/connections/registry";
@@ -224,6 +226,12 @@ export interface Container {
   socialXCapability: SocialXCapability;
   /** Broadcast capability — posts variants + persists `posts` (NO post_metrics writes) */
   broadcastCapability: BroadcastCapability;
+  /**
+   * Build a read-only X insights capability bound to a broker-resolved per-tenant
+   * access token. Keeps adapter construction in the composition root so app
+   * routes never import adapters/server (the per-tenant metrics route uses this).
+   */
+  xInsightsForToken(accessToken: string): XInsightsCapability;
   /** Repo capability for AI tools - requires COGNI_REPO_PATH */
   repoCapability: RepoCapability;
   /** Tool source with real implementations for AI tool execution */
@@ -890,6 +898,8 @@ function createContainer(): Container {
     webSearchCapability,
     socialXCapability,
     broadcastCapability,
+    xInsightsForToken: (accessToken: string): XInsightsCapability =>
+      new XSocialAdapter({ accessToken }),
     repoCapability,
     toolSource,
     knowledgeContributionService,

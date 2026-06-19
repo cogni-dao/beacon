@@ -89,13 +89,21 @@ export {
   SOCIAL_CHANNELS,
   X_API_VERSION,
   X_MAX_TEXT_LENGTH,
+  XAccountMetricsSchema,
+  XAccountProfileSchema,
+  XRecentPostSchema,
 } from "./social-x";
 export type {
   PostContentInput,
   PostContentResult,
   PostMetricSnapshot,
+  ReadAccountMetricsOptions,
   SocialChannel,
   SocialXCapability,
+  XAccountMetrics,
+  XAccountProfile,
+  XInsightsCapability,
+  XRecentPost,
 } from "./social-x";
 // Export capability interfaces (defined here, NOT in ai-core)
 export type {

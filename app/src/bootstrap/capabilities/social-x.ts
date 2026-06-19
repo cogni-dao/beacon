@@ -101,8 +101,13 @@ export function createSocialXCapability(env: ServerEnv): SocialXCapability {
   const bearerToken = env.X_API_BEARER_TOKEN;
 
   // X: real adapter when configured, else a stub that throws on use.
+  // NOTE: the container path still sources the app-level token here (posting +
+  // metrics-ingest). The per-tenant read path (profile insights) builds its own
+  // XSocialAdapter from a broker-resolved user token — see
+  // app/src/app/api/v1/connections/[provider]/metrics/route.ts. Re-sourcing this
+  // container path off the bearer is the deferred SA4 ripple.
   const xBackend: SocialXCapability = bearerToken
-    ? new XSocialAdapter({ bearerToken, timeoutMs: 10000 })
+    ? new XSocialAdapter({ accessToken: bearerToken, timeoutMs: 10000 })
     : makeStub(
         "SocialXCapability (x) not configured. Set X_API_BEARER_TOKEN environment variable."
       );
