@@ -35,17 +35,7 @@ import {
 } from "@/components";
 
 import { createCampaign } from "../_api/mutateCampaign";
-
-const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-/** Slugify a free-text title into a campaign-id candidate (hidden from the user). */
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-}
+import { deriveCampaignId, slugify } from "./slug";
 
 /** One labelled multi-line DEFINE field with grounded helper copy. */
 function DefineField({
@@ -99,9 +89,6 @@ export function NewCampaignSheet(): ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The slug is auto-derived and never shown — it's machine plumbing, not UX.
-  const campaignId = slugify(title);
-
   const reset = () => {
     setTitle("");
     setCoreTopic("");
@@ -117,7 +104,10 @@ export function NewCampaignSheet(): ReactElement {
     setOpen(next);
   };
 
-  const idValid = ID_PATTERN.test(campaignId);
+  // The slug is auto-derived (base + random suffix) and never shown — it's
+  // machine plumbing, not UX. We validate the base so the title yields a slug
+  // that satisfies ID_PATTERN before we tack on the suffix at submit time.
+  const idValid = slugify(title).length >= 1;
   const titleValid = title.trim().length >= 1 && title.length <= 200;
   const filled =
     coreTopic.trim().length >= 1 &&
@@ -133,7 +123,8 @@ export function NewCampaignSheet(): ReactElement {
     setError(null);
     try {
       await createCampaign({
-        campaignId,
+        // Unique per submit: same-titled campaigns get distinct slugs.
+        campaignId: deriveCampaignId(title),
         title: title.trim(),
         coreTopic: coreTopic.trim(),
         voice: voice.trim(),
