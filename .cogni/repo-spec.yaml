@@ -15,6 +15,8 @@ scope_key: "default"
 
 intent:
   name: beacon
+  # One-line node identity — surfaced at the top of every agent's session cognition.
+  mission: "Help people and nodes broadcast, attract, and measure the audience they want."
 
 cogni_dao:
   dao_contract: "0xdd1776f660e4cf46b2fb723196242db4d45e8b58"
