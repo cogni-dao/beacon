@@ -18,7 +18,17 @@ import { cn } from "@cogni/node-ui-kit/util/cn";
 import { motion } from "framer-motion";
 import type { ReactElement } from "react";
 
-import { STATS } from "../content";
+interface StatItem {
+  value: string;
+  label: string;
+}
+
+const STATS: StatItem[] = [
+  { value: "0%", label: "Payment Fees" },
+  { value: "1", label: "Starter Kit" },
+  { value: "2", label: "Critical Services" },
+  { value: "12k+", label: "Community-Source Files" },
+];
 
 export function HomeStats(): ReactElement {
   return (
