@@ -37,6 +37,7 @@ import {
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { chatCompletion } from "@/app/_facades/ai/completion.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
@@ -110,7 +111,8 @@ export const POST = wrapRouteHandlerWithLogging<{
 
     const container = getContainer();
 
-    // Resolve the owning billing account (tenancy axis + LLM billing caller).
+    // Resolve the owning billing account (tenancy axis for the persisted rows;
+    // the LLM billing caller is resolved from the session inside the facade).
     const accountService = container.accountsForUser(toUserId(sessionUser.id));
     const account = await accountService.getOrCreateBillingAccountForUser({
       userId: sessionUser.id,
@@ -125,29 +127,28 @@ export const POST = wrapRouteHandlerWithLogging<{
       objective: campaignRow.objective,
     };
 
-    // Inject the real LLM: wrap LlmService.completion into the workflow's CompleteFn.
-    const llm = container.llmService;
+    // Inject the real LLM through the BILLABLE_AI_THROUGH_EXECUTOR path: the
+    // chatCompletion facade routes through GraphRunWorkflow → GraphExecutorPort,
+    // so the preflight credit gate + usage-commit decorators run (bug.5042 — the
+    // old direct non-streaming LlmService seam silently post-billed with no
+    // credit check). Billing account is resolved from the session in the facade.
     const complete = async (input: {
       system: string;
       user: string;
     }): Promise<string> => {
-      const result = await llm.completion({
-        model: RESEARCH_MODEL,
-        messages: [
-          { role: "system", content: input.system },
-          { role: "user", content: input.user },
-        ],
-        caller: {
-          billingAccountId: account.id,
-          virtualKeyId: account.defaultVirtualKeyId,
-          requestId: ctx.reqId,
-          traceId: ctx.traceId,
-          userId: sessionUser.id,
+      const result = await chatCompletion(
+        {
+          messages: [
+            { role: "system", content: input.system },
+            { role: "user", content: input.user },
+          ],
+          modelRef: { providerKey: "platform", modelId: RESEARCH_MODEL },
+          sessionUser,
         },
-      });
-      return typeof result.message.content === "string"
-        ? result.message.content
-        : "";
+        ctx
+      );
+      const content = result.choices[0]?.message.content;
+      return typeof content === "string" ? content : "";
     };
 
     // Inject Dolt recall (PLAYBOOK_RECALL_FAIL_OPEN handled inside the workflow):
