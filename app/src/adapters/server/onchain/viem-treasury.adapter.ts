@@ -15,7 +15,7 @@
 import { formatUnits, getAddress } from "viem";
 
 import type { TreasuryReadPort, TreasurySnapshot } from "@/ports";
-import { getPaymentConfig } from "@/shared/config/repoSpec.server";
+import { getDaoConfig } from "@/shared/config/repoSpec.server";
 import { USDC_TOKEN_ADDRESS } from "@/shared/web3";
 import type { EvmOnchainClient } from "@/shared/web3/onchain/evm-onchain-client.interface";
 
@@ -31,15 +31,15 @@ export class ViemTreasuryAdapter implements TreasuryReadPort {
     treasuryAddress: string;
     tokenAddresses?: string[];
   }): Promise<TreasurySnapshot> {
-    // Validate chainId against canonical config
-    const config = getPaymentConfig();
-    if (!config) {
-      throw new Error("[ViemTreasuryAdapter] Payment rails not activated");
+    // Validate chainId against the node's DAO config (payment-independent): a
+    // treasury READ must work for any node with a DAO, activated or not (op #1843 follow-up).
+    const dao = getDaoConfig();
+    if (!dao) {
+      throw new Error("[ViemTreasuryAdapter] Node DAO identity not configured (cogni_dao section incomplete)");
     }
-
-    if (params.chainId !== config.chainId) {
+    if (params.chainId !== Number(dao.chain_id)) {
       throw new Error(
-        `[ViemTreasuryAdapter] Chain ID mismatch: expected ${config.chainId}, got ${params.chainId}`
+        `[ViemTreasuryAdapter] Chain ID mismatch: expected ${dao.chain_id}, got ${params.chainId}`
       );
     }
 
