@@ -30,6 +30,12 @@ export {
   createFrontendTesterGraph,
   FRONTEND_TESTER_GRAPH_NAME,
 } from "./frontend-tester/graph";
+// Default graph (neutral completion — facade fallback, no persona/tools)
+export {
+  createDefaultGraph,
+  DEFAULT_GRAPH_NAME,
+  DEFAULT_TOOL_IDS,
+} from "./default/graph";
 // Poet graph (poetic AI assistant)
 export { createPoetGraph, POET_GRAPH_NAME } from "./poet/graph";
 // Ponderer graph (philosophical thinker)
