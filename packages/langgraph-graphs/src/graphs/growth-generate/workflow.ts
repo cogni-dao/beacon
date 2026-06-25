@@ -6,20 +6,30 @@
  * Purpose: The GENERATE activity of the beacon growth loop — a thin, pure workflow
  *   that turns a campaign's strategy + its research `findings` into a set of draft
  *   posts that POPULATE THE FUNNEL (spread across TOFU/MOFU/BOFU × topics/angles).
- *   GENERATE_IS_AN_ACTIVITY: this is a workflow, not a table; the route persists its
- *   output rows account-scoped as `posts` (status 'generated') — see the generate route.
- * Scope: Pure orchestration. Derive per-layer volume from `funnelTargets` → one LLM
- *   call per layer (handed strategy + findings + recalled playbook) → parse to typed
- *   draft posts. Does NOT touch the DB, env, HTTP, or Doltgres — all I/O is injected
- *   (mirrors the growth-research workflow's pure-function shape).
+ *   Generation is a TWO-PASS quality loop per layer: a DRAFT pass writes N posts, then
+ *   a CRITIQUE→REVISE refine pass rewrites them on a named rubric (hook strength,
+ *   single-CTA, on-voice, value-equation, no-bait). This is the quality loop the design
+ *   always called for — quality comes from the playbook-grounded prompt + refine, NOT a
+ *   bigger model. GENERATE_IS_AN_ACTIVITY: this is a workflow, not a table; the route
+ *   persists its output rows account-scoped as `posts` (status 'generated').
+ * Scope: Pure orchestration. Derive per-layer volume from `funnelTargets` → a DRAFT
+ *   `complete()` then ONE REFINE `complete()` per layer (each handed strategy + findings
+ *   + recalled playbook) → parse to typed draft posts. Does NOT touch the DB, env, HTTP,
+ *   or Doltgres — all I/O is injected (mirrors the growth-research workflow's shape).
  * Invariants:
  *   - PURE_ORCHESTRATION: no side effects beyond the injected callables; no env reads.
  *   - INJECTED_IO: `complete` (LLM) and optional `recallPlaybook` (Dolt) are injected,
  *     so unit tests run with fakes and the package stays decoupled from app ports.
+ *     EVERY LLM call (draft AND refine) routes through the SAME injected `complete` —
+ *     the route backs it with the gated billing facade (BILLABLE_AI_THROUGH_EXECUTOR);
+ *     this workflow NEVER touches a raw LlmService.
  *   - VOLUME_FROM_FUNNEL_TARGETS: per-layer draft count is DERIVED from the campaign's
  *     `funnelTargets` — NEVER a hardcoded N. Unset/invalid → a modest default per layer.
  *   - POPULATE_THE_FUNNEL: the run spreads posts across layers × distinct topics/angles
  *     — it is funnel coverage, NOT N copies of one idea.
+ *   - CRITIQUE_THEN_REVISE: after the draft pass, ONE bounded refine pass per layer
+ *     critiques+rewrites the batch on a named rubric; a refine failure FAILS OPEN to the
+ *     draft batch (never throws, never loops).
  *   - FAIL_OPEN_RECALL: a recall failure degrades to no-playbook, never throws.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none (all I/O injected)
@@ -35,10 +45,12 @@ import {
   type RecallPlaybookFn,
 } from "../growth-research/workflow";
 import {
+  FUNNEL_LAYER_CTA,
   FUNNEL_LAYER_GUIDANCE,
   FUNNEL_LAYERS,
   type FunnelLayer,
   GENERATE_PROMPT,
+  REFINE_PROMPT,
 } from "./prompts";
 
 export type { FunnelLayer } from "./prompts";
@@ -63,6 +75,12 @@ export interface DraftPost {
   channel: "moltbook";
   /** Content kind — text-only in v0. */
   kind: "text";
+  /**
+   * How many critique→revise passes this draft survived. 0 = raw draft pass only;
+   * 1 = the refine pass rewrote it on the named rubric. CRITIQUE_THEN_REVISE bumps
+   * this so the queue (and the route's persisted `revision`) reflects the quality loop.
+   */
+  revision: number;
 }
 
 export interface RunGrowthGenerateInput {
@@ -80,6 +98,12 @@ export interface RunGrowthGenerateInput {
   defaultPerLayer?: number;
   /** Defensive hard cap per layer so a runaway target can't flood the queue. */
   maxPerLayer?: number;
+  /**
+   * Run the CRITIQUE→REVISE refine pass after the draft pass (default true). One
+   * bounded extra `complete()` per layer. Set false only for tests/diagnostics that
+   * want the raw draft batch — production keeps the quality loop on.
+   */
+  refine?: boolean;
 }
 
 /** Modest default coverage when `funnelTargets` is unset (spec §7: "a few per layer"). */
@@ -146,11 +170,16 @@ async function safeRecall(
  * Parse the model's JSON array of `{topic, angle, text}` for one layer into typed
  * draft posts. Tolerant: ignores non-JSON, drops rows missing `text`, trims fields,
  * defaults a missing topic/angle. Never throws. Caps at `limit` (the layer's count).
+ *
+ * `revision` stamps the quality-loop generation each row came from (0 = draft pass,
+ * 1 = after the critique→revise refine pass) — both the draft and refine passes emit
+ * the SAME `{topic, angle, text}` shape, so the parser is shared and robust to either.
  */
 export function parseDraftPosts(
   raw: string,
   layer: FunnelLayer,
-  limit: number
+  limit: number,
+  revision = 0
 ): DraftPost[] {
   let parsed: unknown;
   try {
@@ -176,21 +205,67 @@ export function parseDraftPosts(
       text: text.trim(),
       channel: "moltbook",
       kind: "text",
+      revision,
     });
   }
   return out;
 }
 
 /**
- * Run the GENERATE activity for a campaign: populate the funnel.
+ * CRITIQUE→REVISE refine pass for one layer's draft batch. Hands the SAME grounding
+ * (campaign DNA + playbook + the layer's single allowed CTA) plus the freshly drafted
+ * posts to the injected `complete`, asks it to critique each on the named rubric and
+ * REWRITE it, then re-parses the improved batch (revision = 1).
  *
- * 1. Recall generic brand-voice/playbook from the knowledge hub (injected, fail-open).
+ * Bounded + fail-open: exactly ONE extra `complete()` call (never a loop). If the
+ * refine call throws OR returns a batch that doesn't cover all the drafts (parse
+ * dropout / shape drift), the original draft batch is kept — refine never regresses
+ * coverage or throws. Returns the SAME number of posts as it was given.
+ */
+async function refineDraftBatch(
+  complete: CompleteFn,
+  layer: FunnelLayer,
+  drafts: DraftPost[],
+  refineSystem: string,
+  grounding: string
+): Promise<DraftPost[]> {
+  if (drafts.length === 0) return drafts;
+
+  const draftsForModel = JSON.stringify(
+    drafts.map((d) => ({ topic: d.topic, angle: d.angle, text: d.text }))
+  );
+  const user = [grounding, `Draft posts to critique and rewrite:\n${draftsForModel}`].join(
+    "\n\n"
+  );
+
+  let revisedRaw: string;
+  try {
+    revisedRaw = await complete({ system: refineSystem, user });
+  } catch {
+    return drafts; // FAIL_OPEN: a refine error keeps the draft batch.
+  }
+
+  const revised = parseDraftPosts(revisedRaw, layer, drafts.length, 1);
+  // Coverage guard: the refine pass must return one improved post per input draft.
+  // A short/garbled batch (model dropped or merged rows) is NOT an improvement —
+  // keep the full draft batch rather than silently shrinking the funnel.
+  return revised.length === drafts.length ? revised : drafts;
+}
+
+/**
+ * Run the GENERATE activity for a campaign: populate the funnel with a quality loop.
+ *
+ * 1. Recall the brand playbook from the knowledge hub (injected, fail-open).
  * 2. For EACH funnel layer, derive its draft count from `funnelTargets` (no hardcoded N).
- * 3. One LLM call per (non-empty) layer → parse to `count` DISTINCT draft posts.
+ * 3. DRAFT pass: one LLM call per (non-empty) layer → `count` DISTINCT, playbook- and
+ *    DNA-grounded, Hook–Body–CTA posts with EXACTLY ONE layer-matched CTA (revision 0).
+ * 4. REFINE pass (CRITIQUE_THEN_REVISE): one MORE bounded LLM call per layer that
+ *    critiques the batch on a named rubric (hook strength, single-CTA, on-voice,
+ *    value-equation, no-bait) and REWRITES it (revision 1). Fail-open to the draft batch.
  *
- * Returns the flattened draft posts across layers; persistence as `posts`
+ * Returns the flattened, refined draft posts across layers; persistence as `posts`
  * (status 'generated', account-scoped) is the caller's job. Pure aside from the
- * injected callables.
+ * injected callables — the refine pass uses the SAME injected `complete` (gated facade).
  */
 export async function runGrowthGenerate(
   input: RunGrowthGenerateInput
@@ -203,6 +278,7 @@ export async function runGrowthGenerate(
     recallPlaybook,
     defaultPerLayer = DEFAULT_PER_LAYER,
     maxPerLayer = MAX_PER_LAYER,
+    refine = true,
   } = input;
 
   const recallQuery = [strategy.coreTopic, strategy.icp, "high-engagement post hooks angles"]
@@ -214,14 +290,14 @@ export async function runGrowthGenerate(
   );
   const playbookBlock =
     playbook.length > 0
-      ? `\n\nRecalled generic playbook (apply customized, do not copy):\n- ${playbook.join("\n- ")}`
+      ? `\n\nRecalled brand playbook (the law — ground every post in this, do not copy verbatim):\n- ${playbook.join("\n- ")}`
       : "";
 
   const strategyBlock = renderStrategy(strategy);
   const findingsBlock = renderFindings(findings);
 
   const drafts: DraftPost[] = [];
-  // POPULATE_THE_FUNNEL: one pass per layer, count DERIVED from funnelTargets.
+  // POPULATE_THE_FUNNEL: draft+refine per layer, count DERIVED from funnelTargets.
   for (const layer of FUNNEL_LAYERS) {
     const count = resolveLayerCount(
       layer,
@@ -231,15 +307,37 @@ export async function runGrowthGenerate(
     );
     if (count <= 0) continue;
 
-    const system = GENERATE_PROMPT.replace(/\{count\}/g, String(count));
-    const user = [
-      `Campaign strategy:\n${strategyBlock}`,
+    // Shared grounding (campaign DNA + layer role + the layer's SINGLE allowed CTA +
+    // findings + playbook) — handed to BOTH the draft and the refine pass so the
+    // editor critiques against the exact same constraints the writer was given.
+    const grounding = [
+      `Campaign strategy (DNA):\n${strategyBlock}`,
       `Funnel layer to populate:\n${FUNNEL_LAYER_GUIDANCE[layer]}`,
+      `The SINGLE allowed CTA for this layer: ${FUNNEL_LAYER_CTA[layer]}`,
       `Research findings:\n${findingsBlock}${playbookBlock}`,
     ].join("\n\n");
 
-    const text = await complete({ system, user });
-    drafts.push(...parseDraftPosts(text, layer, count));
+    // DRAFT pass — count + the layer CTA are stamped into the system prompt.
+    const draftSystem = GENERATE_PROMPT.replace(/\{count\}/g, String(count)).replace(
+      /\{cta\}/g,
+      FUNNEL_LAYER_CTA[layer]
+    );
+    const draftRaw = await complete({ system: draftSystem, user: grounding });
+    const layerDrafts = parseDraftPosts(draftRaw, layer, count, 0);
+
+    // REFINE pass — one bounded critique→revise call, fail-open to the draft batch.
+    const refined =
+      refine && layerDrafts.length > 0
+        ? await refineDraftBatch(
+            complete,
+            layer,
+            layerDrafts,
+            REFINE_PROMPT.replace(/\{cta\}/g, FUNNEL_LAYER_CTA[layer]),
+            grounding
+          )
+        : layerDrafts;
+
+    drafts.push(...refined);
   }
 
   return drafts;
