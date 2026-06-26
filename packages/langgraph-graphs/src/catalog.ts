@@ -59,6 +59,11 @@ import {
   GIT_REVIEWER_TOOL_IDS,
   OPERATING_REVIEW_TOOL_IDS,
 } from "./graphs/operator/tools";
+import {
+  createDefaultGraph,
+  DEFAULT_GRAPH_NAME,
+  DEFAULT_TOOL_IDS,
+} from "./graphs/default/graph";
 import { createPoetGraph, POET_GRAPH_NAME } from "./graphs/poet/graph";
 import { POET_TOOL_IDS } from "./graphs/poet/tools";
 import {
@@ -150,6 +155,24 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
     description: "Code-aware assistant with repository search and file access",
     toolIds: BRAIN_TOOL_IDS,
     graphFactory: createBrainGraph,
+  },
+
+  /**
+   * Poet graph - poetic AI assistant.
+   * Uses createReactAgent with tool-calling loop.
+   */
+  /**
+   * Default graph — the NEUTRAL completion the chatCompletion facade falls back
+   * to (`langgraph:default`) when a caller specifies no graph. No persona, no
+   * tools: runs the caller's messages verbatim. Required by growth generate/
+   * research (they supply their own prompts + do a plain completion).
+   */
+  [DEFAULT_GRAPH_NAME]: {
+    displayName: "Default",
+    description:
+      "Neutral completion — runs the caller's messages with no persona or tools",
+    toolIds: DEFAULT_TOOL_IDS as readonly string[],
+    graphFactory: createDefaultGraph,
   },
 
   /**
@@ -328,6 +351,7 @@ export const LANGGRAPH_GRAPH_IDS = {
   "autoresearch-syntropy-loop": `${LANGGRAPH_PROVIDER_ID}:${AUTORESEARCH_SYNTROPY_LOOP_GRAPH_NAME}`,
   "autoresearch-registry-swarm": `${LANGGRAPH_PROVIDER_ID}:${AUTORESEARCH_REGISTRY_SWARM_GRAPH_NAME}`,
   brain: `${LANGGRAPH_PROVIDER_ID}:${BRAIN_GRAPH_NAME}`,
+  default: `${LANGGRAPH_PROVIDER_ID}:${DEFAULT_GRAPH_NAME}`,
   poet: `${LANGGRAPH_PROVIDER_ID}:${POET_GRAPH_NAME}`,
   ponderer: `${LANGGRAPH_PROVIDER_ID}:${PONDERER_GRAPH_NAME}`,
   research: `${LANGGRAPH_PROVIDER_ID}:${RESEARCH_GRAPH_NAME}`,

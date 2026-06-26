@@ -239,7 +239,10 @@ export const POST = wrapRouteHandlerWithLogging<{
                   kind: d.kind,
                   text: d.text,
                   status: "generated" as const,
-                  revision: 0,
+                  // The workflow stamps `revision` per draft: 0 = raw draft pass only,
+                  // 1 = survived the critique→revise refine pass. Persist that so the
+                  // queue reflects which posts went through the quality loop.
+                  revision: d.revision,
                 }))
               )
               .returning({
