@@ -267,6 +267,13 @@
       "when": 1781839099060,
       "tag": "0037_left_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781852886486,
+      "tag": "0038_round_chat",
+      "breakpoints": true
     }
   ]
 }

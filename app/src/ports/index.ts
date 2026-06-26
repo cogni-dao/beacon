@@ -76,6 +76,9 @@ export type {
 export type { Clock } from "./clock.port";
 export type {
   ConnectionBrokerPort,
+  ConnectionReadState,
+  ConnectionReadStatus,
+  ConnectionReadUpdate,
   ConnectionScope,
   ResolvedConnection,
 } from "./connection-broker.port";
