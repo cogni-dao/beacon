@@ -20,4 +20,5 @@ ALTER TABLE "post_decisions" ADD CONSTRAINT "post_decisions_post_id_posts_id_fk"
 CREATE INDEX "post_decisions_post_idx" ON "post_decisions" USING btree ("post_id");--> statement-breakpoint
 CREATE INDEX "post_decisions_campaign_idx" ON "post_decisions" USING btree ("campaign_id");--> statement-breakpoint
 CREATE INDEX "post_decisions_account_idx" ON "post_decisions" USING btree ("account_id");--> statement-breakpoint
-CREATE POLICY "tenant_isolation" ON "post_decisions" AS PERMISSIVE FOR ALL TO public USING ("account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true))) WITH CHECK ("account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true)));
+CREATE POLICY "tenant_isolation" ON "post_decisions" AS PERMISSIVE FOR ALL TO public USING ("account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true))) WITH CHECK ("account_id" IN (SELECT "id" FROM "billing_accounts" WHERE "owner_user_id" = current_setting('app.current_user_id', true)));--> statement-breakpoint
+ALTER TABLE "post_decisions" FORCE ROW LEVEL SECURITY;
