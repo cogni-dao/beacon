@@ -38,6 +38,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { resolveAppDb } from "@/bootstrap/container";
 import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 
+import { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
+
 const DEFAULT_TARGET_RATE = 0.02;
 
 /** Lifecycle status of the owned campaign record (mirrors the CHECK constraint). */
@@ -56,9 +58,10 @@ function asCampaignStatus(raw: string | null | undefined): CampaignStatus {
 		: "draft";
 }
 
-/** Funnel layers in funnel order (awareness → consideration → action). */
-export const FUNNEL_LAYERS = ["tofu", "mofu", "bofu"] as const;
-export type FunnelLayer = (typeof FUNNEL_LAYERS)[number];
+// Funnel layers live in the CLIENT-SAFE campaigns.shared (no server deps) so the
+// "use client" funnel UI can import the value without dragging this server module
+// (db/LLM) into the browser bundle. Re-exported here for existing server callers.
+export { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
 
 /** Independent engagement KPI for one funnel layer (a slice of a campaign). */
 export interface FunnelLayerKpi {
@@ -298,6 +301,10 @@ export interface CampaignPost {
 	angle: string | null;
 	text: string;
 	status: string;
+	/** AI quality score from the critique pass (0–1), if present. */
+	score: number | null;
+	/** Count of critique→edit revision passes; 0 for first draft. */
+	revision: number;
 	externalPostId: string | null;
 	postedAt: string | null;
 	impressions: number | null;
@@ -368,6 +375,8 @@ async function loadCampaignPosts(
 				angle: posts.angle,
 				text: posts.text,
 				status: posts.status,
+				score: posts.score,
+				revision: posts.revision,
 				externalPostId: posts.externalPostId,
 				postedAt: posts.postedAt,
 			})
@@ -416,6 +425,8 @@ async function loadCampaignPosts(
 			angle: r.angle ?? null,
 			text: r.text,
 			status: r.status,
+			score: r.score ?? null,
+			revision: r.revision ?? 0,
 			externalPostId: r.externalPostId ?? null,
 			postedAt: r.postedAt ? r.postedAt.toISOString() : null,
 			impressions: m?.impressions ?? null,

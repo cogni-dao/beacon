@@ -115,3 +115,90 @@ export async function runResearch(campaignId: string): Promise<number> {
 export async function generatePosts(campaignId: string): Promise<number> {
   return runActivity(campaignId, "generate", "posts", "Generate failed");
 }
+
+// ---------------------------------------------------------------------------
+// Per-draft REVIEW + REFINE actions (PATCH .../posts/:postId)
+// ---------------------------------------------------------------------------
+
+/** Post review lifecycle status (mirrors the API/CHECK constraint). */
+export type PostStatus =
+  | "generated"
+  | "refining"
+  | "in_review"
+  | "approved"
+  | "posted"
+  | "rejected"
+  | "failed";
+
+/** The updated draft fields a review action returns. */
+export interface ReviewedPost {
+  id: string;
+  status: PostStatus;
+  text: string;
+  revision: number;
+  score: number | null;
+}
+
+async function patchPost(
+  campaignId: string,
+  postId: string,
+  body: Record<string, unknown>,
+  fallback: string
+): Promise<ReviewedPost> {
+  const response = await fetch(
+    `/api/v1/growth/campaigns/${encodeURIComponent(campaignId)}/posts/${encodeURIComponent(postId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify(body),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readError(response, fallback));
+  }
+  return response.json() as Promise<ReviewedPost>;
+}
+
+/** APPROVE a draft → status 'approved'. */
+export async function approvePost(
+  campaignId: string,
+  postId: string
+): Promise<ReviewedPost> {
+  return patchPost(campaignId, postId, { action: "approve" }, "Approve failed");
+}
+
+/** REJECT a draft → status 'rejected'. */
+export async function rejectPost(
+  campaignId: string,
+  postId: string
+): Promise<ReviewedPost> {
+  return patchPost(campaignId, postId, { action: "reject" }, "Reject failed");
+}
+
+/** EDIT a draft's text in place (status unchanged). */
+export async function editPost(
+  campaignId: string,
+  postId: string,
+  text: string
+): Promise<ReviewedPost> {
+  return patchPost(campaignId, postId, { action: "edit", text }, "Edit failed");
+}
+
+/**
+ * REFINE a draft → regenerate it through the gated facade into a NEW revision,
+ * optionally steered by a human feedback note. Bumps `revision`.
+ */
+export async function refinePost(
+  campaignId: string,
+  postId: string,
+  feedback?: string
+): Promise<ReviewedPost> {
+  return patchPost(
+    campaignId,
+    postId,
+    { action: "refine", ...(feedback?.trim() ? { feedback: feedback.trim() } : {}) },
+    "Refine failed"
+  );
+}

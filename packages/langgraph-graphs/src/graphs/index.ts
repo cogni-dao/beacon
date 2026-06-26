@@ -76,9 +76,12 @@ export {
   type FunnelTargets,
   type GenerateFinding,
   parseDraftPosts,
+  refineSingleDraft,
+  type RefineSingleDraftInput,
   resolveLayerCount,
   runGrowthGenerate,
   type RunGrowthGenerateInput,
+  type SingleDraftToRefine,
 } from "./growth-generate/workflow";
 // Growth-generate catalog graph (the GENERATE activity made schedulable/dashboard-visible).
 export {

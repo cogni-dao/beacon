@@ -5,23 +5,28 @@
  * Module: `@app/(app)/growth/_components/FunnelLayerSection`
  * Purpose: Render one funnel layer (TOFU/MOFU/BOFU) of a campaign's classified
  *   content queue — the layer's independent KPI (score vs target) plus the posts
- *   classified to it, each showing channel · status · metric.
- * Scope: Pure presentation. Receives the facade-computed per-layer KPI + filtered
- *   posts; no fetching, no recomputation.
- * Invariants: READ_ONLY; renders the per-layer KPI the facade computed.
- * Side-effects: none
- * Links: ../[campaignId]/view.tsx, app/src/app/_facades/growth/campaigns.server.ts
+ *   classified to it, each as a REVIEW + REFINE `DraftCard` (state badge + approve/
+ *   reject/edit/refine).
+ * Scope: Presentation + per-draft action delegation to `DraftCard`. Receives the
+ *   facade-computed per-layer KPI + (already status-filtered) posts; no fetching,
+ *   no KPI recomputation.
+ * Invariants: READ_ONLY_KPI; renders the per-layer KPI the facade computed.
+ * Side-effects: none (draft mutations live in `DraftCard`)
+ * Links: ../[campaignId]/view.tsx, ./DraftCard.tsx,
+ *   app/src/app/_facades/growth/campaigns.server.ts
  * @internal
  */
 
 import type { ReactElement } from "react";
 
-import { Card, CardContent, Progress } from "@/components";
+import { Progress } from "@/components";
 import type {
   CampaignPost,
   FunnelLayer,
   FunnelLayerKpi,
 } from "@/app/_facades/growth/campaigns.server";
+
+import { DraftCard } from "./DraftCard";
 
 /** Human-facing label + one-line role for each funnel layer. */
 const LAYER_META: Readonly<
@@ -44,11 +49,13 @@ function basisLabel(basis: FunnelLayerKpi["basis"]): string {
 }
 
 export function FunnelLayerSection({
+  campaignId,
   layer,
   kpi,
   targetRate,
   posts,
 }: {
+  campaignId: string;
   layer: FunnelLayer;
   kpi: FunnelLayerKpi;
   targetRate: number | null;
@@ -84,38 +91,13 @@ export function FunnelLayerSection({
 
       {posts.length === 0 ? (
         <p className="rounded-lg border border-border border-dashed p-4 text-center text-muted-foreground text-xs">
-          No {meta.label} posts yet.
+          No {meta.label} posts in this view.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
           {posts.map((post) => (
             <li key={post.id}>
-              <Card>
-                <CardContent className="flex flex-col gap-2 pt-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium text-foreground uppercase">
-                        {post.channel}
-                      </span>
-                      {post.topic && (
-                        <span className="rounded bg-muted px-1.5 py-0.5">
-                          {post.topic}
-                        </span>
-                      )}
-                    </span>
-                    <span>{post.status}</span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {post.text}
-                  </p>
-                  <div className="flex flex-wrap gap-4 border-border/60 border-t pt-2 text-muted-foreground text-xs tabular-nums">
-                    <span>{post.impressions ?? "—"} impressions</span>
-                    <span>{post.likes} likes</span>
-                    <span>{post.reposts} reposts</span>
-                    <span>{post.replies} replies</span>
-                  </div>
-                </CardContent>
-              </Card>
+              <DraftCard campaignId={campaignId} post={post} />
             </li>
           ))}
         </ul>

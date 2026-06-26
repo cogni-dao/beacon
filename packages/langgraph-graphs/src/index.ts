@@ -56,9 +56,12 @@ export {
   GENERATE_PROMPT,
   type GenerateFinding,
   parseDraftPosts,
+  refineSingleDraft,
+  type RefineSingleDraftInput,
   resolveLayerCount,
   runGrowthGenerate,
   type RunGrowthGenerateInput,
+  type SingleDraftToRefine,
 } from "./graphs/index";
 
 // Re-export the growth-generate CATALOG GRAPH (the GENERATE activity made

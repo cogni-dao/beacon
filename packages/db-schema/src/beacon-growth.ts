@@ -250,8 +250,10 @@ export const channelAccounts = pgTable(
  * posts — per-platform post variants staged by the content loop.
  * `idea_key` groups the variants of one core idea across channels; `campaign_id`
  * ties them to a campaign hypothesis. `status` walks the review lanes
- * generated→in_review→approved→posted (or rejected/failed). `score` is the optional
- * pre-post quality score and `revision` counts critique→edit passes.
+ * generated→approved→posted (or rejected/failed), with `refining` a TRANSIENT state
+ * while a single-draft refine LLM call is in flight (`in_review` reserved). `score`
+ * is the optional pre-post quality score and `revision` counts critique→edit passes
+ * (the human Refine action bumps it per regenerated revision).
  * `funnel_layer` + `topic` classify the post within the campaign funnel (the queue
  * is a planned, classified funnel — not one blended stream). `kind`/`bundle_id`/`seq`
  * reserve future thread/artifact/tweet-chain extensions (text-only single posts in v0).
@@ -293,7 +295,7 @@ export const posts = pgTable(
 	(table) => [
 		check(
 			"posts_status_check",
-			sql`${table.status} IN ('generated', 'in_review', 'approved', 'posted', 'rejected', 'failed')`,
+			sql`${table.status} IN ('generated', 'refining', 'in_review', 'approved', 'posted', 'rejected', 'failed')`,
 		),
 		check(
 			"posts_funnel_layer_check",

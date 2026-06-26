@@ -252,6 +252,96 @@ async function refineDraftBatch(
   return revised.length === drafts.length ? revised : drafts;
 }
 
+/** One existing draft to refine (the human Refine action's input). */
+export interface SingleDraftToRefine {
+  funnelLayer: FunnelLayer;
+  topic: string;
+  angle: string;
+  text: string;
+}
+
+export interface RefineSingleDraftInput {
+  strategy: CampaignStrategy;
+  /** The single existing draft the human chose to refine. */
+  draft: SingleDraftToRefine;
+  /** The campaign's research findings (read from Postgres by the route). */
+  findings?: readonly GenerateFinding[];
+  /**
+   * Optional human feedback note steering THIS revision (e.g. "make the hook
+   * sharper, drop the jargon"). The HUMAN_FEEDBACK_IS_LAW — it is handed to the
+   * editor as a directive above the rubric. Empty/absent → pure rubric refine.
+   */
+  feedback?: string;
+  complete: CompleteFn;
+  recallPlaybook?: RecallPlaybookFn;
+}
+
+/**
+ * REFINE one existing draft into a NEW revision — the human Refine action.
+ *
+ * Reuses the SAME `REFINE_PROMPT` + grounding (campaign DNA + playbook + the layer's
+ * single allowed CTA) + `parseDraftPosts` parser as the generate-time refine pass, so
+ * one draft is critiqued/rewritten on the exact rubric the writer was held to. When a
+ * human `feedback` note is given it is injected as a TOP-PRIORITY directive (above the
+ * rubric) so the operator's steer wins.
+ *
+ * Returns the rewritten draft, or `null` if the model produced no usable post (the
+ * route then keeps the original — refine never destroys the draft). Exactly ONE
+ * `complete()` call (the SAME injected, gated facade the route backs `runGrowthGenerate`
+ * with — BILLABLE_AI_THROUGH_EXECUTOR holds for the Refine action too). Caller stamps
+ * the revision number; the returned `revision` field is advisory (1).
+ */
+export async function refineSingleDraft(
+  input: RefineSingleDraftInput
+): Promise<DraftPost | null> {
+  const { strategy, draft, findings = [], feedback, complete, recallPlaybook } =
+    input;
+  const layer = draft.funnelLayer;
+
+  const recallQuery = [strategy.coreTopic, strategy.icp, draft.topic, "high-engagement post hooks angles"]
+    .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    .join(" ");
+  const playbook = await safeRecall(
+    recallPlaybook,
+    recallQuery || "high-engagement post hooks angles"
+  );
+  const playbookBlock =
+    playbook.length > 0
+      ? `\n\nRecalled brand playbook (the law — ground the rewrite in this, do not copy verbatim):\n- ${playbook.join("\n- ")}`
+      : "";
+
+  // HUMAN_FEEDBACK_IS_LAW: a human steer outranks the rubric for this revision.
+  const feedbackBlock =
+    feedback && feedback.trim().length > 0
+      ? `\n\nHUMAN FEEDBACK (TOP PRIORITY — satisfy this first, then the rubric):\n${feedback.trim()}`
+      : "";
+
+  const grounding = [
+    `Campaign strategy (DNA):\n${renderStrategy(strategy)}`,
+    `Funnel layer to populate:\n${FUNNEL_LAYER_GUIDANCE[layer]}`,
+    `The SINGLE allowed CTA for this layer: ${FUNNEL_LAYER_CTA[layer]}`,
+    `Research findings:\n${renderFindings(findings)}${playbookBlock}${feedbackBlock}`,
+  ].join("\n\n");
+
+  const draftsForModel = JSON.stringify([
+    { topic: draft.topic, angle: draft.angle, text: draft.text },
+  ]);
+  const user = [grounding, `Draft posts to critique and rewrite:\n${draftsForModel}`].join(
+    "\n\n"
+  );
+  const refineSystem = REFINE_PROMPT.replace(/\{cta\}/g, FUNNEL_LAYER_CTA[layer]);
+
+  let revisedRaw: string;
+  try {
+    revisedRaw = await complete({ system: refineSystem, user });
+  } catch {
+    return null; // FAIL_SAFE: a refine error keeps the caller's original draft.
+  }
+
+  const revised = parseDraftPosts(revisedRaw, layer, 1, 1);
+  return revised[0] ?? null;
+}
+
 /**
  * Run the GENERATE activity for a campaign: populate the funnel with a quality loop.
  *
