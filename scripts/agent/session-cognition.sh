@@ -55,5 +55,21 @@ fi
 if [ -n "$bundle" ]; then
   printf '%s\n' "$bundle"
 else
-  printf '(cognition substrate unreachable at %s — self-serve: register a NODE agent via /api/v1/agent/register, save COGNI_NODE_API_KEY in .env.cogni, then retry)\n' "$URL"
+  cat <<EOF
+COGNI COGNITION BOOTSTRAP BLOCKED
+
+The SessionStart hook ran, but it could not fetch the cognition bundle from:
+  $URL
+
+Do not continue silently. Tell the user that session cognition did not load and
+ask them to bootstrap the node credentials, then restart or resume the agent.
+
+Most common fixes:
+- register a NODE agent via /api/v1/agent/register
+- save COGNI_NODE_API_KEY in the clone-root .env.cogni
+- for Codex, run pnpm codex:cognition:install once and trust the user-level hook with /hooks
+
+If the agent received no bootstrap message at all, the hook probably did not run
+(for Codex, missing hook trust is the usual cause).
+EOF
 fi
