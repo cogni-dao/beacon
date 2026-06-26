@@ -9,6 +9,7 @@
     "packages:build": "pnpm build:packages",
     "build:app": "pnpm --filter @cogni/node-template-app build",
     "check:workflow": "node scripts/check-node-ci-workflow.mjs",
+    "codex:cognition:install": "bash scripts/agent/install-codex-cognition-hook.sh",
     "conductor:setup": "bash scripts/conductor-worktree-setup.sh",
     "db:generate": "tsx node_modules/drizzle-kit/bin.cjs generate --config=drizzle.config.ts",
     "db:check": "pnpm db:check:drizzle && pnpm db:check:generate-clean",
