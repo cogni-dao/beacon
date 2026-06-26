@@ -1,0 +1,2 @@
+ALTER TABLE "posts" DROP CONSTRAINT "posts_status_check";--> statement-breakpoint
+ALTER TABLE "posts" ADD CONSTRAINT "posts_status_check" CHECK ("posts"."status" IN ('generated', 'refining', 'in_review', 'approved', 'posted', 'rejected', 'failed'));

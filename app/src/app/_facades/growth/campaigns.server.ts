@@ -298,6 +298,10 @@ export interface CampaignPost {
 	angle: string | null;
 	text: string;
 	status: string;
+	/** AI quality score from the critique pass (0–1), if present. */
+	score: number | null;
+	/** Count of critique→edit revision passes; 0 for first draft. */
+	revision: number;
 	externalPostId: string | null;
 	postedAt: string | null;
 	impressions: number | null;
@@ -368,6 +372,8 @@ async function loadCampaignPosts(
 				angle: posts.angle,
 				text: posts.text,
 				status: posts.status,
+				score: posts.score,
+				revision: posts.revision,
 				externalPostId: posts.externalPostId,
 				postedAt: posts.postedAt,
 			})
@@ -416,6 +422,8 @@ async function loadCampaignPosts(
 			angle: r.angle ?? null,
 			text: r.text,
 			status: r.status,
+			score: r.score ?? null,
+			revision: r.revision ?? 0,
 			externalPostId: r.externalPostId ?? null,
 			postedAt: r.postedAt ? r.postedAt.toISOString() : null,
 			impressions: m?.impressions ?? null,

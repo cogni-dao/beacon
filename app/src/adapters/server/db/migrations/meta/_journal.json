@@ -267,6 +267,13 @@
       "when": 1781839099060,
       "tag": "0037_left_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1782433781424,
+      "tag": "0038_orange_elektra",
+      "breakpoints": true
     }
   ]
 }

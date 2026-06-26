@@ -24,15 +24,14 @@ import type { ReactElement } from "react";
 
 import { Card, CardContent } from "@/components";
 import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
-import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
 
 import { CampaignActions } from "../_components/CampaignActions";
 import { CampaignControls } from "../_components/CampaignControls";
+import { CampaignFunnel } from "../_components/CampaignFunnel";
 import {
   campaignStatusInfo,
   CampaignStatusBadge,
 } from "../_components/CampaignStatus";
-import { FunnelLayerSection } from "../_components/FunnelLayerSection";
 
 function Stat({ label, value }: { label: string; value: string }): ReactElement {
   return (
@@ -112,18 +111,10 @@ export function CampaignDetailView({
         </CardContent>
       </Card>
 
-      {/* Queue grouped by funnel layer, each with its own independent KPI. */}
-      <div className="flex flex-col gap-4">
-        {FUNNEL_LAYERS.map((layer) => (
-          <FunnelLayerSection
-            key={layer}
-            layer={layer}
-            kpi={campaign.layers[layer]}
-            targetRate={campaign.targetRate}
-            posts={campaign.posts.filter((p) => p.funnelLayer === layer)}
-          />
-        ))}
-      </div>
+      {/* Queue grouped by funnel layer, each with its own independent KPI, plus a
+          status filter so the operator can blast through review (approve/reject/
+          edit/refine each draft). */}
+      <CampaignFunnel campaign={campaign} />
     </div>
   );
 }
