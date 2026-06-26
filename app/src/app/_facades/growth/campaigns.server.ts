@@ -38,6 +38,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { resolveAppDb } from "@/bootstrap/container";
 import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 
+import { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
+
 const DEFAULT_TARGET_RATE = 0.02;
 
 /** Lifecycle status of the owned campaign record (mirrors the CHECK constraint). */
@@ -56,9 +58,10 @@ function asCampaignStatus(raw: string | null | undefined): CampaignStatus {
 		: "draft";
 }
 
-/** Funnel layers in funnel order (awareness → consideration → action). */
-export const FUNNEL_LAYERS = ["tofu", "mofu", "bofu"] as const;
-export type FunnelLayer = (typeof FUNNEL_LAYERS)[number];
+// Funnel layers live in the CLIENT-SAFE campaigns.shared (no server deps) so the
+// "use client" funnel UI can import the value without dragging this server module
+// (db/LLM) into the browser bundle. Re-exported here for existing server callers.
+export { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
 
 /** Independent engagement KPI for one funnel layer (a slice of a campaign). */
 export interface FunnelLayerKpi {

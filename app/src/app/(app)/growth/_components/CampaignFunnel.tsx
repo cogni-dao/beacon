@@ -27,7 +27,10 @@ import type {
   CampaignDetail,
   CampaignPost,
 } from "@/app/_facades/growth/campaigns.server";
-import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.server";
+// CLIENT-SAFE value import — pulling FUNNEL_LAYERS from campaigns.server (which
+// imports db/LLM) dragged Node built-ins (fs/child_process/dns) into the browser
+// bundle and broke the Next build. The constant lives in campaigns.shared.
+import { FUNNEL_LAYERS } from "@/app/_facades/growth/campaigns.shared";
 
 import { FunnelLayerSection } from "./FunnelLayerSection";
 
