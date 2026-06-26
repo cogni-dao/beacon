@@ -120,7 +120,8 @@
     "viem": "2.39.3",
     "wagmi": "2.19.5",
     "zod": "^4.1.12",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.9",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^11.8.1",
