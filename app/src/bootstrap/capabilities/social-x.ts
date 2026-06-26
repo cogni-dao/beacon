@@ -9,7 +9,9 @@
  * Invariants:
  *   - NO_SECRETS_IN_CONTEXT: social bearer tokens resolved from env, never passed to tools
  *   - FAKE_IN_CI: APP_ENV=test → deterministic fakes (X + Moltbook)
- *   - ENV_GATED_REAL: real adapters only constructed when their bearer keys are set
+ *   - ENV_GATED_REAL: real X adapter only constructed when its bearer key is set
+ *   - MOLTBOOK_TENANT_ONLY: real Moltbook publishing uses broker-resolved
+ *     connection credentials in the publish job, never an app-level env key
  *   - CHANNEL_ROUTED: postContent/readMetrics dispatch by channel
  * Side-effects: none (factory only)
  * Links: docs/spec/beacon-growth-loop-v0.md §2/§5.
@@ -23,7 +25,7 @@ import type {
   SocialXCapability,
 } from "@cogni/ai-tools";
 
-import { MoltbookSocialAdapter, XSocialAdapter } from "@/adapters/server";
+import { XSocialAdapter } from "@/adapters/server";
 import { FakeMoltbookAdapter, FakeXSocialAdapter } from "@/adapters/test";
 import type { ServerEnv } from "@/shared/env";
 
@@ -84,7 +86,8 @@ function routeByChannel(
  *
  * - APP_ENV=test: fakes for both X and Moltbook (deterministic, monotonic-rising)
  * - X_API_BEARER_TOKEN present: real X adapter for `x`
- * - MOLTBOOK_API_KEY present: real Moltbook adapter for `moltbook`
+ * - Moltbook production container path: stub; publish job constructs the real
+ *   adapter from tenant-linked credentials
  * - Not configured: stubs that throw on use
  *
  * @param env - Server environment with X configuration
@@ -99,8 +102,6 @@ export function createSocialXCapability(env: ServerEnv): SocialXCapability {
   }
 
   const bearerToken = env.X_API_BEARER_TOKEN;
-  const moltbookApiKey = env.MOLTBOOK_API_KEY;
-
   // X: real adapter when configured, else a stub that throws on use.
   // NOTE: the container path still sources the app-level token here (posting +
   // metrics-ingest). The per-tenant read path (profile insights) builds its own
@@ -113,17 +114,9 @@ export function createSocialXCapability(env: ServerEnv): SocialXCapability {
         "SocialXCapability (x) not configured. Set X_API_BEARER_TOKEN environment variable."
       );
 
-  const moltbookBackend: SocialXCapability = moltbookApiKey
-    ? new MoltbookSocialAdapter({
-        accessToken: moltbookApiKey,
-        ...(env.MOLTBOOK_API_BASE_URL
-          ? { apiBaseUrl: env.MOLTBOOK_API_BASE_URL }
-          : {}),
-        timeoutMs: 10000,
-      })
-    : makeStub(
-        "SocialXCapability (moltbook) not configured. Set MOLTBOOK_API_KEY environment variable."
-      );
+  const moltbookBackend: SocialXCapability = makeStub(
+    "SocialXCapability (moltbook) uses tenant-linked connections; call the publish-approved campaign route/job."
+  );
 
   return routeByChannel({ x: xBackend, moltbook: moltbookBackend });
 }

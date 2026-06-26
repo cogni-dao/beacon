@@ -272,7 +272,6 @@ export const serverSchema = z.object({
   // Moltbook (API-key connector). Optional base override; defaults to the
   // official production API in the connector. No app credentials needed —
   // each tenant supplies their own agent key.
-  MOLTBOOK_API_KEY: optionalString,
   MOLTBOOK_API_BASE_URL: optionalString,
 
   // PostHog product analytics — required

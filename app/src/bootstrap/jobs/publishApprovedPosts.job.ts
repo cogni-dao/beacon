@@ -9,6 +9,8 @@
  * Scope: Service-role DB reads/writes + broker-resolved Moltbook adapter calls.
  *   Does NOT generate, refine, approve, reject, or ingest engagement metrics.
  * Invariants:
+ *   - SINGLE_WRITER: pg_advisory_lock prevents concurrent publish runs from
+ *     double-posting the same approved row.
  *   - APPROVED_ONLY: only `posts.status = 'approved'` rows are eligible.
  *   - BROKER_RESOLVES_ALL: Moltbook API keys come from ConnectionBrokerPort.
  *   - CONNECTIONS_NOT_CHANNEL_ACCOUNTS: linked platform accounts live in
@@ -46,8 +48,15 @@ export interface PublishApprovedPostsSummary {
 	published: number;
 	/** Approved rows left untouched because no tenant Moltbook connection exists. */
 	skippedNoConnection: number;
+	/** Rows selected but no longer eligible by the time the job claimed them. */
+	skippedNotEligible: number;
 	/** Rows moved to `failed` because posting threw. */
 	failed: number;
+}
+
+export interface PublishApprovedPostsScope {
+	accountId?: string;
+	campaignId?: string;
 }
 
 interface ApprovedPostRow {
@@ -63,6 +72,7 @@ export interface PublishApprovedPostsDeps {
 	db?: ReturnType<typeof getServiceDb>;
 	broker?: ConnectionBrokerPort;
 	makeMoltbookAdapter?: (accessToken: string) => SocialXCapability;
+	scope?: PublishApprovedPostsScope;
 }
 
 export async function runPublishApprovedPostsJob(
@@ -75,17 +85,64 @@ export async function runPublishApprovedPostsJob(
 		throw new Error("ConnectionBroker unavailable; cannot publish approved posts");
 	}
 
-	const env = serverEnv();
-	const makeMoltbookAdapter =
-		deps.makeMoltbookAdapter ??
-		((accessToken: string) =>
-			new MoltbookSocialAdapter({
-				accessToken,
-				...(env.MOLTBOOK_API_BASE_URL
-					? { apiBaseUrl: env.MOLTBOOK_API_BASE_URL }
-					: {}),
-				timeoutMs: 10000,
-			}));
+	const reservedConn = await db.$client.reserve();
+	const [lockRow] =
+		await reservedConn`SELECT pg_try_advisory_lock(hashtext('growth_publish_approved')) AS acquired`;
+	const acquired = (lockRow as { acquired: boolean } | undefined)?.acquired;
+	if (!acquired) {
+		reservedConn.release();
+		container.log.info({}, "growth.publish_approved already running, skipping");
+		return {
+			considered: 0,
+			published: 0,
+			skippedNoConnection: 0,
+			skippedNotEligible: 0,
+			failed: 0,
+		};
+	}
+
+	try {
+		return await runLockedPublishApprovedPostsJob({
+			db,
+			broker,
+			makeMoltbookAdapter:
+				deps.makeMoltbookAdapter ??
+				((accessToken: string) => {
+					const env = serverEnv();
+					return new MoltbookSocialAdapter({
+						accessToken,
+						...(env.MOLTBOOK_API_BASE_URL
+							? { apiBaseUrl: env.MOLTBOOK_API_BASE_URL }
+							: {}),
+						timeoutMs: 10000,
+					});
+				}),
+			...(deps.scope ? { scope: deps.scope } : {}),
+			logSummary: (summary) =>
+				container.log.info(summary, "growth.publish_approved complete"),
+		});
+	} finally {
+		await reservedConn`SELECT pg_advisory_unlock(hashtext('growth_publish_approved'))`;
+		reservedConn.release();
+	}
+}
+
+async function runLockedPublishApprovedPostsJob(args: {
+	db: ReturnType<typeof getServiceDb>;
+	broker: ConnectionBrokerPort;
+	makeMoltbookAdapter: (accessToken: string) => SocialXCapability;
+	scope?: PublishApprovedPostsScope;
+	logSummary: (summary: PublishApprovedPostsSummary) => void;
+}): Promise<PublishApprovedPostsSummary> {
+	const { db, broker, makeMoltbookAdapter, scope, logSummary } = args;
+
+	const filters = [
+		eq(posts.status, "approved"),
+		eq(posts.channel, "moltbook"),
+		isNull(posts.externalPostId),
+	];
+	if (scope?.accountId) filters.push(eq(posts.accountId, scope.accountId));
+	if (scope?.campaignId) filters.push(eq(posts.campaignId, scope.campaignId));
 
 	const rows = await db
 		.select({
@@ -98,18 +155,13 @@ export async function runPublishApprovedPostsJob(
 		})
 		.from(posts)
 		.innerJoin(billingAccounts, eq(posts.accountId, billingAccounts.id))
-		.where(
-			and(
-				eq(posts.status, "approved"),
-				eq(posts.channel, "moltbook"),
-				isNull(posts.externalPostId),
-			),
-		)
+		.where(and(...filters))
 		.orderBy(sql`${posts.score} DESC NULLS LAST`, asc(posts.createdAt))
 		.limit(MAX_POSTS_PER_RUN);
 
 	let published = 0;
 	let skippedNoConnection = 0;
+	let skippedNotEligible = 0;
 	let failed = 0;
 
 	for (const [idx, row] of rows.entries()) {
@@ -122,6 +174,7 @@ export async function runPublishApprovedPostsJob(
 		});
 		if (result === "published") published++;
 		if (result === "skipped_no_connection") skippedNoConnection++;
+		if (result === "skipped_not_eligible") skippedNotEligible++;
 		if (result === "failed") failed++;
 	}
 
@@ -129,9 +182,10 @@ export async function runPublishApprovedPostsJob(
 		considered: rows.length,
 		published,
 		skippedNoConnection,
+		skippedNotEligible,
 		failed,
 	};
-	container.log.info(summary, "growth.publish_approved complete");
+	logSummary(summary);
 	return summary;
 }
 
@@ -141,7 +195,9 @@ async function publishOne(args: {
 	makeMoltbookAdapter: (accessToken: string) => SocialXCapability;
 	row: ApprovedPostRow;
 	rank: number;
-}): Promise<"published" | "skipped_no_connection" | "failed"> {
+}): Promise<
+	"published" | "skipped_no_connection" | "skipped_not_eligible" | "failed"
+> {
 	const { db, broker, makeMoltbookAdapter, row, rank } = args;
 	const resolved = await broker.resolveActive(row.accountId, "moltbook", {
 		actorId: row.ownerUserId,
@@ -150,22 +206,10 @@ async function publishOne(args: {
 	if (!resolved) return "skipped_no_connection";
 
 	try {
-		const posted = await makeMoltbookAdapter(
-			resolved.credentials.accessToken,
-		).postContent({
-			channel: "moltbook",
-			text: row.text,
-			idempotencyKey: row.id,
-		});
-
-		await db.transaction(async (tx) => {
-			const [updated] = await tx
+		return await db.transaction(async (tx) => {
+			const [claimed] = await tx
 				.update(posts)
-				.set({
-					status: "posted",
-					externalPostId: posted.externalId,
-					postedAt: new Date(posted.postedAt),
-				})
+				.set({ status: "approved" })
 				.where(
 					and(
 						eq(posts.id, row.id),
@@ -174,8 +218,26 @@ async function publishOne(args: {
 					),
 				)
 				.returning({ id: posts.id });
+			if (!claimed) return "skipped_not_eligible" as const;
 
-			if (!updated) return;
+			const posted = await makeMoltbookAdapter(
+				resolved.credentials.accessToken,
+			).postContent({
+				channel: "moltbook",
+				text: row.text,
+				idempotencyKey: row.id,
+			});
+
+			const [updated] = await tx
+				.update(posts)
+				.set({
+					status: "posted",
+					externalPostId: posted.externalId,
+					postedAt: new Date(posted.postedAt),
+				})
+				.where(and(eq(posts.id, row.id), eq(posts.status, "approved")))
+				.returning({ id: posts.id });
+			if (!updated) return "skipped_not_eligible" as const;
 
 			await tx.insert(postDecisions).values({
 				accountId: row.accountId,
@@ -187,8 +249,8 @@ async function publishOne(args: {
 				reason: PUBLISH_REASON,
 				modelRef: null,
 			});
+			return "published" as const;
 		});
-		return "published";
 	} catch {
 		await db
 			.update(posts)
