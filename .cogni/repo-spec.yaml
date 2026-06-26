@@ -28,6 +28,16 @@ governance:
   chain_id: "8453"
   base_url: "https://proposal.cognidao.org"
 
+# Compatibility mirror for older operator flight gates still deployed on
+# cognidao.org. The current repo-spec parser reads `governance`; operator
+# build aa050211 still requires `cogni_dao` during nodeRef preflight.
+cogni_dao:
+  dao_contract: "0xdd1776f660e4cf46b2fb723196242db4d45e8b58"
+  plugin_contract: "0xc6808d775b53229116547112db1f0394888d1abf"
+  signal_contract: "0xbc20b71e4d33e12e5dcf65e8fc665d62188abaa8"
+  chain_id: "8453"
+  base_url: "https://proposal.cognidao.org"
+
 knowledge:
   database: "knowledge_beacon"
   remote:
