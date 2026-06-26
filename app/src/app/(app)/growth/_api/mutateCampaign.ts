@@ -18,7 +18,7 @@
 export type CampaignStatus = "draft" | "active" | "paused" | "done";
 
 export interface CreateCampaignInput {
-  campaignId: string;
+  // No campaignId — the server derives the public handle from the title.
   title: string;
   /**
    * The campaign's DEFINE DNA — voice + topic + audience + objective. This is

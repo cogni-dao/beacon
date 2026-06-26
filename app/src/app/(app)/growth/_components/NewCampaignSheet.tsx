@@ -35,7 +35,6 @@ import {
 } from "@/components";
 
 import { createCampaign } from "../_api/mutateCampaign";
-import { deriveCampaignId, slugify } from "./slug";
 
 /** One labelled multi-line DEFINE field with grounded helper copy. */
 function DefineField({
@@ -104,17 +103,15 @@ export function NewCampaignSheet(): ReactElement {
     setOpen(next);
   };
 
-  // The slug is auto-derived (base + random suffix) and never shown — it's
-  // machine plumbing, not UX. We validate the base so the title yields a slug
-  // that satisfies ID_PATTERN before we tack on the suffix at submit time.
-  const idValid = slugify(title).length >= 1;
+  // Identity (the public handle) is generated server-side from the title — the
+  // client sends no slug. Titles can repeat; the server makes the handle unique.
   const titleValid = title.trim().length >= 1 && title.length <= 200;
   const filled =
     coreTopic.trim().length >= 1 &&
     voice.trim().length >= 1 &&
     icp.trim().length >= 1 &&
     objective.trim().length >= 1;
-  const canSubmit = idValid && titleValid && filled && !submitting;
+  const canSubmit = titleValid && filled && !submitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,8 +120,6 @@ export function NewCampaignSheet(): ReactElement {
     setError(null);
     try {
       await createCampaign({
-        // Unique per submit: same-titled campaigns get distinct slugs.
-        campaignId: deriveCampaignId(title),
         title: title.trim(),
         coreTopic: coreTopic.trim(),
         voice: voice.trim(),
