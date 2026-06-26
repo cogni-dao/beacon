@@ -3,8 +3,11 @@
 
 /**
  * Module: `@app/(app)/profile/view`
- * Purpose: Client component for user profile settings — display name, avatar color, and linked accounts.
- * Scope: Reads/updates user profile via /api/v1/users/me; does not handle OAuth flow directly or manage session persistence.
+ * Purpose: Client component for user profile settings, account linking, and platform connection management.
+ * Scope: Reads/updates user profile via /api/v1/users/me and drives
+ *   connect/disconnect affordances only. Does not render growth dashboards,
+ *   platform account metrics, or random downstream card wiring; those belong
+ *   on `/growth` or other operational surfaces.
  * Invariants: Requires authenticated session (enforced by parent layout); avatar color updates reflected in session via update().
  * Side-effects: IO (fetch API, session update, navigation for OAuth linking)
  * Links: src/contracts/users.profile.v1.contract.ts, src/app/api/v1/users/me/route.ts
@@ -45,30 +48,6 @@ interface ProfileData {
   avatarColor: string | null;
   resolvedDisplayName: string;
   linkedProviders: LinkedProvider[];
-}
-
-interface XRecentPostView {
-  externalId: string;
-  text: string;
-  createdAt: string;
-  likes: number;
-  reposts: number;
-  replies: number;
-  impressions?: number;
-}
-
-interface XAccountMetricsView {
-  profile: {
-    externalAccountId: string;
-    handle: string;
-    displayName: string;
-    followers: number;
-    following?: number;
-    postCount?: number;
-    avatarUrl?: string;
-  };
-  recentPosts: XRecentPostView[];
-  fetchedAt: string;
 }
 
 interface OwnershipAttribution {
@@ -563,7 +542,6 @@ export function ProfileView(): ReactElement {
   const [xConnected, setXConnected] = useState(false);
   const [xHandle, setXHandle] = useState<string | null>(null);
   const [xLoading, setXLoading] = useState(false);
-  const [xMetrics, setXMetrics] = useState<XAccountMetricsView | null>(null);
   const [moltbookConnected, setMoltbookConnected] = useState(false);
   const [moltbookHandle, setMoltbookHandle] = useState<string | null>(null);
   const [moltbookExpanded, setMoltbookExpanded] = useState(false);
@@ -697,24 +675,8 @@ export function ProfileView(): ReactElement {
       .catch(() => {});
   }, []);
 
-  // Once X is connected, read the linked account's live profile + recent-post
-  // metrics (broker-resolved per-tenant token; never an app-level bearer).
-  useEffect(() => {
-    if (!xConnected) {
-      setXMetrics(null);
-      return;
-    }
-    fetch("/api/v1/connections/x/metrics")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { linked: boolean; metrics?: XAccountMetricsView } | null) => {
-        if (data?.linked && data.metrics) setXMetrics(data.metrics);
-      })
-      .catch(() => {
-        // Metrics are best-effort — the connection row still renders without them.
-      });
-  }, [xConnected]);
-
   const walletAddress = session?.user?.walletAddress ?? null;
+
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
   const avatarLetter = displayName.charAt(0).toUpperCase();
@@ -893,54 +855,6 @@ export function ProfileView(): ReactElement {
           </Button>
         )}
       </SettingRow>
-
-      {/* Live X account metrics — broker-resolved per-tenant read (read-only). */}
-      {xConnected && xMetrics && (
-        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="truncate font-medium text-foreground text-sm">
-                {xMetrics.profile.displayName}
-              </div>
-              <div className="truncate text-muted-foreground text-xs">
-                {xMetrics.profile.handle}
-              </div>
-            </div>
-            <div className="shrink-0 text-right">
-              <div className="font-semibold text-foreground text-sm tabular-nums">
-                {xMetrics.profile.followers.toLocaleString()}
-              </div>
-              <div className="text-muted-foreground text-xs">followers</div>
-            </div>
-          </div>
-          {xMetrics.recentPosts.length > 0 ? (
-            <ul className="space-y-2">
-              {xMetrics.recentPosts.map((post) => (
-                <li
-                  key={post.externalId}
-                  className="rounded-md border border-border/60 p-3"
-                >
-                  <p className="line-clamp-2 text-foreground text-sm">
-                    {post.text}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
-                    <span>{post.likes.toLocaleString()} likes</span>
-                    <span>{post.reposts.toLocaleString()} reposts</span>
-                    <span>{post.replies.toLocaleString()} replies</span>
-                    {typeof post.impressions === "number" && (
-                      <span>{post.impressions.toLocaleString()} impressions</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No recent posts to show yet.
-            </p>
-          )}
-        </div>
-      )}
 
       <SettingRow
         icon={<Bot className="size-5" />}

@@ -1,5 +1,5 @@
 {
-  "id": "615c28c6-dd0e-4235-8768-79d8cf5353e1",
+  "id": "4e703794-9bf5-46b4-b52d-c47885aad349",
   "prevId": "a7cec9c1-b5d3-48a4-9c1d-625e8057f5c4",
   "version": "7",
   "dialect": "postgresql",
@@ -2785,7 +2785,7 @@
       "checkConstraints": {
         "posts_status_check": {
           "name": "posts_status_check",
-          "value": "\"posts\".\"status\" IN ('generated', 'refining', 'in_review', 'approved', 'posted', 'rejected', 'failed')"
+          "value": "\"posts\".\"status\" IN ('generated', 'in_review', 'approved', 'posted', 'rejected', 'failed')"
         },
         "posts_funnel_layer_check": {
           "name": "posts_funnel_layer_check",
@@ -3959,6 +3959,18 @@
           "notNull": true,
           "default": "'active'"
         },
+        "metrics_snapshot": {
+          "name": "metrics_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metrics_fetched_at": {
+          "name": "metrics_fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -4097,7 +4109,7 @@
         },
         "connections_status_check": {
           "name": "connections_status_check",
-          "value": "\"connections\".\"status\" IN ($1, $2, $3, $4)"
+          "value": "\"connections\".\"status\" IN ($1, $2, $3, $4, $5, $6)"
         }
       },
       "isRLSEnabled": true

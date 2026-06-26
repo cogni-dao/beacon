@@ -22,6 +22,7 @@ import type { ReactElement } from "react";
 import type { CampaignLensRow } from "./_api/fetchCampaigns";
 import { CampaignCard } from "./_components/CampaignCard";
 import { NewCampaignSheet } from "./_components/NewCampaignSheet";
+import { PlatformAccountMetrics } from "./_components/PlatformAccountMetrics";
 
 export function GrowthView({
   campaigns,
@@ -41,6 +42,8 @@ export function GrowthView({
         </div>
         <NewCampaignSheet />
       </div>
+
+      <PlatformAccountMetrics />
 
       {campaigns.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-border border-dashed p-10 text-center text-muted-foreground text-sm">

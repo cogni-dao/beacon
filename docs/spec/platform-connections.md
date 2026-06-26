@@ -159,8 +159,8 @@ This node's X calls:
 
 | Call | When | Resources | Cost / call |
 |---|---|---|---|
-| `GET /2/users/me` (+`public_metrics`) | each profile insights render | 1 User | $0.010 (≤$0.001 owned) |
-| `GET /2/users/:id/tweets` (limit 10, `public_metrics`) | each profile insights render | ≤10 Posts | ≤$0.050 (≤$0.010 owned) |
+| `GET /2/users/me` (+`public_metrics`) | per explicit refresh (`?refresh=1`) — cached otherwise | 1 User | $0.010 (≤$0.001 owned) |
+| `GET /2/users/:id/tweets` (limit 10, `public_metrics`) | per explicit refresh (`?refresh=1`) — cached otherwise | ≤10 Posts | ≤$0.050 (≤$0.010 owned) |
 | `POST /2/tweets` (**DEFERRED — SA4**) | per published post | 1 write | $0.015, or **$0.200 if the post carries a URL** |
 
 **Per profile-render read cost ≈ $0.011–$0.060** (owned → standard), minus same-UTC-day dedup; `public_metrics` ride on the User/Post object, so there is no extra Analytics charge. The **$0.200 with-URL write** dominates posting economics — growth posts almost always carry a link, so size campaign budgets on **$0.20/post, not $0.015**.
@@ -188,18 +188,13 @@ The `sandbox` provider is a fully fake platform that exercises the **whole posti
 
 **Live evidence (candidate-a, 2026-06-19):** the per-tenant X insights read returns **HTTP 402** when the X app has no credit balance (`XSocialAdapter → read_account_metrics_failed`, `ConnectionsMetricsRoute → metrics_read_failed err:"code 402"`). The link/store path is unaffected — only the *read* is paywalled. Confirms: every metrics read is a paid platform call.
 
-Current behavior to fix (not yet built — **do not over-engineer**):
+**The cost boundary is the route, not the UI.** `GET /api/v1/connections/[provider]/metrics` owns read-cost discipline so *every* caller — card, cron, agent — is protected, not just one card. The adapter stays a dumb stateless fetcher (boundary rule below); the snapshot + circuit-breaker live on the connection row, read/written through `ConnectionBrokerPort.getReadState` / `recordRead`.
 
-- The profile card fetches `GET /api/v1/connections/x/metrics` **on every mount** (`useEffect [xConnected]`) — no cache, so each page view is a fresh paid call. Today's 402 isn't billed, but once funded each render charges ≈$0.01–$0.06.
-- A failing app (402/403/429) keeps getting called on every view — no backoff.
+1. **No paid call on a passive read.** A plain GET returns the server-stored snapshot (`connections.metrics_snapshot` + `metrics_fetched_at`) with **zero** platform calls; only `?refresh=1` (a user action or a scheduled job) resolves the connection and spends a real read, then persists the new snapshot. A passive view costs **$0** (vs ≈$0.01–$0.06/render). *Invariant:* a GET without `?refresh=1` never reaches the platform adapter.
+2. **Short-circuit known-bad connections.** On 402/403 → `needs_billing`, 429 → `rate_limited`: the route marks `connections.status` and serves the last snapshot instead of a blank card. Because `resolveActive` resolves only `active` rows, a tripped connection is dead to **every** caller until re-armed — not re-called on the next `?refresh=1`. Coarse errors, no tokens logged. (Re-arm today = reconnect; an operator re-arm / time-based cooldown for `rate_limited` is the remaining nicety.)
+3. **Persist what we paid for.** The snapshot is cached on the connection row (JSONB + `fetched_at`), RLS-scoped by `billing_account_id` — required now, not deferred, because a scheduled job can't read a browser cache. (A separate `connection_read_cache` table only earns its keep once a single connection caches *multiple* resources on a cadence; one snapshot per connection is enough today.)
 
-Smallest responsible increment, in priority order (do the cheap ones first; defer the rest):
-
-1. **Don't fetch on passive render.** Serve the card from the last stored snapshot; only refetch on an explicit user action or a scheduled job. This alone removes the spam.
-2. **Short-circuit known-bad connections.** On 402/403/429, mark the connection (`needs_billing`/`rate_limited`) and stop calling until cooldown/operator re-arm; surface "X app needs credits" instead of a blank card.
-3. **Persist what we paid for** (a `connection_read_cache` row keyed by connection + resource + `fetched_at`) only if/when reads actually run on a cadence.
-
-Design note (deferred, not approved to build): the clean home for this is *declarative* — the port advertises `costClass` + `ttlSeconds` per read, and **one** generic read-through/circuit-break wrapper enforces it for every connector (adapters stay dumb fetchers). Capture, don't build, until the loop demands it.
+Design note (deferred, not approved to build): the next abstraction is *declarative* — the port advertises `costClass` + `ttlSeconds` per read, and **one** generic read-through/circuit-break wrapper enforces it for every connector (instead of the per-route logic in the X metrics route). Capture, don't build, until a second cost-bearing read exists.
 
 ## Pareto path forward (phased)
 

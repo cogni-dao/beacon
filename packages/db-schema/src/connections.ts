@@ -19,6 +19,7 @@ import {
   check,
   customType,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -49,12 +50,19 @@ const CONNECTION_PROVIDERS = [
   "sandbox",
 ] as const;
 
-/** Connection health — legible without decrypting the credential blob. */
+/** Connection health — legible without decrypting the credential blob.
+ * `needs_billing` / `rate_limited` are read-cost circuit-breaker states: a paid
+ * platform read returned 402/403 (no credits) or 429 (rate-limited), so the data
+ * plane stops calling until the connection is re-armed. Because resolveActive
+ * resolves only `active` rows, every caller (card, cron, agent) is short-circuited
+ * — not just the UI. See docs/spec/platform-connections.md §Read-cost governance. */
 const CONNECTION_STATUSES = [
   "active",
   "needs_reauth",
   "expired",
   "review_pending",
+  "needs_billing",
+  "rate_limited",
 ] as const;
 
 const CREDENTIAL_TYPES = [
@@ -92,6 +100,12 @@ export const connections = pgTable(
     displayLabel: text("display_label"),
     /** Connection health, legible without decrypting credentials. */
     status: text("status").notNull().default("active"),
+    /** Last paid read result, cached so passive views + scheduled jobs serve
+     * from here with ZERO platform calls (read-cost governance). Non-secret
+     * public metrics only — never tokens. NULL until the first explicit read. */
+    metricsSnapshot: jsonb("metrics_snapshot"),
+    /** When metricsSnapshot was last refreshed from the platform. */
+    metricsFetchedAt: timestamp("metrics_fetched_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
