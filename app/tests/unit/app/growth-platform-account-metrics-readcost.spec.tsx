@@ -4,10 +4,11 @@
 /**
  * Module: `@tests/unit/app/growth-platform-account-metrics-readcost`
  * Purpose: The Growth platform-account metrics module is visible even when no
- *   snapshot exists, and it never calls the paid metrics route on render.
+ *   snapshot exists, and it never calls the paid refresh path on render.
  * Scope: Unit test for src/app/(app)/growth/_components/PlatformAccountMetrics.tsx.
  * Invariants: INV-READCOST-NO-METRICS-FETCH-ON-RENDER — the visible Refresh
- *   affordance is the only UI path to `/api/v1/connections/x/metrics?refresh=1`.
+ *   affordance is the only UI path to `/api/v1/connections/x/metrics?refresh=1`;
+ *   the route-cached snapshot GET is allowed because it never calls X.
  * Side-effects: none (mocked fetch + chart primitives)
  * Links: src/app/(app)/growth/_components/PlatformAccountMetrics.tsx
  * @vitest-environment jsdom
@@ -79,7 +80,11 @@ const snapshot = (followers: number) => ({
   },
 });
 
-function installFetchMock(): { calls: string[] } {
+function installFetchMock({
+  metricsBody = { linked: true, status: "active", metrics: null },
+}: {
+  metricsBody?: unknown;
+} = {}): { calls: string[] } {
   const calls: string[] = [];
   const json = (body: unknown) =>
     Promise.resolve({
@@ -103,7 +108,7 @@ function installFetchMock(): { calls: string[] } {
       });
     }
     if (url.includes("/api/v1/connections/x/metrics")) {
-      return json(snapshot(43));
+      return json(metricsBody);
     }
     return json({});
   };
@@ -125,33 +130,37 @@ function renderMetrics(): void {
 
 const metricsCalls = (calls: string[]) =>
   calls.filter((u) => u.includes("/api/v1/connections/x/metrics"));
+const paidRefreshCalls = (calls: string[]) =>
+  metricsCalls(calls).filter((u) => u.includes("refresh=1"));
 
 describe("Growth platform account metrics — read-cost discipline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("renders the metrics shell and refresh affordance without calling metrics on mount", async () => {
+  it("renders the metrics shell and refresh affordance without calling paid refresh on mount", async () => {
     const { calls } = installFetchMock();
 
     renderMetrics();
 
     expect(
-      screen.getByRole("heading", { name: /platform account metrics/i })
+      screen.getByRole("heading", { name: /account metrics/i })
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/no stored metrics snapshot yet/i)
-    ).toBeInTheDocument();
-
     await waitFor(() => {
       expect(calls.some((u) => u.endsWith("/connections/x/status"))).toBe(true);
     });
-    expect(metricsCalls(calls)).toHaveLength(0);
+    await waitFor(() => {
+      expect(metricsCalls(calls)).toEqual(["/api/v1/connections/x/metrics"]);
+    });
+    expect(
+      screen.getByText(/no stored x snapshot yet/i)
+    ).toBeInTheDocument();
+    expect(paidRefreshCalls(calls)).toHaveLength(0);
   });
 
   it("hits ?refresh=1 exactly once on explicit refresh", async () => {
-    const { calls } = installFetchMock();
+    const { calls } = installFetchMock({ metricsBody: snapshot(43) });
 
     renderMetrics();
     await waitFor(() => {
@@ -163,7 +172,7 @@ describe("Growth platform account metrics — read-cost discipline", () => {
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
     await waitFor(() => {
-      expect(metricsCalls(calls)).toEqual([
+      expect(paidRefreshCalls(calls)).toEqual([
         "/api/v1/connections/x/metrics?refresh=1",
       ]);
     });

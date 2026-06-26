@@ -3,18 +3,17 @@
 
 /**
  * Module: `@app/(app)/growth/_components/PlatformAccountMetrics`
- * Purpose: Growth dashboard module for expandable platform account metrics
- *   across X, Moltbook, and future channels.
+ * Purpose: Growth dashboard module for linked platform account metrics.
  * Scope: Client presentation + React Query fetches against connection
  *   status/metrics routes. Does not own auth linking or platform adapter reads.
  * Invariants:
- *   - NO_PLATFORM_READ_ON_RENDER: metrics queries are disabled on mount; the
- *     visible Refresh button is the only UI path to `?refresh=1`.
+ *   - NO_PAID_PLATFORM_READ_ON_RENDER: the initial metrics request is the
+ *     route-cached snapshot; only the visible Refresh action calls `?refresh=1`.
  *   - ROUTE_IS_COST_BOUNDARY: `/api/v1/connections/[provider]/metrics` decides
  *     cache/circuit-break semantics for every caller.
  *   - PROFILE_LINKING_ONLY: profile owns connect/disconnect; this module only
  *     summarizes growth metrics.
- * Side-effects: IO (cheap status reads on mount; explicit metrics refresh on user action).
+ * Side-effects: IO (cheap status/snapshot reads on mount; explicit metrics refresh on user action).
  * Links: src/app/api/v1/connections/[provider]/metrics/route.ts, docs/spec/platform-connections.md
  * @internal
  */
@@ -27,27 +26,15 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@cogni/node-ui-kit/shadcn/chart";
+import { cn } from "@cogni/node-ui-kit/util/cn";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  BarChart3,
-  BookOpen,
-  Globe2,
-  RefreshCw,
-  Video,
-} from "lucide-react";
+import { BookOpen, ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis } from "recharts";
 
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@cogni/node-ui-kit/shadcn/table";
 import { Badge } from "@/components/kit/data-display/Badge";
-import { ExpandableTableRow } from "@/components/kit/data-display/ExpandableTableRow";
 import { XIcon } from "@/components/kit/data-display/ProviderIcons";
 import { Button } from "@/components/kit/inputs/Button";
 import {
@@ -58,6 +45,7 @@ import {
 } from "@/components/kit/layout/Card";
 
 type ConnectionStatus = "active" | "needs_billing" | "rate_limited" | string;
+type ImplementedProvider = "x" | "moltbook";
 
 interface ConnectionStatusResponse {
   connected: boolean;
@@ -100,57 +88,6 @@ interface MetricsResponse {
   error?: string;
 }
 
-type ImplementedProvider = "x" | "moltbook";
-
-interface PlatformRow {
-  id: ImplementedProvider | "meta" | "youtube" | "blog";
-  label: string;
-  Icon: (props: { className?: string }) => ReactNode;
-  enabled: boolean;
-  metricsEnabled: boolean;
-  statusProvider?: ImplementedProvider;
-}
-
-const PLATFORMS: readonly PlatformRow[] = [
-  {
-    id: "x",
-    label: "X",
-    Icon: XIcon,
-    enabled: true,
-    metricsEnabled: true,
-    statusProvider: "x",
-  },
-  {
-    id: "moltbook",
-    label: "Moltbook",
-    Icon: BookOpen,
-    enabled: true,
-    metricsEnabled: false,
-    statusProvider: "moltbook",
-  },
-  {
-    id: "meta",
-    label: "Meta",
-    Icon: BarChart3,
-    enabled: false,
-    metricsEnabled: false,
-  },
-  {
-    id: "youtube",
-    label: "YouTube",
-    Icon: Video,
-    enabled: false,
-    metricsEnabled: false,
-  },
-  {
-    id: "blog",
-    label: "Blog / SEO",
-    Icon: Globe2,
-    enabled: false,
-    metricsEnabled: false,
-  },
-];
-
 const chartConfig = {
   likes: { label: "Likes", color: "hsl(var(--chart-1))" },
   reposts: { label: "Reposts", color: "hsl(var(--chart-2))" },
@@ -186,10 +123,6 @@ function formatRelativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function formatNumber(value: number | null | undefined): string {
-  return typeof value === "number" ? value.toLocaleString() : "—";
-}
-
 function engagementTotal(snapshot: PlatformAccountSnapshot | null): number {
   return (
     snapshot?.recentPosts.reduce(
@@ -215,13 +148,10 @@ function engagementRate(snapshot: PlatformAccountSnapshot | null): number | null
 function statusLabel({
   connected,
   status,
-  enabled,
 }: {
   connected: boolean;
   status: ConnectionStatus | undefined;
-  enabled: boolean;
 }): string {
-  if (!enabled) return "vNext";
   if (!connected) return "Not connected";
   if (status === "needs_billing") return "Needs credits";
   if (status === "rate_limited") return "Rate limited";
@@ -245,22 +175,118 @@ function postsChartData(snapshot: PlatformAccountSnapshot | null) {
   }));
 }
 
-function PlatformMetricsDetail({
+function MetricTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number | string;
+  detail?: string | undefined;
+}): ReactElement {
+  return (
+    <div className="rounded-md border bg-card px-3 py-2.5">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="mt-1 font-semibold text-base tabular-nums">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </div>
+      {detail && (
+        <div className="mt-1 text-muted-foreground text-xs">{detail}</div>
+      )}
+    </div>
+  );
+}
+
+function AccountPanel({
+  label,
+  Icon,
+  handle,
+  status,
+  children,
+  defaultExpanded = false,
+}: {
+  label: string;
+  Icon: (props: { className?: string }) => ReactNode;
+  handle: string;
+  status: string;
+  children?: ReactNode;
+  defaultExpanded?: boolean;
+}): ReactElement {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const expandable = children != null;
+
+  return (
+    <div className="border-border border-t first:border-t-0">
+      <button
+        type="button"
+        className={cn(
+          "grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-left",
+          expandable && "hover:bg-muted/30"
+        )}
+        disabled={!expandable}
+        aria-expanded={expandable ? expanded : undefined}
+        onClick={expandable ? () => setExpanded((next) => !next) : undefined}
+      >
+        <span className="flex size-8 items-center justify-center rounded-md border bg-background">
+          <Icon className="size-4" />
+        </span>
+        <span className="min-w-0">
+          <span className="block font-medium text-sm">{label}</span>
+          <span className="block truncate text-muted-foreground text-xs">
+            {handle}
+          </span>
+        </span>
+        <Badge intent={statusIntent(status)} size="sm">
+          {status}
+        </Badge>
+        <ChevronDown
+          className={cn(
+            "size-4 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+            !expandable && "opacity-0"
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      {expanded && children != null && (
+        <div className="border-border border-t bg-muted/10 px-4 py-4">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function XMetricsDetail({
+  connected,
   snapshot,
   refreshError,
   status,
 }: {
+  connected: boolean;
   snapshot: PlatformAccountSnapshot | null;
   refreshError: boolean;
   status: ConnectionStatus | undefined;
 }): ReactElement {
   const chartData = postsChartData(snapshot);
 
+  if (!connected) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Connect X from{" "}
+        <Link href="/profile" className="underline">
+          Profile
+        </Link>{" "}
+        to enable account metrics.
+      </p>
+    );
+  }
+
   if (status === "needs_billing") {
     return (
       <p className="text-destructive text-sm">
-        Platform reads are paused because the app needs credits. The route will
-        serve the last stored snapshot once one exists.
+        X reads are paused because the app needs credits. The last stored
+        snapshot will remain visible when one exists.
       </p>
     );
   }
@@ -268,8 +294,8 @@ function PlatformMetricsDetail({
   if (status === "rate_limited") {
     return (
       <p className="text-destructive text-sm">
-        Platform reads are paused by the server circuit breaker until the
-        account is re-armed.
+        X reads are paused by the server circuit breaker until the account is
+        re-armed.
       </p>
     );
   }
@@ -277,18 +303,20 @@ function PlatformMetricsDetail({
   if (!snapshot) {
     return (
       <p className="text-muted-foreground text-sm">
-        No stored metrics snapshot yet. The row stays visible so the next manual
-        refresh has an obvious target.
+        No stored X snapshot yet. Refresh will read X once and cache the result
+        on the server.
       </p>
     );
   }
+
+  const rate = engagementRate(snapshot);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="space-y-3">
         {refreshError && (
           <p className="text-destructive text-sm">
-            Refresh failed; showing the last data returned by the route.
+            Refresh failed; showing the last snapshot returned by the route.
           </p>
         )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -297,28 +325,29 @@ function PlatformMetricsDetail({
           <MetricTile label="Engagement" value={engagementTotal(snapshot)} />
           <MetricTile
             label="KPI"
-            value={
-              engagementRate(snapshot) == null
-                ? "—"
-                : `${(engagementRate(snapshot)! * 100).toFixed(2)}%`
-            }
+            value={rate == null ? "-" : `${(rate * 100).toFixed(2)}%`}
           />
         </div>
-        <ul className="space-y-2">
-          {snapshot.recentPosts.slice(0, 3).map((post) => (
-            <li key={post.externalId} className="rounded-md border p-3">
-              <p className="line-clamp-2 text-sm">{post.text}</p>
-              <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
-                <span>{post.likes.toLocaleString()} likes</span>
-                <span>{post.reposts.toLocaleString()} reposts</span>
-                <span>{post.replies.toLocaleString()} replies</span>
-                {typeof post.impressions === "number" && (
-                  <span>{post.impressions.toLocaleString()} impressions</span>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+        {snapshot.recentPosts.length > 0 && (
+          <ul className="space-y-2">
+            {snapshot.recentPosts.slice(0, 3).map((post) => (
+              <li
+                key={post.externalId}
+                className="rounded-md border bg-card p-3"
+              >
+                <p className="line-clamp-2 text-sm">{post.text}</p>
+                <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
+                  <span>{post.likes.toLocaleString()} likes</span>
+                  <span>{post.reposts.toLocaleString()} reposts</span>
+                  <span>{post.replies.toLocaleString()} replies</span>
+                  {typeof post.impressions === "number" && (
+                    <span>{post.impressions.toLocaleString()} impressions</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {chartData.length > 0 && (
         <ChartContainer config={chartConfig} className="h-48 w-full">
@@ -344,23 +373,6 @@ function PlatformMetricsDetail({
   );
 }
 
-function MetricTile({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}): ReactElement {
-  return (
-    <div className="rounded-md border bg-background px-3 py-2">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="font-semibold text-sm tabular-nums">
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-    </div>
-  );
-}
-
 export function PlatformAccountMetrics(): ReactElement {
   const queryClient = useQueryClient();
 
@@ -375,12 +387,14 @@ export function PlatformAccountMetrics(): ReactElement {
     staleTime: 30_000,
   });
 
+  const xConnected = xStatusQuery.data?.connected ?? false;
+  const moltbookConnected = moltbookStatusQuery.data?.connected ?? false;
+
   const xMetricsQuery = useQuery<MetricsResponse, Error>({
     queryKey: ["platform-account-metrics", "x"],
     queryFn: () => fetchXMetrics(false),
-    enabled: false,
-    staleTime: Number.POSITIVE_INFINITY,
-    gcTime: Number.POSITIVE_INFINITY,
+    enabled: xConnected,
+    staleTime: 30_000,
   });
 
   const refreshXMetrics = useMutation({
@@ -396,23 +410,28 @@ export function PlatformAccountMetrics(): ReactElement {
   const xStatus =
     xMetricsQuery.data?.status ?? xStatusQuery.data?.accounts[0]?.status;
   const xSnapshot = xMetricsQuery.data?.metrics ?? null;
-  const xConnected = xStatusQuery.data?.connected ?? false;
-  const moltbookConnected = moltbookStatusQuery.data?.connected ?? false;
+  const xHandle =
+    xSnapshot?.profile.handle ?? xStatusQuery.data?.accounts[0]?.handle;
+  const moltbookHandle = moltbookStatusQuery.data?.accounts[0]?.handle;
+  const xLabel = statusLabel({ connected: xConnected, status: xStatus });
+  const moltbookLabel = statusLabel({
+    connected: moltbookConnected,
+    status: moltbookStatusQuery.data?.accounts[0]?.status,
+  });
   const liveAccountCount = Number(xConnected) + Number(moltbookConnected);
   const totalFollowers = xSnapshot?.profile.followers ?? 0;
   const totalEngagement = engagementTotal(xSnapshot);
   const rate = engagementRate(xSnapshot);
-  const kpiLabel = rate == null ? "No KPI yet" : `${(rate * 100).toFixed(2)}%`;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-semibold text-muted-foreground text-xs uppercase tracking-wider">
-            Platform account metrics
+            Account metrics
           </h2>
           <p className="text-muted-foreground text-sm">
-            Growth-facing account totals and expandable per-platform snapshots.
+            Cached channel health for the growth loop.
           </p>
         </div>
         <Button
@@ -438,134 +457,50 @@ export function PlatformAccountMetrics(): ReactElement {
         <MetricTile label="Live accounts" value={`${liveAccountCount}/2`} />
         <MetricTile label="Followers" value={totalFollowers} />
         <MetricTile label="Engagement" value={totalEngagement} />
-        <MetricTile label="Core KPI" value={kpiLabel} />
+        <MetricTile
+          label="Core KPI"
+          value={rate == null ? "-" : `${(rate * 100).toFixed(2)}%`}
+          detail={
+            xSnapshot
+              ? `Updated ${formatRelativeTime(xSnapshot.fetchedAt)}`
+              : undefined
+          }
+        />
       </div>
 
       <Card>
-        <CardHeader className="px-5 py-3">
+        <CardHeader className="px-4 py-3">
           <CardTitle className="font-semibold text-muted-foreground text-xs uppercase tracking-wider">
-            My accounts
+            Accounts
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Account</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Followers</TableHead>
-                <TableHead className="text-right">Engagement</TableHead>
-                <TableHead className="text-right">Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {PLATFORMS.map((platform) => {
-                const statusData =
-                  platform.statusProvider === "x"
-                    ? xStatusQuery.data
-                    : platform.statusProvider === "moltbook"
-                      ? moltbookStatusQuery.data
-                      : undefined;
-                const connected = statusData?.connected ?? false;
-                const account = statusData?.accounts[0] ?? null;
-                const effectiveStatus =
-                  platform.id === "x"
-                    ? (xMetricsQuery.data?.status ?? account?.status)
-                    : account?.status;
-                const label = statusLabel({
-                  connected,
-                  status: effectiveStatus,
-                  enabled: platform.enabled,
-                });
-                const handle =
-                  platform.id === "x"
-                    ? (xSnapshot?.profile.handle ?? account?.handle)
-                    : account?.handle;
-                const platformSnapshot = platform.id === "x" ? xSnapshot : null;
-                const disabledDetail =
-                  !platform.enabled ||
-                  (platform.enabled && !platform.metricsEnabled);
-
-                return (
-                  <ExpandableTableRow
-                    key={platform.id}
-                    colSpan={6}
-                    defaultExpanded={platform.id === "x"}
-                    cellClassNames={[
-                      undefined,
-                      undefined,
-                      "text-right",
-                      "text-right",
-                      "text-right",
-                    ]}
-                    expandedContent={
-                      disabledDetail ? (
-                        <p className="text-muted-foreground text-sm">
-                          {platform.enabled
-                            ? "Connection status is wired; metrics snapshots for this platform are next."
-                            : "Planned platform. It will use the same status, snapshot, refresh, and circuit-break shape."}
-                        </p>
-                      ) : (
-                        <PlatformMetricsDetail
-                          snapshot={platformSnapshot}
-                          status={effectiveStatus}
-                          refreshError={
-                            refreshXMetrics.isError ||
-                            !!xMetricsQuery.data?.error
-                          }
-                        />
-                      )
-                    }
-                    cells={[
-                      <span
-                        key="account"
-                        className="flex min-w-0 items-center gap-2"
-                      >
-                        <platform.Icon className="size-4 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block font-medium text-sm">
-                            {platform.label}
-                          </span>
-                          <span className="block truncate text-muted-foreground text-xs">
-                            {handle ?? (connected ? "Connected" : "Not linked")}
-                          </span>
-                        </span>
-                      </span>,
-                      <Badge key="status" intent={statusIntent(label)} size="sm">
-                        {label}
-                      </Badge>,
-                      <span key="followers" className="tabular-nums">
-                        {formatNumber(platformSnapshot?.profile.followers)}
-                      </span>,
-                      <span key="engagement" className="tabular-nums">
-                        {platformSnapshot
-                          ? engagementTotal(platformSnapshot)
-                          : "—"}
-                      </span>,
-                      <span key="updated" className="text-muted-foreground text-xs">
-                        {platformSnapshot
-                          ? formatRelativeTime(platformSnapshot.fetchedAt)
-                          : "—"}
-                      </span>,
-                    ]}
-                  />
-                );
-              })}
-            </TableBody>
-          </Table>
+          <AccountPanel
+            label="X"
+            Icon={XIcon}
+            handle={xHandle ?? (xConnected ? "Linked" : "Not linked")}
+            status={xLabel}
+            defaultExpanded
+          >
+            <XMetricsDetail
+              connected={xConnected}
+              snapshot={xSnapshot}
+              status={xStatus}
+              refreshError={
+                refreshXMetrics.isError || !!xMetricsQuery.data?.error
+              }
+            />
+          </AccountPanel>
+          <AccountPanel
+            label="Moltbook"
+            Icon={BookOpen}
+            handle={
+              moltbookHandle ?? (moltbookConnected ? "Linked" : "Not linked")
+            }
+            status={moltbookLabel}
+          />
         </CardContent>
       </Card>
-
-      {!xConnected && (
-        <p className="text-muted-foreground text-xs">
-          Connect X from{" "}
-          <Link href="/profile" className="underline">
-            Profile
-          </Link>{" "}
-          to enable the first real account metrics refresh.
-        </p>
-      )}
     </section>
   );
 }

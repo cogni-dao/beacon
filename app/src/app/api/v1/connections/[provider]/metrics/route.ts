@@ -35,7 +35,7 @@ export const dynamic = "force-dynamic";
 
 const logger = makeLogger({ component: "ConnectionsMetricsRoute" });
 
-/** Recent posts to surface on the profile insights card. */
+/** Recent posts to surface in the Growth account metrics module. */
 const RECENT_POST_LIMIT = 10;
 
 /** Circuit-breaker states: while in one of these, we never call the platform. */
