@@ -43,19 +43,19 @@ export class ViemEvmOnchainClient implements EvmOnchainClient {
 
     const env = serverEnv();
     // On-chain READS need only chain identity + RPC - NOT payment activation. Source the
-    // chain from cogni_dao.chain_id (getDaoConfig), not getPaymentConfig: a treasury balance
+    // chain from governance.chain_id (getDaoConfig), not getPaymentConfig: a treasury balance
     // read must work for any node with a DAO, activated or not. The getPaymentConfig() gate
     // threw "Payment rails not activated" for non-activated nodes -> fleet "Treasury --". (op #1843)
     const dao = getDaoConfig();
     if (!dao) {
       throw new Error(
-        "[ViemEvmOnchainClient] Node DAO identity not configured (cogni_dao section incomplete)"
+        "[ViemEvmOnchainClient] Node DAO identity not configured (governance section incomplete)"
       );
     }
 
     if (Number(dao.chain_id) !== CHAIN.id) {
       throw new Error(
-        `[ViemEvmOnchainClient] Chain mismatch: repo-spec cogni_dao declares ${dao.chain_id}, CHAIN constant is ${CHAIN.id}`
+        `[ViemEvmOnchainClient] Chain mismatch: repo-spec governance declares ${dao.chain_id}, CHAIN constant is ${CHAIN.id}`
       );
     }
 

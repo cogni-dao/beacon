@@ -35,7 +35,7 @@ export class ViemTreasuryAdapter implements TreasuryReadPort {
     // treasury READ must work for any node with a DAO, activated or not (op #1843 follow-up).
     const dao = getDaoConfig();
     if (!dao) {
-      throw new Error("[ViemTreasuryAdapter] Node DAO identity not configured (cogni_dao section incomplete)");
+      throw new Error("[ViemTreasuryAdapter] Node DAO identity not configured (governance section incomplete)");
     }
     if (params.chainId !== Number(dao.chain_id)) {
       throw new Error(

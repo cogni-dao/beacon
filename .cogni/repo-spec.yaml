@@ -21,7 +21,7 @@ intent:
     icon: "RadioTower"
     color: "#f59e0b"
 
-cogni_dao:
+governance:
   dao_contract: "0xdd1776f660e4cf46b2fb723196242db4d45e8b58"
   plugin_contract: "0xc6808d775b53229116547112db1f0394888d1abf"
   signal_contract: "0xbc20b71e4d33e12e5dcf65e8fc665d62188abaa8"
