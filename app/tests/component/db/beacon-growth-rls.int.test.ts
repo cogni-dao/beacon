@@ -5,7 +5,7 @@
  * Module: `@tests/component/db/beacon-growth-rls.int.test`
  * Purpose: Prove the beacon-growth `tenant_isolation` RLS policies actually
  *   isolate the beacon-growth tables (`campaigns`, `findings`, `posts`,
- *   `post_metrics`, `channel_accounts`) by `account_id` at the database layer —
+ *   `post_metrics`, `post_decisions`) by `account_id` at the database layer —
  *   not green-on-empty.
  * Scope: Seeds TWO accounts with real rows, then asserts (a) an account sees its
  *   own rows, (b) it cannot see the other account's rows, (c) a forgotten
@@ -32,8 +32,8 @@ import { getAppDb } from "@/adapters/server/db/client";
 import {
   billingAccounts,
   campaigns,
-  channelAccounts,
   findings,
+  postDecisions,
   postMetrics,
   posts,
   users,
@@ -127,11 +127,6 @@ describe("beacon-growth RLS account isolation", () => {
         funnelTargets: { tofu: 3, mofu: 2, bofu: 1 },
         autonomy: "approve_gate",
       });
-      await seedDb.insert(channelAccounts).values({
-        accountId: acct.accountId,
-        channel: "x",
-        handle: `@account_${tag}`,
-      });
       // Findings are the tenant outputs of the RESEARCH activity (0034). Seed
       // one per account to prove account-isolation + the kind CHECK.
       await seedDb.insert(findings).values({
@@ -159,6 +154,15 @@ describe("beacon-growth RLS account isolation", () => {
         impressions: 100,
         likes: 5,
       });
+      await seedDb.insert(postDecisions).values({
+        accountId: acct.accountId,
+        campaignId: CAMPAIGN_ID,
+        postId: acct.postId,
+        action: "posted",
+        score: 0.75,
+        rank: 1,
+        reason: `seed-${tag}`,
+      });
     }
   });
 
@@ -167,13 +171,13 @@ describe("beacon-growth RLS account isolation", () => {
     const seedDb = getSeedDb();
     const ids = [accountA.accountId, accountB.accountId];
     await seedDb
+      .delete(postDecisions)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
+    await seedDb
       .delete(postMetrics)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(posts)
-      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
-    await seedDb
-      .delete(channelAccounts)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(findings)
@@ -259,10 +263,10 @@ describe("beacon-growth RLS account isolation", () => {
     });
   });
 
-  describe("channel_accounts - account isolation", () => {
-    it("account A sees only its own channel accounts", async () => {
+  describe("post_decisions - account isolation", () => {
+    it("account A sees only its own post decisions", async () => {
       const rows = await withTenantScope(db, accountA.userId, (tx) =>
-        tx.select().from(channelAccounts)
+        tx.select().from(postDecisions)
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
       for (const r of rows) {
@@ -313,9 +317,9 @@ describe("beacon-growth RLS account isolation", () => {
       expect(rows).toHaveLength(0);
     });
 
-    it("no SET LOCAL on channel_accounts returns zero rows", async () => {
+    it("no SET LOCAL on post_decisions returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
-        tx.select().from(channelAccounts)
+        tx.select().from(postDecisions)
       );
       expect(rows).toHaveLength(0);
     });
@@ -378,6 +382,26 @@ describe("beacon-growth RLS account isolation", () => {
             campaignId: CAMPAIGN_ID,
             kind: "angle",
             content: "cross-account finding",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
+    it("cross-account post decision INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(postDecisions).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: CAMPAIGN_ID,
+            postId: accountB.postId,
+            action: "posted",
+            reason: "cross-account decision",
           })
         );
       } catch (e) {

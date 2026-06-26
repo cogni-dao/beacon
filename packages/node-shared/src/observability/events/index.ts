@@ -106,6 +106,7 @@ export const EVENT_NAMES = {
   GOVERNANCE_SYNC_COMPLETE: "governance.sync.complete",
 
   // Growth Domain (beacon growth loop — broadcast/measure/verify)
+  GROWTH_PUBLISH_APPROVED_COMPLETE: "growth.publish_approved.complete",
   GROWTH_METRICS_INGEST_COMPLETE: "growth.metrics_ingest.complete",
   GROWTH_RESOLVE_COMPLETE: "growth.resolve.complete",
 

@@ -171,7 +171,7 @@ React + S3 + async job queue + publisher.
 | `research` | **new** | Tenant-private grounding: `(account_id, campaign_id, kind[icp\|use_case\|pain_point\|topic\|competitor], content, source_ref)`. |
 | `posts` (rename `broadcasts`) | **extend** | THE QUEUE. Add `score, revision`, richer status lanes (adopt Listmonk superset: `generated\|in_review\|approved\|posted\|rejected\|failed` + `paused/cancelled`, terminal `failed` needs manual retry). Keep `idea_key` for vNext multi-channel fan-out. |
 | `post_metrics` | **existing** | Keep append-only snapshots; KPI resolver must read **per-layer** + aggregate on read; impressions nullable on X free-tier → fall back to engagement-per-follower. |
-| `channel_accounts` | **existing** | No v0 change; Mixpost adapter pattern when multi-channel arrives. |
+| `connections` | **existing** | Single platform-account credential model. Moltbook/X accounts are linked here and resolved through `ConnectionBrokerPort`; legacy `channel_accounts` is purged. |
 | `post_decisions` | **new, tiny** | **Add NOW (near-zero cost).** `(post_id, context(jsonb), propensity(real), policy_version)` — the precondition for rigorous LEARN/OPE. Skip it and LEARN rigor is permanently capped. |
 | `clip_jobs` *(vNext)* | new | Durable, GPU-aware, resumable: one row per **stage** per clip `(upload_id, stage, status, artifact_ref(S3), error)`. |
 | `clips` *(vNext)* | new | `(upload_id, start_word_idx, end_word_idx, virality_score, score_subsignals(jsonb), status)`; becomes a `posts` row only when approved. |

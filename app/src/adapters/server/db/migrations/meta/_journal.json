@@ -281,6 +281,13 @@
       "when": 1782500523339,
       "tag": "0039_public_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782501165419,
+      "tag": "0040_rich_cargill",
+      "breakpoints": true
     }
   ]
 }
