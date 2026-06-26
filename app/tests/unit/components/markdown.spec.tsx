@@ -18,7 +18,9 @@ import { Markdown } from "@/components/markdown";
 
 describe("Markdown", () => {
   it("renders markdown syntax as semantic content", () => {
-    render(<Markdown content={"# Knowledge\n\nThis is **bold** and `code`."} />);
+    render(
+      <Markdown content={"# Knowledge\n\nThis is **bold** and `code`."} />
+    );
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Knowledge" })
