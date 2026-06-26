@@ -3,8 +3,11 @@
 
 /**
  * Module: `@app/(app)/profile/view`
- * Purpose: Client component for user profile settings — display name, avatar color, and linked accounts.
- * Scope: Reads/updates user profile via /api/v1/users/me; does not handle OAuth flow directly or manage session persistence.
+ * Purpose: Client component for user profile settings, account linking, and platform connection management.
+ * Scope: Reads/updates user profile via /api/v1/users/me and drives
+ *   connect/disconnect affordances only. Does not render growth dashboards,
+ *   platform account metrics, or random downstream card wiring; those belong
+ *   on `/growth` or other operational surfaces.
  * Invariants: Requires authenticated session (enforced by parent layout); avatar color updates reflected in session via update().
  * Side-effects: IO (fetch API, session update, navigation for OAuth linking)
  * Links: src/contracts/users.profile.v1.contract.ts, src/app/api/v1/users/me/route.ts
@@ -14,14 +17,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Bot,
-  Check,
-  FlaskConical,
-  RefreshCw,
-  Server as ServerIcon,
-} from "lucide-react";
+import { Bot, Check, FlaskConical, Server as ServerIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import type { ReactElement, ReactNode } from "react";
@@ -52,76 +48,6 @@ interface ProfileData {
   avatarColor: string | null;
   resolvedDisplayName: string;
   linkedProviders: LinkedProvider[];
-}
-
-interface XRecentPostView {
-  externalId: string;
-  text: string;
-  createdAt: string;
-  likes: number;
-  reposts: number;
-  replies: number;
-  impressions?: number;
-}
-
-interface XAccountMetricsView {
-  profile: {
-    externalAccountId: string;
-    handle: string;
-    displayName: string;
-    followers: number;
-    following?: number;
-    postCount?: number;
-    avatarUrl?: string;
-  };
-  recentPosts: XRecentPostView[];
-  fetchedAt: string;
-}
-
-/* ─── X insights (read-cost discipline) ───────────────────────────────
- * The X metrics read is a paid platform call. The cost boundary lives in the
- * route, NOT here: a plain GET serves the server-cached snapshot ($0 platform);
- * only `?refresh=1` spends a real read. So the card fetches the cheap cached
- * snapshot on mount and the Refresh button hits the paid path. The route also
- * reports a circuit-breaker `status` (needs_billing/rate_limited) so we can show
- * "needs credits" instead of re-calling a broken connection. See
- * docs/spec/platform-connections.md §Read-cost governance. */
-interface XMetricsResponse {
-  linked: boolean;
-  /** Connection health: active | needs_billing | rate_limited | … */
-  status?: string;
-  metrics?: XAccountMetricsView | null;
-  /** True when serving a stale snapshot because the connection is circuit-broken. */
-  stale?: boolean;
-  /** Coarse error code on a transient read failure (snapshot still served). */
-  error?: string;
-}
-
-/** Fetch the metrics route. `refresh` toggles the paid platform read. */
-async function fetchXMetrics(refresh: boolean): Promise<XMetricsResponse> {
-  const res = await fetch(
-    `/api/v1/connections/x/metrics${refresh ? "?refresh=1" : ""}`
-  );
-  const body = (await res
-    .json()
-    .catch(() => null)) as XMetricsResponse | null;
-  if (body) return body; // route returns a body (incl. last snapshot) even on 502
-  if (!res.ok) throw new Error(`x metrics read failed (${res.status})`);
-  return { linked: false };
-}
-
-/** Coarse "updated N ago" label for the snapshot timestamp. */
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffMs = Date.now() - then;
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 interface OwnershipAttribution {
@@ -751,30 +677,6 @@ export function ProfileView(): ReactElement {
 
   const walletAddress = session?.user?.walletAddress ?? null;
 
-  // X insights: the cost boundary is the route, not here. The mount query hits
-  // the PLAIN GET — which the route serves from its server-side snapshot with
-  // ZERO platform calls — so rendering the card is free. The Refresh button runs
-  // a mutation against `?refresh=1`, the only path that spends a paid read.
-  const queryClient = useQueryClient();
-  const xMetricsQuery = useQuery<XMetricsResponse, Error>({
-    queryKey: ["x-metrics", walletAddress],
-    queryFn: () => fetchXMetrics(false),
-    enabled: xConnected && !!walletAddress,
-    staleTime: Number.POSITIVE_INFINITY,
-    gcTime: Number.POSITIVE_INFINITY,
-  });
-  const refreshXMetrics = useMutation({
-    mutationFn: () => fetchXMetrics(true),
-    onSuccess: (data) =>
-      queryClient.setQueryData(["x-metrics", walletAddress], data),
-  });
-  const xMetrics = xMetricsQuery.data?.metrics ?? null;
-  const xStatus = xMetricsQuery.data?.status;
-  const xNeedsCredits =
-    xStatus === "needs_billing" || xStatus === "rate_limited";
-  const xRefreshFailed =
-    refreshXMetrics.isError || !!xMetricsQuery.data?.error;
-
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
   const avatarLetter = displayName.charAt(0).toUpperCase();
@@ -931,9 +833,6 @@ export function ProfileView(): ReactElement {
                   if (res.ok) {
                     setXConnected(false);
                     setXHandle(null);
-                    queryClient.removeQueries({
-                      queryKey: ["x-metrics", walletAddress],
-                    });
                   }
                 } finally {
                   setXLoading(false);
@@ -956,104 +855,6 @@ export function ProfileView(): ReactElement {
           </Button>
         )}
       </SettingRow>
-
-      {/* X insights — the route serves a cached snapshot for free; Refresh is the
-          only path that spends a paid X read, and a circuit-broken connection
-          (needs_billing/rate_limited) is never re-called. See
-          docs/spec/platform-connections.md §Read-cost governance. */}
-      {xConnected && (
-        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="font-medium text-foreground text-sm">
-                X insights
-              </div>
-              <div className="text-muted-foreground text-xs">
-                {xMetrics
-                  ? `Updated ${formatRelativeTime(xMetrics.fetchedAt)}`
-                  : "Not loaded yet — click Refresh to read X."}
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={refreshXMetrics.isPending || xNeedsCredits}
-              onClick={() => {
-                refreshXMetrics.mutate();
-              }}
-            >
-              <RefreshCw
-                className={
-                  refreshXMetrics.isPending ? "animate-spin" : undefined
-                }
-              />
-              {xMetrics ? "Refresh" : "Load insights"}
-            </Button>
-          </div>
-
-          {xNeedsCredits ? (
-            <p className="text-destructive text-xs">
-              X reads are paused — the X app needs a positive pay-per-use credit
-              balance. Reconnect once it&apos;s funded.
-            </p>
-          ) : (
-            xRefreshFailed && (
-              <p className="text-destructive text-xs">
-                Couldn&apos;t refresh X insights — try again later.
-              </p>
-            )
-          )}
-
-          {xMetrics && (
-            <>
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="truncate font-medium text-foreground text-sm">
-                    {xMetrics.profile.displayName}
-                  </div>
-                  <div className="truncate text-muted-foreground text-xs">
-                    {xMetrics.profile.handle}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-semibold text-foreground text-sm tabular-nums">
-                    {xMetrics.profile.followers.toLocaleString()}
-                  </div>
-                  <div className="text-muted-foreground text-xs">followers</div>
-                </div>
-              </div>
-              {xMetrics.recentPosts.length > 0 ? (
-                <ul className="space-y-2">
-                  {xMetrics.recentPosts.map((post) => (
-                    <li
-                      key={post.externalId}
-                      className="rounded-md border border-border/60 p-3"
-                    >
-                      <p className="line-clamp-2 text-foreground text-sm">
-                        {post.text}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-4 text-muted-foreground text-xs tabular-nums">
-                        <span>{post.likes.toLocaleString()} likes</span>
-                        <span>{post.reposts.toLocaleString()} reposts</span>
-                        <span>{post.replies.toLocaleString()} replies</span>
-                        {typeof post.impressions === "number" && (
-                          <span>
-                            {post.impressions.toLocaleString()} impressions
-                          </span>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  No recent posts to show yet.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       <SettingRow
         icon={<Bot className="size-5" />}
