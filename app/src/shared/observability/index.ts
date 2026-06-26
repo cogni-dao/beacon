@@ -18,6 +18,7 @@ export const EVENT_NAMES = {
   // Auth perimeter (proxy): request rejected before reaching any route handler,
   // so the request-scoped logger never sees it — emitted directly from the proxy.
   AUTH_PERIMETER_DENIED: "auth.perimeter.denied",
+  ADAPTER_MOLTBOOK_ERROR: "adapter.moltbook.error",
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];

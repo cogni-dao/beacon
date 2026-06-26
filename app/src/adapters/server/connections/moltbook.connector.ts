@@ -20,8 +20,8 @@
 import { z } from "zod";
 import type { CredentialPlatformConnector, PlatformLinkResult } from "@/ports";
 
-/** Official Moltbook API base (live-verified: GET /agents/me requires Bearer auth). */
-const DEFAULT_MOLTBOOK_API_BASE_URL = "https://moltbook.com/api/v1";
+/** Official Moltbook API base. Use `www` to avoid auth-stripping redirects. */
+const DEFAULT_MOLTBOOK_API_BASE_URL = "https://www.moltbook.com/api/v1";
 
 /**
  * The authenticated agent profile from `GET /agents/me`. `name` is the stable
