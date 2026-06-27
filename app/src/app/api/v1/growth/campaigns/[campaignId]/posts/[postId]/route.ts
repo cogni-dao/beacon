@@ -55,6 +55,7 @@ import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { campaigns, findings, posts } from "@/shared/db/schema";
+import { EVENT_NAMES, logEvent } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -141,10 +142,30 @@ export const PATCH = wrapRouteHandlerWithLogging<{
     auth: { mode: "required", getSessionUser },
   },
   async (ctx, request, sessionUser, context) => {
+    const startedAt = Date.now();
+    const logComplete = (fields: Record<string, unknown>) =>
+      logEvent(ctx.log, EVENT_NAMES.GROWTH_CAMPAIGN_POST_UPDATE_COMPLETE, {
+        reqId: ctx.reqId,
+        routeId: ctx.routeId,
+        durationMs: Date.now() - startedAt,
+        ...fields,
+      });
     if (!sessionUser) {
+      logComplete({
+        status: 401,
+        outcome: "error",
+        errorCode: "unauthorized",
+        action: "unknown",
+      });
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     if (!context) {
+      logComplete({
+        status: 400,
+        outcome: "error",
+        errorCode: "missing_route_context",
+        action: "unknown",
+      });
       return NextResponse.json(
         { error: "missing route context" },
         { status: 400 }
@@ -157,11 +178,28 @@ export const PATCH = wrapRouteHandlerWithLogging<{
     try {
       body = await request.json();
     } catch {
+      logComplete({
+        status: 400,
+        outcome: "error",
+        errorCode: "invalid_json",
+        campaignId: slug,
+        postId,
+        action: "unknown",
+      });
       return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
     }
 
     const parsed = PatchPostInputSchema.safeParse(body);
     if (!parsed.success) {
+      logComplete({
+        status: 400,
+        outcome: "error",
+        errorCode: "invalid_input",
+        campaignId: slug,
+        postId,
+        action: "unknown",
+        issuesCount: parsed.error.issues.length,
+      });
       return NextResponse.json(
         { error: "invalid input", issues: parsed.error.issues },
         { status: 400 }
@@ -210,19 +248,25 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       );
       const row = updated[0];
       if (!row) {
-        return NextResponse.json({ error: "post not found" }, { status: 404 });
-      }
-
-      ctx.log.info(
-        {
-          route: "growth.campaigns.posts.patch",
+        logComplete({
+          status: 404,
+          outcome: "error",
+          errorCode: "post_not_found",
           campaignId: slug,
           postId,
           action: input.action,
-          status: row.status,
-        },
-        "growth.campaign.post_reviewed"
-      );
+        });
+        return NextResponse.json({ error: "post not found" }, { status: 404 });
+      }
+
+      logComplete({
+        status: 200,
+        outcome: "success",
+        campaignId: slug,
+        postId,
+        action: input.action,
+        postStatus: row.status,
+      });
 
       return NextResponse.json(
         {
@@ -292,6 +336,14 @@ export const PATCH = wrapRouteHandlerWithLogging<{
     });
 
     if (!loaded.campaignRow || !loaded.postRow) {
+      logComplete({
+        status: 404,
+        outcome: "error",
+        errorCode: "post_not_found",
+        campaignId: slug,
+        postId,
+        action: input.action,
+      });
       return NextResponse.json({ error: "post not found" }, { status: 404 });
     }
     const { campaignRow, postRow, findingRows } = loaded;
@@ -357,6 +409,15 @@ export const PATCH = wrapRouteHandlerWithLogging<{
 
     // REFINE_NEVER_DESTROYS: no usable rewrite → keep the original draft untouched.
     if (!revised) {
+      logComplete({
+        status: 502,
+        outcome: "error",
+        errorCode: "refine_empty_revision",
+        campaignId: slug,
+        postId,
+        action: "refine",
+        findingsCount: generateFindings.length,
+      });
       return NextResponse.json(
         { error: "refine produced no usable revision; original draft kept" },
         { status: 502 }
@@ -400,20 +461,27 @@ export const PATCH = wrapRouteHandlerWithLogging<{
     );
     const row = updated[0];
     if (!row) {
-      return NextResponse.json({ error: "post not found" }, { status: 404 });
-    }
-
-    ctx.log.info(
-      {
-        route: "growth.campaigns.posts.patch",
+      logComplete({
+        status: 404,
+        outcome: "error",
+        errorCode: "post_not_found",
         campaignId: slug,
         postId,
         action: "refine",
-        revision: row.revision,
-        hadFeedback: Boolean(input.feedback),
-      },
-      "growth.campaign.post_refined"
-    );
+      });
+      return NextResponse.json({ error: "post not found" }, { status: 404 });
+    }
+
+    logComplete({
+      status: 200,
+      outcome: "success",
+      campaignId: slug,
+      postId,
+      action: "refine",
+      revision: row.revision,
+      hadFeedback: Boolean(input.feedback),
+      findingsCount: generateFindings.length,
+    });
 
     return NextResponse.json(
         {

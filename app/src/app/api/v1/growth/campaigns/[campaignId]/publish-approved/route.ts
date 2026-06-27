@@ -28,6 +28,7 @@ import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { runPublishApprovedPostsJob } from "@/bootstrap/jobs/publishApprovedPosts.job";
 import { campaigns, posts } from "@/shared/db/schema";
+import { EVENT_NAMES, logEvent } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,10 +45,34 @@ export const POST = wrapRouteHandlerWithLogging<{
 		auth: { mode: "required", getSessionUser },
 	},
 	async (ctx, request, sessionUser, context) => {
+		const startedAt = Date.now();
+		const logComplete = (fields: Record<string, unknown>) =>
+			logEvent(ctx.log, EVENT_NAMES.GROWTH_CAMPAIGN_PUBLISH_APPROVED_COMPLETE, {
+				reqId: ctx.reqId,
+				routeId: ctx.routeId,
+				durationMs: Date.now() - startedAt,
+				...fields,
+			});
 		if (!sessionUser) {
+			logComplete({
+				status: 401,
+				outcome: "error",
+				errorCode: "unauthorized",
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 		}
 		if (!context) {
+			logComplete({
+				status: 400,
+				outcome: "error",
+				errorCode: "missing_route_context",
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "missing route context" },
 				{ status: 400 },
@@ -60,10 +85,29 @@ export const POST = wrapRouteHandlerWithLogging<{
 		try {
 			body = await request.json();
 		} catch {
+			logComplete({
+				status: 400,
+				outcome: "error",
+				errorCode: "invalid_json",
+				campaignId: slug,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
 		}
 		const parsed = PublishApprovedInputSchema.safeParse(body);
 		if (!parsed.success) {
+			logComplete({
+				status: 400,
+				outcome: "error",
+				errorCode: "invalid_input",
+				campaignId: slug,
+				issuesCount: parsed.error.issues.length,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "invalid input", issues: parsed.error.issues },
 				{ status: 400 },
@@ -96,24 +140,64 @@ export const POST = wrapRouteHandlerWithLogging<{
 		});
 
 		if (!loaded.campaignRow || !loaded.postRow) {
+			logComplete({
+				status: 404,
+				outcome: "error",
+				errorCode: "post_not_found",
+				campaignId: slug,
+				postId,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "post not found" },
 				{ status: 404 },
 			);
 		}
 		if (loaded.postRow.status !== "approved") {
+			logComplete({
+				status: 409,
+				outcome: "error",
+				errorCode: "post_not_approved",
+				campaignId: slug,
+				postId,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "post must be approved before publish" },
 				{ status: 409 },
 			);
 		}
 		if (loaded.postRow.channel !== "moltbook") {
+			logComplete({
+				status: 409,
+				outcome: "error",
+				errorCode: "unsupported_channel",
+				campaignId: slug,
+				postId,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "only Moltbook posts can be published here" },
 				{ status: 409 },
 			);
 		}
 		if (loaded.postRow.externalPostId) {
+			logComplete({
+				status: 409,
+				outcome: "error",
+				errorCode: "already_published",
+				campaignId: slug,
+				postId,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "post is already published" },
 				{ status: 409 },
@@ -127,6 +211,16 @@ export const POST = wrapRouteHandlerWithLogging<{
 			userId: sessionUser.id,
 		});
 		if (account.id !== loaded.campaignRow.accountId) {
+			logComplete({
+				status: 404,
+				outcome: "error",
+				errorCode: "post_not_found",
+				campaignId: slug,
+				postId,
+				considered: 0,
+				published: 0,
+				failed: 0,
+			});
 			return NextResponse.json(
 				{ error: "post not found" },
 				{ status: 404 },
@@ -137,20 +231,18 @@ export const POST = wrapRouteHandlerWithLogging<{
 			scope: { accountId: account.id, campaignId: slug, postId },
 		});
 
-		ctx.log.info(
-			{
-				route: "growth.campaigns.publish_approved",
-				campaignId: slug,
-				postId,
-				considered: summary.considered,
-				published: summary.published,
-				skippedNoConnection: summary.skippedNoConnection,
-				skippedNotEligible: summary.skippedNotEligible,
-				skippedMissingPayload: summary.skippedMissingPayload,
-				failed: summary.failed,
-			},
-			"growth.campaign.publish_approved_complete",
-		);
+		logComplete({
+			status: 200,
+			outcome: "success",
+			campaignId: slug,
+			postId,
+			considered: summary.considered,
+			published: summary.published,
+			skippedNoConnection: summary.skippedNoConnection,
+			skippedNotEligible: summary.skippedNotEligible,
+			skippedMissingPayload: summary.skippedMissingPayload,
+			failed: summary.failed,
+		});
 
 		return NextResponse.json({ campaignId: slug, postId, ...summary }, { status: 200 });
 	},

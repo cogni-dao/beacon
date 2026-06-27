@@ -51,6 +51,7 @@ import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { campaigns, findings, posts } from "@/shared/db/schema";
+import { EVENT_NAMES, logEvent } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -101,10 +102,32 @@ export const POST = wrapRouteHandlerWithLogging<{
     auth: { mode: "required", getSessionUser },
   },
   async (ctx, _request, sessionUser, context) => {
+    const startedAt = Date.now();
+    const logComplete = (fields: Record<string, unknown>) =>
+      logEvent(ctx.log, EVENT_NAMES.GROWTH_CAMPAIGN_GENERATE_COMPLETE, {
+        reqId: ctx.reqId,
+        routeId: ctx.routeId,
+        durationMs: Date.now() - startedAt,
+        ...fields,
+      });
     if (!sessionUser) {
+      logComplete({
+        status: 401,
+        outcome: "error",
+        errorCode: "unauthorized",
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     if (!context) {
+      logComplete({
+        status: 400,
+        outcome: "error",
+        errorCode: "missing_route_context",
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json(
         { error: "missing route context" },
         { status: 400 }
@@ -144,6 +167,14 @@ export const POST = wrapRouteHandlerWithLogging<{
     });
 
     if (!loaded.campaignRow) {
+      logComplete({
+        status: 404,
+        outcome: "error",
+        errorCode: "campaign_not_found",
+        campaignId: slug,
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json(
         { error: "campaign not found" },
         { status: 404 }
@@ -274,15 +305,13 @@ export const POST = wrapRouteHandlerWithLogging<{
           )
         : [];
 
-    ctx.log.info(
-      {
-        route: "growth.campaigns.generate",
-        campaignId: slug,
-        findingsCount: generateFindings.length,
-        postsCount: persisted.length,
-      },
-      "growth.campaign.generate_complete"
-    );
+    logComplete({
+      status: 200,
+      outcome: "success",
+      campaignId: slug,
+      findingsCount: generateFindings.length,
+      postsCount: persisted.length,
+    });
 
     return NextResponse.json(
       {

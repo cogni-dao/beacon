@@ -102,7 +102,6 @@ export async function runPublishApprovedPostsJob(
 	const acquired = (lockRow as { acquired: boolean } | undefined)?.acquired;
 	if (!acquired) {
 		reservedConn.release();
-		container.log.info({}, "growth.publish_approved already running, skipping");
 		return {
 			considered: 0,
 			published: 0,
@@ -130,8 +129,6 @@ export async function runPublishApprovedPostsJob(
 					});
 				}),
 			...(deps.scope ? { scope: deps.scope } : {}),
-			logSummary: (summary) =>
-				container.log.info(summary, "growth.publish_approved complete"),
 		});
 	} finally {
 		await reservedConn`SELECT pg_advisory_unlock(hashtext('growth_publish_approved'))`;
@@ -144,9 +141,8 @@ async function runLockedPublishApprovedPostsJob(args: {
 	broker: ConnectionBrokerPort;
 	makeMoltbookAdapter: (accessToken: string) => SocialXCapability;
 	scope?: PublishApprovedPostsScope;
-	logSummary: (summary: PublishApprovedPostsSummary) => void;
 }): Promise<PublishApprovedPostsSummary> {
-	const { db, broker, makeMoltbookAdapter, scope, logSummary } = args;
+	const { db, broker, makeMoltbookAdapter, scope } = args;
 
 	const filters = [
 		eq(posts.status, "approved"),
@@ -205,7 +201,6 @@ async function runLockedPublishApprovedPostsJob(args: {
 		skippedMissingPayload,
 		failed,
 	};
-	logSummary(summary);
 	return summary;
 }
 

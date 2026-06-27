@@ -126,18 +126,27 @@ export class MoltbookSocialAdapter implements SocialXCapability {
 			content: payload.content,
 			type: payload.type,
 		};
-		const json = await this.requestJson("/posts", {
-			method: "POST",
-			body: JSON.stringify(body),
-		});
+		const startedAt = Date.now();
+		let json: unknown;
+		try {
+			json = await this.requestJson("/posts", {
+				method: "POST",
+				body: JSON.stringify(body),
+			});
+		} catch (error) {
+			logMoltbookAdapterError("post_failed", startedAt, error);
+			throw error;
+		}
 		const parsed = MoltbookCreatePostResponseSchema.parse(json);
 		if (parsed.verification_required || parsed.verification) {
+			logMoltbookAdapterError("post_verification_required", startedAt);
 			throw new MoltbookVerificationRequiredError();
 		}
 
 		const record = parsed.post ?? parsed.data ?? parsed;
 		const externalId = stringField(record, ["id", "post_id", "uuid"]);
 		if (!externalId) {
+			logMoltbookAdapterError("post_response_missing_id", startedAt);
 			throw new Error("Moltbook create-post response did not include a post id");
 		}
 
@@ -207,6 +216,7 @@ export class MoltbookSocialAdapter implements SocialXCapability {
 	}
 
 	private async readCommentCount(externalId: string): Promise<number | null> {
+		const startedAt = Date.now();
 		try {
 			const json = await this.requestJson(
 				`/posts/${encodeURIComponent(externalId)}/comments?sort=best&limit=100`,
@@ -222,6 +232,8 @@ export class MoltbookSocialAdapter implements SocialXCapability {
 					event: EVENT_NAMES.ADAPTER_MOLTBOOK_ERROR,
 					dep: "moltbook",
 					reasonCode: "comments_read_failed",
+					durationMs: Date.now() - startedAt,
+					...(error instanceof MoltbookHttpError ? { status: error.status } : {}),
 				},
 				EVENT_NAMES.ADAPTER_MOLTBOOK_ERROR,
 			);
@@ -260,6 +272,26 @@ class MoltbookHttpError extends Error {
 		super(`Moltbook request failed (HTTP ${status})`);
 		this.name = "MoltbookHttpError";
 	}
+}
+
+function logMoltbookAdapterError(
+	reasonCode:
+		| "post_failed"
+		| "post_response_missing_id"
+		| "post_verification_required",
+	startedAt: number,
+	error?: unknown,
+): void {
+	logger.warn(
+		{
+			event: EVENT_NAMES.ADAPTER_MOLTBOOK_ERROR,
+			dep: "moltbook",
+			reasonCode,
+			durationMs: Date.now() - startedAt,
+			...(error instanceof MoltbookHttpError ? { status: error.status } : {}),
+		},
+		EVENT_NAMES.ADAPTER_MOLTBOOK_ERROR,
+	);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
