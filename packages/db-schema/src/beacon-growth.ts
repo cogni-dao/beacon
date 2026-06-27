@@ -257,6 +257,7 @@ export const posts = pgTable(
 		revision: integer("revision").notNull().default(0),
 		status: text("status").notNull().default("generated"),
 		externalPostId: text("external_post_id"),
+		externalPostUrl: text("external_post_url"),
 		postedAt: timestamp("posted_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()

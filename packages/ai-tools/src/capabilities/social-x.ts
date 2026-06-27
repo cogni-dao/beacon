@@ -263,6 +263,7 @@ export type PostContentInput = z.infer<typeof PostContentInputSchema>;
  */
 export const PostContentResultSchema = z.object({
   externalId: z.string().min(1).describe("Channel-native post id"),
+  url: z.string().url().describe("Canonical human-clickable post URL"),
   postedAt: z.string().datetime().describe("ISO-8601 post timestamp"),
 });
 export type PostContentResult = z.infer<typeof PostContentResultSchema>;
@@ -305,7 +306,7 @@ export interface SocialXCapability {
    * Post one piece of content to one channel.
    *
    * @param input - Channel, adapted text, optional idempotency key
-   * @returns The channel-native post id + posted timestamp
+   * @returns The channel-native post id, canonical URL, and posted timestamp
    * @throws If the post fails or the channel is unavailable
    */
   postContent(input: PostContentInput): Promise<PostContentResult>;

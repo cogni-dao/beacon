@@ -55,6 +55,9 @@ const MoltbookCreatePostResponseSchema = z
 		data: UnknownRecordSchema.optional(),
 		id: z.union([z.string(), z.number()]).optional(),
 		post_id: z.union([z.string(), z.number()]).optional(),
+		url: z.string().url().optional(),
+		post_url: z.string().url().optional(),
+		permalink: z.string().url().optional(),
 		created_at: z.string().optional(),
 	})
 	.passthrough();
@@ -140,6 +143,12 @@ export class MoltbookSocialAdapter implements SocialXCapability {
 
 		return PostContentResultSchema.parse({
 			externalId,
+			url:
+				stringField(record, ["url", "post_url", "permalink"]) ??
+				parsed.url ??
+				parsed.post_url ??
+				parsed.permalink ??
+				moltbookPostUrl(externalId),
 			postedAt:
 				stringField(record, ["created_at", "createdAt"]) ??
 				parsed.created_at ??
@@ -269,6 +278,10 @@ function stringField(
 		if (typeof value === "number" && Number.isFinite(value)) return String(value);
 	}
 	return null;
+}
+
+function moltbookPostUrl(externalId: string): string {
+	return `https://www.moltbook.com/posts/${encodeURIComponent(externalId)}`;
 }
 
 function numberField(

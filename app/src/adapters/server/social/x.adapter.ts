@@ -91,6 +91,7 @@ export class XSocialAdapter implements SocialXCapability, XInsightsCapability {
       const res = await this.client.v2.tweet(text);
       return {
         externalId: res.data.id,
+        url: `https://x.com/i/web/status/${encodeURIComponent(res.data.id)}`,
         postedAt: new Date().toISOString(),
       };
     } catch (error) {

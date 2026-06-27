@@ -55,6 +55,7 @@ describe("MoltbookSocialAdapter", () => {
 
 		expect(result).toEqual({
 			externalId: "post-1",
+			url: "https://www.moltbook.com/posts/post-1",
 			postedAt: "2026-06-26T12:00:00.000Z",
 		});
 

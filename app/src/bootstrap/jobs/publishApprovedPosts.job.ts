@@ -261,6 +261,7 @@ async function publishOne(args: {
 				.set({
 					status: "posted",
 					externalPostId: posted.externalId,
+					externalPostUrl: posted.url,
 					postedAt: new Date(posted.postedAt),
 				})
 				.where(and(eq(posts.id, row.id), eq(posts.status, "approved")))

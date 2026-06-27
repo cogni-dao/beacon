@@ -148,6 +148,7 @@ describe("runPublishApprovedPostsJob", () => {
 		};
 		const postContent = vi.fn(async () => ({
 			externalId: "moltbook-post-1",
+			url: "https://www.moltbook.com/posts/moltbook-post-1",
 			postedAt: "2026-06-26T12:00:00.000Z",
 		}));
 		const makeMoltbookAdapter = vi.fn(() => ({ postContent, readMetrics: vi.fn() }));
@@ -187,6 +188,7 @@ describe("runPublishApprovedPostsJob", () => {
 			expect.objectContaining({
 				status: "posted",
 				externalPostId: "moltbook-post-1",
+				externalPostUrl: "https://www.moltbook.com/posts/moltbook-post-1",
 			}),
 		);
 		expect(insertValues).toHaveBeenCalledWith(

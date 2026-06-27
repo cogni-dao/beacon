@@ -54,6 +54,7 @@ function makePost(overrides: Partial<CampaignPost> = {}): CampaignPost {
     score: 0.82,
     revision: 1,
     externalPostId: null,
+    externalPostUrl: null,
     postedAt: null,
     impressions: null,
     likes: 0,
@@ -129,6 +130,20 @@ describe("DraftCard - review + refine surface", () => {
   it("renders an Approved badge for an approved draft", () => {
     renderCard(makePost({ status: "approved" }));
     expect(screen.getByText("Approved")).toBeInTheDocument();
+  });
+
+  it("renders a clickable post link for posted Moltbook rows", () => {
+    renderCard(
+      makePost({
+        status: "posted",
+        externalPostId: "moltbook-post-1",
+      })
+    );
+
+    expect(screen.getByRole("link", { name: /view posted post/i })).toHaveAttribute(
+      "href",
+      "https://www.moltbook.com/posts/moltbook-post-1"
+    );
   });
 
   it("APPROVE fires PATCH action=approve", async () => {

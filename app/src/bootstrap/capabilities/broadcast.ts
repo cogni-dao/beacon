@@ -103,6 +103,7 @@ export function createBroadcastCapability(
 						.set({
 							status: "posted",
 							externalPostId: posted.externalId,
+							externalPostUrl: posted.url,
 							postedAt: new Date(posted.postedAt),
 						})
 						.where(eq(posts.id, broadcastId));
@@ -112,6 +113,7 @@ export function createBroadcastCapability(
 						channel: variant.channel,
 						status: "posted",
 						externalPostId: posted.externalId,
+						externalPostUrl: posted.url,
 					});
 				} catch (_error) {
 					logger.error(
@@ -132,6 +134,7 @@ export function createBroadcastCapability(
 						channel: variant.channel,
 						status: "failed",
 						externalPostId: null,
+						externalPostUrl: null,
 					});
 				}
 			}

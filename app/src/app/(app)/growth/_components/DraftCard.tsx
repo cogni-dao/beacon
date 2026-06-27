@@ -29,6 +29,7 @@
 
 import {
   Check,
+  ExternalLink,
   Pencil,
   Rocket,
   Save,
@@ -113,6 +114,22 @@ function normalized(value: string): string {
 
 function hasDuplicateMoltbookText(payload: MoltbookPostPayload): boolean {
   return normalized(payload.title) === normalized(payload.content);
+}
+
+function inferredPostUrl(post: CampaignPost): string | null {
+  if (post.externalPostUrl) {
+    return post.externalPostUrl;
+  }
+  if (!post.externalPostId) {
+    return null;
+  }
+  if (post.channel === "moltbook") {
+    return `https://www.moltbook.com/posts/${encodeURIComponent(post.externalPostId)}`;
+  }
+  if (post.channel === "x") {
+    return `https://x.com/i/web/status/${encodeURIComponent(post.externalPostId)}`;
+  }
+  return null;
 }
 
 function submoltOptions(currentValue: string): string[] {
@@ -240,6 +257,7 @@ export function DraftCard({
   const disabled = busy !== null;
   const payloadReady = isMoltbookPayloadReady(payload);
   const isMoltbook = post.channel === "moltbook";
+  const postUrl = post.status === "posted" ? inferredPostUrl(post) : null;
   const accountLabel =
     moltbookConnection?.handle ??
     moltbookConnection?.displayLabel ??
@@ -564,6 +582,18 @@ export function DraftCard({
               </Button>
             </div>
           </div>
+        )}
+
+        {postUrl && (
+          <a
+            className="inline-flex w-fit items-center gap-1.5 text-primary text-sm underline-offset-4 hover:underline"
+            href={postUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink className="size-3.5" aria-hidden="true" />
+            View posted post
+          </a>
         )}
 
         {error && (

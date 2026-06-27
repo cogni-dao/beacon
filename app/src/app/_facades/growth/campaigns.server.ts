@@ -313,6 +313,7 @@ export interface CampaignPost {
 	/** Count of critique→edit revision passes; 0 for first draft. */
 	revision: number;
 	externalPostId: string | null;
+	externalPostUrl: string | null;
 	postedAt: string | null;
 	impressions: number | null;
 	likes: number;
@@ -393,6 +394,7 @@ async function loadCampaignPosts(
 				score: posts.score,
 				revision: posts.revision,
 				externalPostId: posts.externalPostId,
+				externalPostUrl: posts.externalPostUrl,
 				postedAt: posts.postedAt,
 			})
 			.from(posts)
@@ -466,6 +468,7 @@ async function loadCampaignPosts(
 			score: r.score ?? null,
 			revision: r.revision ?? 0,
 			externalPostId: r.externalPostId ?? null,
+			externalPostUrl: r.externalPostUrl ?? null,
 			postedAt: r.postedAt ? r.postedAt.toISOString() : null,
 			impressions: m?.impressions ?? null,
 			likes: m?.likes ?? 0,

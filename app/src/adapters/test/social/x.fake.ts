@@ -40,8 +40,10 @@ export class FakeXSocialAdapter implements SocialXCapability {
       );
     }
     this.postCount++;
+    const externalId = `x-fake-${this.postCount}`;
     return {
-      externalId: `x-fake-${this.postCount}`,
+      externalId,
+      url: `https://x.com/i/web/status/${externalId}`,
       // Fixed epoch base + deterministic offset → stable across runs.
       postedAt: new Date(1_700_000_000_000 + this.postCount * 1000).toISOString(),
     };
