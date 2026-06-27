@@ -1,0 +1,1 @@
+ALTER TABLE "posts" ADD COLUMN "external_post_url" text;

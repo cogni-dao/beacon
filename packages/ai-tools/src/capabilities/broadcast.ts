@@ -93,6 +93,11 @@ export const BroadcastVariantResultSchema = z.object({
 		.string()
 		.nullable()
 		.describe("Channel-native post id (null when failed)"),
+	externalPostUrl: z
+		.string()
+		.url()
+		.nullable()
+		.describe("Human-clickable channel post URL (null when failed)"),
 });
 export type BroadcastVariantResult = z.infer<
 	typeof BroadcastVariantResultSchema

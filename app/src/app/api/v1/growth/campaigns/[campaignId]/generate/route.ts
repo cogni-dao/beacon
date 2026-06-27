@@ -34,6 +34,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { deriveMoltbookPayloadFromDraft } from "@cogni/ai-tools";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import {
@@ -50,6 +51,7 @@ import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { campaigns, findings, posts } from "@/shared/db/schema";
+import { EVENT_NAMES, logEvent } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,10 +102,32 @@ export const POST = wrapRouteHandlerWithLogging<{
     auth: { mode: "required", getSessionUser },
   },
   async (ctx, _request, sessionUser, context) => {
+    const startedAt = Date.now();
+    const logComplete = (fields: Record<string, unknown>) =>
+      logEvent(ctx.log, EVENT_NAMES.GROWTH_CAMPAIGN_GENERATE_COMPLETE, {
+        reqId: ctx.reqId,
+        routeId: ctx.routeId,
+        durationMs: Date.now() - startedAt,
+        ...fields,
+      });
     if (!sessionUser) {
+      logComplete({
+        status: 401,
+        outcome: "error",
+        errorCode: "unauthorized",
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     if (!context) {
+      logComplete({
+        status: 400,
+        outcome: "error",
+        errorCode: "missing_route_context",
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json(
         { error: "missing route context" },
         { status: 400 }
@@ -143,6 +167,14 @@ export const POST = wrapRouteHandlerWithLogging<{
     });
 
     if (!loaded.campaignRow) {
+      logComplete({
+        status: 404,
+        outcome: "error",
+        errorCode: "campaign_not_found",
+        campaignId: slug,
+        findingsCount: 0,
+        postsCount: 0,
+      });
       return NextResponse.json(
         { error: "campaign not found" },
         { status: 404 }
@@ -225,25 +257,40 @@ export const POST = wrapRouteHandlerWithLogging<{
             tx
               .insert(posts)
               .values(
-                drafts.map((d) => ({
-                  id: randomUUID(),
-                  accountId: account.id,
-                  campaignId: slug,
-                  // idea_key groups per-platform variants of one core idea; v0 is
-                  // single-channel single-post, so each draft is its own idea.
-                  ideaKey: randomUUID(),
-                  funnelLayer: d.funnelLayer,
-                  topic: d.topic,
-                  angle: d.angle,
-                  channel: d.channel,
-                  kind: d.kind,
-                  text: d.text,
-                  status: "generated" as const,
-                  // The workflow stamps `revision` per draft: 0 = raw draft pass only,
-                  // 1 = survived the critique→revise refine pass. Persist that so the
-                  // queue reflects which posts went through the quality loop.
-                  revision: d.revision,
-                }))
+                drafts.map((d) => {
+                  const moltbook =
+                    d.channel === "moltbook"
+                      ? deriveMoltbookPayloadFromDraft({
+                          text: d.text,
+                          ...(d.title ? { title: d.title } : {}),
+                          angle: d.angle,
+                          topic: d.topic,
+                        })
+                      : null;
+                  return {
+                    id: randomUUID(),
+                    accountId: account.id,
+                    campaignId: slug,
+                    // idea_key groups per-platform variants of one core idea; v0 is
+                    // single-channel single-post, so each draft is its own idea.
+                    ideaKey: randomUUID(),
+                    funnelLayer: d.funnelLayer,
+                    topic: d.topic,
+                    angle: d.angle,
+                    channel: d.channel,
+                    kind: d.kind,
+                    text: d.text,
+                    moltbookSubmoltName: moltbook?.submoltName ?? null,
+                    moltbookTitle: moltbook?.title ?? null,
+                    moltbookContent: moltbook?.content ?? null,
+                    moltbookType: moltbook?.type ?? null,
+                    status: "generated" as const,
+                    // The workflow stamps `revision` per draft: 0 = raw draft pass only,
+                    // 1 = survived the critique→revise refine pass. Persist that so the
+                    // queue reflects which posts went through the quality loop.
+                    revision: d.revision,
+                  };
+                })
               )
               .returning({
                 id: posts.id,
@@ -258,15 +305,13 @@ export const POST = wrapRouteHandlerWithLogging<{
           )
         : [];
 
-    ctx.log.info(
-      {
-        route: "growth.campaigns.generate",
-        campaignId: slug,
-        findingsCount: generateFindings.length,
-        postsCount: persisted.length,
-      },
-      "growth.campaign.generate_complete"
-    );
+    logComplete({
+      status: 200,
+      outcome: "success",
+      campaignId: slug,
+      findingsCount: generateFindings.length,
+      postsCount: persisted.length,
+    });
 
     return NextResponse.json(
       {

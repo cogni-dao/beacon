@@ -57,7 +57,7 @@ export const FUNNEL_LAYER_CTA: Readonly<Record<FunnelLayer, string>> = {
  * The model is handed the campaign strategy (DNA), the layer's role + its single
  * allowed CTA, the campaign's research findings, and the recalled brand playbook.
  * It HARD-ENFORCES Hook–Body–CTA, exactly one layer-matched CTA, concreteness, and a
- * total ban on engagement-bait. Returns ONLY a JSON array of `{topic, angle, text}`
+ * total ban on engagement-bait. Returns ONLY a JSON array of `{topic, angle, title, text}`
  * — exactly `count` items, each a DIFFERENT topic/angle (coverage of the layer).
  */
 export const GENERATE_PROMPT = `
@@ -102,11 +102,13 @@ ABSOLUTELY FORBIDDEN (this is the slop ban — violating it fails the post):
 Each post object:
 - "topic" — a short (1-3 word) lowercase subject tag (e.g. "ownership").
 - "angle" — the one-line hook/framing the post takes.
+- "title" — the Moltbook post title/headline. It must name the idea or promise in
+  3-8 words, and it must NOT be copied from the first line or first sentence of "text".
 - "text"  — the full post (Hook line, Body, single CTA line). No preamble, no markdown
    headers, ready to publish to the channel.
 
 Return ONLY a JSON array of EXACTLY {count} objects — distinct topics/angles. Example:
-[{"topic":"ownership","angle":"own your distribution","text":"Hook…\\nBody…\\nFollow for more on owning your distribution."}]
+[{"topic":"ownership","angle":"own your distribution","title":"Distribution Ownership","text":"Hook…\\nBody…\\nFollow for more on owning your distribution."}]
 ` as const;
 
 /**
@@ -143,5 +145,7 @@ Rewrite rules:
 - Stay grounded in the playbook + campaign DNA. No new fabricated specifics.
 
 Return ONLY a JSON array of the REWRITTEN posts, SAME shape as the input
-({topic, angle, text}), one object per input draft, in the same order. No commentary.
+({topic, angle, title, text}), one object per input draft, in the same order. Keep
+or improve "title" so it names the idea and is not copied from the opening line of
+"text". No commentary.
 ` as const;

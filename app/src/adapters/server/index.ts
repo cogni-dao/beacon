@@ -70,6 +70,12 @@ export {
 } from "./ai/thread-persistence.adapter";
 // Social broadcast adapter (X API v2) — env-gated off; growth-loop v0
 export {
+  DEFAULT_MOLTBOOK_API_BASE_URL,
+  MoltbookSocialAdapter,
+  type MoltbookSocialConfig,
+  MoltbookVerificationRequiredError,
+} from "./social/moltbook.adapter";
+export {
   XSocialAdapter,
   type XSocialConfig,
 } from "./social/x.adapter";

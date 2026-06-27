@@ -78,6 +78,7 @@ export const BroadcastPostOutputSchema = z.object({
 			channel: z.enum(SOCIAL_CHANNELS),
 			status: z.enum(["posted", "failed"]),
 			externalPostId: z.string().nullable(),
+			externalPostUrl: z.string().url().nullable(),
 		}),
 	),
 });
@@ -132,6 +133,7 @@ export function createBroadcastPostImplementation(
 					channel: r.channel,
 					status: r.status,
 					externalPostId: r.externalPostId,
+					externalPostUrl: r.externalPostUrl,
 				})),
 			};
 		},

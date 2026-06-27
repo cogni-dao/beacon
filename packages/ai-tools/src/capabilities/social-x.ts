@@ -36,6 +36,187 @@ export type SocialChannel = (typeof SOCIAL_CHANNELS)[number];
  */
 export const X_MAX_TEXT_LENGTH = 280 as const;
 
+/** Moltbook text posts expose separate title/content fields. */
+export const MOLTBOOK_MAX_TITLE_LENGTH = 300 as const;
+export const MOLTBOOK_MAX_CONTENT_LENGTH = 40000 as const;
+export const DEFAULT_MOLTBOOK_SUBMOLT = "general" as const;
+export const MOLTBOOK_SUBMOLT_OPTIONS = [
+  "general",
+  "ai",
+  "startups",
+  "marketing",
+  "technology",
+  "business",
+  "writing",
+] as const;
+
+function truncateAtWordBoundary(value: string, maxLength: number): string {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const clipped = normalized.slice(0, maxLength).trimEnd();
+  const lastSpace = clipped.lastIndexOf(" ");
+  if (lastSpace < 24) {
+    return clipped;
+  }
+
+  return clipped.slice(0, lastSpace);
+}
+
+function titleCase(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((word) =>
+      word.length > 0 ? `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}` : word
+    )
+    .join(" ");
+}
+
+function openingLine(content: string): string {
+  return content.trim().split(/\r?\n/)[0]?.trim() ?? "";
+}
+
+function openingSentence(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, " ");
+  return normalized.match(/^(.{1,180}?[.!?])(?:\s|$)/)?.[1]?.trim() ?? "";
+}
+
+function normalizeForComparison(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ");
+}
+
+function isCopiedFromOpening(candidate: string, content: string): boolean {
+  const normalizedCandidate = normalizeForComparison(candidate);
+  if (!normalizedCandidate) {
+    return true;
+  }
+
+  const normalizedContent = normalizeForComparison(content);
+  const normalizedLine = normalizeForComparison(openingLine(content));
+  const normalizedSentence = normalizeForComparison(openingSentence(content));
+  const candidateWordCount = normalizedCandidate.split(" ").filter(Boolean).length;
+  const startsOpening =
+    candidateWordCount >= 4 &&
+    (normalizedLine.startsWith(`${normalizedCandidate} `) ||
+      normalizedSentence.startsWith(`${normalizedCandidate} `));
+  return (
+    normalizedCandidate === normalizedContent ||
+    normalizedCandidate === normalizedLine ||
+    normalizedCandidate === normalizedSentence ||
+    startsOpening
+  );
+}
+
+function cleanTitleCandidate(
+  candidate: string | undefined,
+  content: string
+): string | null {
+  const cleaned = candidate?.trim().replace(/\s+/g, " ");
+  if (!cleaned || isCopiedFromOpening(cleaned, content)) {
+    return null;
+  }
+
+  return truncateAtWordBoundary(cleaned, MOLTBOOK_MAX_TITLE_LENGTH);
+}
+
+function deriveTitleFromDraftMeta(input: {
+  content: string;
+  title?: string;
+  angle?: string;
+  topic?: string;
+}): string {
+  const explicitTitle = cleanTitleCandidate(input.title, input.content);
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+
+  const angleTitle = cleanTitleCandidate(input.angle, input.content);
+  if (angleTitle) {
+    return angleTitle;
+  }
+
+  const topicTitle = cleanTitleCandidate(
+    input.topic ? titleCase(input.topic) : undefined,
+    input.content
+  );
+  if (topicTitle) {
+    return topicTitle;
+  }
+
+  return "Moltbook update";
+}
+
+/** Explicit Moltbook payload persisted and shown before a post can publish. */
+export const MoltbookPostPayloadSchema = z.object({
+  submoltName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(30)
+    .default(DEFAULT_MOLTBOOK_SUBMOLT)
+    .describe("Target Moltbook submolt"),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MOLTBOOK_MAX_TITLE_LENGTH)
+    .describe("Moltbook text-post title"),
+  content: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MOLTBOOK_MAX_CONTENT_LENGTH)
+    .describe("Moltbook text-post body"),
+  type: z.literal("text").default("text"),
+});
+export type MoltbookPostPayload = z.infer<typeof MoltbookPostPayloadSchema>;
+
+/**
+ * Build the visible default Moltbook payload from draft text. Callers persist or
+ * display this explicitly; adapters must not hide this split at post time.
+ */
+export function deriveMoltbookPayloadFromText(
+  text: string,
+  submoltName: string = DEFAULT_MOLTBOOK_SUBMOLT
+): MoltbookPostPayload {
+  return deriveMoltbookPayloadFromDraft({ text, submoltName });
+}
+
+/**
+ * Build the visible Moltbook payload from a draft plus graph metadata. Moltbook's
+ * title is not the post's opening hook; prefer explicit graph title/angle/topic.
+ */
+export function deriveMoltbookPayloadFromDraft(input: {
+  text: string;
+  submoltName?: string;
+  title?: string;
+  angle?: string;
+  topic?: string;
+}): MoltbookPostPayload {
+  const fallbackContent = input.text.trim() || "Untitled";
+  const titleSource = deriveTitleFromDraftMeta({
+    content: fallbackContent,
+    ...(input.title ? { title: input.title } : {}),
+    ...(input.angle ? { angle: input.angle } : {}),
+    ...(input.topic ? { topic: input.topic } : {}),
+  });
+
+  return MoltbookPostPayloadSchema.parse({
+    submoltName: input.submoltName ?? DEFAULT_MOLTBOOK_SUBMOLT,
+    title: titleSource.slice(0, MOLTBOOK_MAX_TITLE_LENGTH),
+    content: fallbackContent.slice(0, MOLTBOOK_MAX_CONTENT_LENGTH),
+    type: "text",
+  });
+}
+
 /**
  * Input for posting one piece of content to one channel.
  * Per-channel text is pre-adapted by the content graph; `idempotencyKey`
@@ -45,6 +226,9 @@ export const PostContentInputSchema = z
   .object({
     channel: z.enum(SOCIAL_CHANNELS).describe("Target broadcast channel"),
     text: z.string().min(1).describe("The post body (per-channel adapted)"),
+    moltbook: MoltbookPostPayloadSchema.optional().describe(
+      "Explicit Moltbook payload; required by the real Moltbook adapter"
+    ),
     idempotencyKey: z
       .string()
       .min(1)
@@ -64,6 +248,13 @@ export const PostContentInputSchema = z
         message: `X posts must be ≤ ${X_MAX_TEXT_LENGTH} characters`,
       });
     }
+    if (val.channel === "moltbook" && !val.moltbook) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["moltbook"],
+        message: "Moltbook posts require an explicit title/content/submolt payload",
+      });
+    }
   });
 export type PostContentInput = z.infer<typeof PostContentInputSchema>;
 
@@ -72,6 +263,7 @@ export type PostContentInput = z.infer<typeof PostContentInputSchema>;
  */
 export const PostContentResultSchema = z.object({
   externalId: z.string().min(1).describe("Channel-native post id"),
+  url: z.string().url().describe("Canonical human-clickable post URL"),
   postedAt: z.string().datetime().describe("ISO-8601 post timestamp"),
 });
 export type PostContentResult = z.infer<typeof PostContentResultSchema>;
@@ -114,7 +306,7 @@ export interface SocialXCapability {
    * Post one piece of content to one channel.
    *
    * @param input - Channel, adapted text, optional idempotency key
-   * @returns The channel-native post id + posted timestamp
+   * @returns The channel-native post id, canonical URL, and posted timestamp
    * @throws If the post fails or the channel is unavailable
    */
   postContent(input: PostContentInput): Promise<PostContentResult>;

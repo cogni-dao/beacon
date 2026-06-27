@@ -83,6 +83,13 @@ export type {
 } from "./broadcast";
 // Social broadcast + metrics capability (per beacon-growth-loop spec)
 export {
+  DEFAULT_MOLTBOOK_SUBMOLT,
+  deriveMoltbookPayloadFromDraft,
+  deriveMoltbookPayloadFromText,
+  MOLTBOOK_MAX_CONTENT_LENGTH,
+  MOLTBOOK_MAX_TITLE_LENGTH,
+  MOLTBOOK_SUBMOLT_OPTIONS,
+  MoltbookPostPayloadSchema,
   PostContentInputSchema,
   PostContentResultSchema,
   PostMetricSnapshotSchema,
@@ -94,6 +101,7 @@ export {
   XRecentPostSchema,
 } from "./social-x";
 export type {
+  MoltbookPostPayload,
   PostContentInput,
   PostContentResult,
   PostMetricSnapshot,

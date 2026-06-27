@@ -7,13 +7,14 @@
  *   interface to the X adapter (real) + X/Moltbook fakes, routed per channel.
  * Scope: Creates SocialXCapability from server environment. Does not implement transport.
  * Invariants:
- *   - NO_SECRETS_IN_CONTEXT: X bearer token resolved from env, never passed to tools
+ *   - NO_SECRETS_IN_CONTEXT: social bearer tokens resolved from env, never passed to tools
  *   - FAKE_IN_CI: APP_ENV=test → deterministic fakes (X + Moltbook)
- *   - ENV_GATED_REAL: real X adapter only constructed when X_API_BEARER_TOKEN is set
- *   - MOLTBOOK_FAKE_ONLY_V0: Moltbook has no real adapter; non-test "moltbook" posts throw
+ *   - ENV_GATED_REAL: real X adapter only constructed when its bearer key is set
+ *   - MOLTBOOK_TENANT_ONLY: real Moltbook publishing uses broker-resolved
+ *     connection credentials in the publish job, never an app-level env key
  *   - CHANNEL_ROUTED: postContent/readMetrics dispatch by channel
  * Side-effects: none (factory only)
- * Links: docs/spec/beacon-growth-loop-v0.md §2/§5. Uses X_API_BEARER_TOKEN.
+ * Links: docs/spec/beacon-growth-loop-v0.md §2/§5.
  * @internal
  */
 
@@ -30,7 +31,7 @@ import type { ServerEnv } from "@/shared/env";
 
 /**
  * Stub SocialXCapability that throws when the channel has no configured backend.
- * Used for X when X_API_BEARER_TOKEN is unset, and for Moltbook outside test mode.
+ * Used when a channel's real backend is not configured.
  */
 function makeStub(reason: string): SocialXCapability {
   return {
@@ -84,7 +85,9 @@ function routeByChannel(
  * Create SocialXCapability from server environment.
  *
  * - APP_ENV=test: fakes for both X and Moltbook (deterministic, monotonic-rising)
- * - X_API_BEARER_TOKEN present: real X adapter for `x`; Moltbook stub (fake-only in v0)
+ * - X_API_BEARER_TOKEN present: real X adapter for `x`
+ * - Moltbook production container path: stub; publish job constructs the real
+ *   adapter from tenant-linked credentials
  * - Not configured: stubs that throw on use
  *
  * @param env - Server environment with X configuration
@@ -99,7 +102,6 @@ export function createSocialXCapability(env: ServerEnv): SocialXCapability {
   }
 
   const bearerToken = env.X_API_BEARER_TOKEN;
-
   // X: real adapter when configured, else a stub that throws on use.
   // NOTE: the container path still sources the app-level token here (posting +
   // metrics-ingest). The per-tenant read path (profile insights) builds its own
@@ -112,9 +114,8 @@ export function createSocialXCapability(env: ServerEnv): SocialXCapability {
         "SocialXCapability (x) not configured. Set X_API_BEARER_TOKEN environment variable."
       );
 
-  // Moltbook is fake-only in v0 — no real adapter outside test mode.
-  const moltbookBackend = makeStub(
-    "SocialXCapability (moltbook) is fake-only in v0 — no real adapter."
+  const moltbookBackend: SocialXCapability = makeStub(
+    "SocialXCapability (moltbook) uses tenant-linked connections; call the publish-approved campaign route/job."
   );
 
   return routeByChannel({ x: xBackend, moltbook: moltbookBackend });

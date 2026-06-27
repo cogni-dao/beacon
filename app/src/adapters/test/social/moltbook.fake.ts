@@ -40,8 +40,10 @@ export class FakeMoltbookAdapter implements SocialXCapability {
       );
     }
     this.postCount++;
+    const externalId = `moltbook-fake-${this.postCount}`;
     return {
-      externalId: `moltbook-fake-${this.postCount}`,
+      externalId,
+      url: `https://www.moltbook.com/posts/${externalId}`,
       postedAt: new Date(
         1_700_000_000_000 + this.postCount * 1000
       ).toISOString(),

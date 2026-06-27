@@ -59,6 +59,7 @@ HTTP API endpoints using Next.js App Router. Contract-validated entry points tha
   - `/api/v1/connections/[provider]/callback` [GET] - OAuth callback: verify state, exchange code, encrypt + store connection
   - `/api/v1/connections/[provider]/disconnect` [POST] - soft-delete (revoke) active connection
   - `/api/v1/connections/[provider]/status` [GET] - `{ connected, accounts[] }` from non-secret columns (never decrypts)
+  - `/api/v1/growth/campaigns/[campaignId]/publish-approved` [POST] - session-authenticated POST-stage trigger for one caller-owned, already-approved Moltbook post
   - `/api/v1/users/me` [GET, PATCH] - current profile
   - `/api/v1/users/me/ownership` [GET] - current ownership summary derived from linked identities
   - `/api/v1/work/items` [GET] - list work items with optional filters (SIWE auth)

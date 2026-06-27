@@ -41,7 +41,7 @@ component lane.
 2. **`findings`** *(tenant outputs of the RESEARCH activity)* `(id, account_id, campaign_id, kind['insight'|'pain_point'|'angle'|'exemplar'|'reference'], content, source_ref, created_at)` — research is an **activity, not a table**. Its tenant outputs are **findings** (insights/pain-points/angles for *this* campaign) + collected **references/exemplars** (successful other accounts/posts/styles; `source_ref` = url/handle). Generic, reusable **skills/guides** ("how to research a niche", "effective hooks for SaaS") are NOT findings — they live in **Doltgres** (the playbook), recalled and contributed by the activity.
 3. **`posts`** *(rename of `broadcasts`)* `(id, account_id, campaign_id, funnel_layer, topic, angle, channel['moltbook'|'x'], text, score, revision, status['generated'|'in_review'|'approved'|'posted'|'rejected'|'failed'], external_post_id, posted_at, created_at)` — **THE QUEUE.** `status` = the lane; `score` = ranking signal; `revision` tracks refine passes (generation is iterative, never one-off).
 4. **`post_metrics`** append-only `(id, account_id, post_id, captured_at, impressions, likes, reposts, replies, followers_at_capture)` — cached engagement; **written only by the analyze/ingest path.**
-5. **`channel_accounts`** `(id, account_id, channel, handle, credential_ref, enabled, created_at)`.
+5. **`connections`** *(platform account credentials; defined in `packages/db-schema/src/connections.ts`)* — encrypted, tenant-scoped Moltbook/X credentials resolved through `ConnectionBrokerPort`. This is the only platform-account model; the old `channel_accounts` table is purged.
 6. **`post_decisions`** *(propensity log — ships with the first POST build)* `(id, account_id, campaign_id, post_id, decided_at, action['ranked'|'approved'|'rejected'|'posted'], score, rank, reason, model_ref)` — **why** each post was chosen/ranked/published, append-only. MUST land with POST: this propensity signal is **uncapturable retroactively** and is the training data for future bandit / learned ranking. (Review correction.)
 
 ## 3. AI workflows & how they're scheduled
@@ -72,15 +72,12 @@ it self-runs:
 | `approve_gate` | self-runs research→generate→refine, then **waits for human approve** before post |
 | `manual` | every stage is operator-triggered |
 
-**Driver:** one real, self-firing **node-local timer** (k8s CronJob in beacon's
-deploy) → an internal `/tick` that, for each `active` campaign, advances **whatever
-stage has due work** (research stale → research; queue thin → generate/refine;
-approved posts ready → post; metrics due → analyze). **Proven by Loki** (it fires
-itself; never a manual curl). **On-demand triggers exist on every stage** as a
-capability layered on top — kick generate now, force a re-research — but they are
-not how the loop normally advances.
-- **Temporal-native scheduling is deferred** until the operator worker is ready; the
-  CronJob is the v0 substrate. No half-wired Temporal in the campaign path.
+**Driver path:** v0 proves each stage through session-authenticated campaign
+actions first. The POST stage is an on-demand product route
+`POST /api/v1/growth/campaigns/:campaignId/publish-approved` that publishes at
+most one caller-owned, already-approved Moltbook row via the tenant's linked
+connection. The later heartbeat/scheduler PR may call the same job for active
+campaigns; it must not introduce a new deploy-token publish endpoint.
 
 ## 4. The spine (generate ≠ post — the safety invariant)
 0. **define** → operator sets campaign voice + core topic + ICP + objective + autonomy.
@@ -92,10 +89,11 @@ not how the loop normally advances.
 3. **refine/rank** → iterate (critique→revise, multi-pass), score, promote →
    `approved` (or `rejected`). Approval is agent-default; an `approve_gate` campaign
    **waits for a human** here.
-4. **post** (cron `/tick`, **approved-only**) → pop highest-`score` `approved` post
-   for an active campaign → publish to Moltbook → `posted`. **The publisher never
+4. **post** (session route now, scheduler later; **approved-only**) → pop
+   highest-`score` `approved` post for the caller-owned campaign → publish to
+   Moltbook through its linked connection → `posted`. **The publisher never
    generates, refines, or decides — it only ships already-approved content.**
-5. **analyze** (cron) → ingest engagement → `post_metrics` → KPI → re-rank future
+5. **analyze** (manual now, scheduler later) → ingest engagement → `post_metrics` → KPI → re-rank future
    candidates + distill generic learnings into Dolt.
 
 The invariant that survives autonomy: **nothing reaches the public except an
@@ -155,15 +153,16 @@ Temporal-native heartbeat, RLS-Doltgres.
    (recall Dolt skills → write findings/exemplars), grounding the campaign brief.
 4. **generate + refine**: N-draft generate grounded in voice+brief+research →
    iterate/rank → approve (agent; human gate when `approve_gate`). Lens shows lanes.
-5. **post**: k8s CronJob `/tick` → publish approved-only → Moltbook (proven in Loki).
-   **Ships with `post_decisions`** (§2.6) — the propensity log, uncapturable later.
+5. **post**: session-authenticated campaign route → publish approved-only →
+   Moltbook using the tenant's linked connection. **Ships with `post_decisions`**
+   (§2.6) — the propensity log, uncapturable later.
 6. **analyze**: ingest + **per-(layer,channel) KPI** → re-rank + Dolt playbook distill;
    **campaign KPI source = Postgres, not Dolt (§8.1/§8.3); replace the blended resolver.**
 7. **evergreen-recycle**: re-surface proven winners (the simplest "what next" — borrow
    from incumbents) before any autonomous planning.
-8. **autonomy (LAST)**: `/tick` self-advances `active` campaigns through the *known*
-   stages per `autonomy` mode; autonomous *planning of new content* comes only after
-   6–7 are proven (§8.5).
+8. **autonomy (LAST)**: scheduler/heartbeat self-advances `active` campaigns
+   through the *known* stages per `autonomy` mode; autonomous *planning of new
+   content* comes only after 6–7 are proven (§8.5).
 
 ## 9. Research & review (grounding)
 - `docs/research/marketing-platforms-landscape.md` — OSS/incumbent landscape (Listmonk,

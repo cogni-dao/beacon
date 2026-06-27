@@ -111,6 +111,13 @@ function patchReq(
   return [req, { params: Promise.resolve({ campaignId, postId }) }];
 }
 
+const MOLTBOOK_PAYLOAD = {
+  submoltName: "general",
+  title: "Original draft body",
+  content: "Original draft body.\nFollow for more.",
+  type: "text" as const,
+};
+
 describe("growth draft review + refine route (RLS + state transitions)", () => {
   const a = makeAcct("a");
   const b = makeAcct("b");
@@ -165,7 +172,12 @@ describe("growth draft review + refine route (RLS + state transitions)", () => {
     vi.mocked(getSessionUser).mockResolvedValue(a.sessionUser);
     const postId = await seedDraft(a, CAMPAIGN_A);
 
-    const res = await PATCH(...patchReq(CAMPAIGN_A, postId, { action: "approve" }));
+    const res = await PATCH(
+      ...patchReq(CAMPAIGN_A, postId, {
+        action: "approve",
+        moltbook: MOLTBOOK_PAYLOAD,
+      })
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.status).toBe("approved");
@@ -174,6 +186,8 @@ describe("growth draft review + refine route (RLS + state transitions)", () => {
       await getSeedDb().select().from(posts).where(eq(posts.id, postId))
     )[0];
     expect(row?.status).toBe("approved");
+    expect(row?.moltbookSubmoltName).toBe("general");
+    expect(row?.moltbookTitle).toBe("Original draft body");
   });
 
   it("REJECT transitions status to 'rejected'", async () => {
@@ -214,7 +228,10 @@ describe("growth draft review + refine route (RLS + state transitions)", () => {
 
     vi.mocked(getSessionUser).mockResolvedValue(b.sessionUser);
     const res = await PATCH(
-      ...patchReq(CAMPAIGN_A, aPostId, { action: "approve" })
+      ...patchReq(CAMPAIGN_A, aPostId, {
+        action: "approve",
+        moltbook: MOLTBOOK_PAYLOAD,
+      })
     );
     expect(res.status).toBe(404);
 
@@ -228,7 +245,10 @@ describe("growth draft review + refine route (RLS + state transitions)", () => {
   it("401 without a session", async () => {
     vi.mocked(getSessionUser).mockResolvedValue(null);
     const res = await PATCH(
-      ...patchReq(CAMPAIGN_A, randomUUID(), { action: "approve" })
+      ...patchReq(CAMPAIGN_A, randomUUID(), {
+        action: "approve",
+        moltbook: MOLTBOOK_PAYLOAD,
+      })
     );
     expect(res.status).toBe(401);
   });

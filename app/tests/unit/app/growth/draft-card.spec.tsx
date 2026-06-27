@@ -43,10 +43,18 @@ function makePost(overrides: Partial<CampaignPost> = {}): CampaignPost {
     topic: "ownership",
     angle: "own your distribution",
     text: "Original draft text.",
+    moltbook: {
+      submoltName: "general",
+      title: "Original title",
+      content: "Original draft text.",
+      type: "text",
+    },
+    moltbookPayloadPersisted: true,
     status: "generated",
     score: 0.82,
     revision: 1,
     externalPostId: null,
+    externalPostUrl: null,
     postedAt: null,
     impressions: null,
     likes: 0,
@@ -55,6 +63,16 @@ function makePost(overrides: Partial<CampaignPost> = {}): CampaignPost {
     capturedAt: null,
     ...overrides,
   };
+}
+
+function renderCard(post: CampaignPost = makePost()) {
+  return render(
+    <DraftCard
+      campaignId={CAMPAIGN_ID}
+      post={post}
+      moltbookConnection={{ handle: "@flock-leader", displayLabel: "flock-leader" }}
+    />
+  );
 }
 
 /** Mock a successful PATCH returning the updated post shape. */
@@ -78,23 +96,92 @@ describe("DraftCard - review + refine surface", () => {
   });
 
   it("renders the state badge, revision, and score", () => {
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    renderCard();
     expect(screen.getByText("Generated")).toBeInTheDocument();
     expect(screen.getByText("rev 1")).toBeInTheDocument();
     expect(screen.getByText("score 82")).toBeInTheDocument();
-    expect(screen.getByText("Original draft text.")).toBeInTheDocument();
+    expect(screen.getAllByText("Original draft text.")).toHaveLength(1);
+    expect(screen.queryByText("Final Moltbook payload")).not.toBeInTheDocument();
+    expect(screen.queryByText("type: text")).not.toBeInTheDocument();
+    expect(screen.getByText("m/general")).toBeInTheDocument();
+    expect(screen.getByText("Original title")).toBeInTheDocument();
+  });
+
+  it("renders duplicate Moltbook payloads as a headline plus the full post", () => {
+    const content =
+      "Beacon should turn social publishing into a compounding review loop.";
+
+    renderCard(
+      makePost({
+        text: content,
+        moltbook: {
+          submoltName: "general",
+          title: content,
+          content,
+          type: "text",
+        },
+      })
+    );
+
+    expect(screen.getByText("own your distribution")).toBeInTheDocument();
+    expect(screen.getByText(content)).toBeInTheDocument();
   });
 
   it("renders an Approved badge for an approved draft", () => {
-    render(
-      <DraftCard campaignId={CAMPAIGN_ID} post={makePost({ status: "approved" })} />
-    );
+    renderCard(makePost({ status: "approved" }));
     expect(screen.getByText("Approved")).toBeInTheDocument();
   });
 
+  it("renders a compact header post link for posted Moltbook rows", () => {
+    renderCard(
+      makePost({
+        status: "posted",
+        externalPostId: "moltbook-post-1",
+        postedAt: new Date().toISOString(),
+      })
+    );
+
+    expect(screen.getByText("Posted")).toBeInTheDocument();
+    expect(screen.getByText("just now")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view post/i })).toHaveAttribute(
+      "href",
+      "https://www.moltbook.com/post/moltbook-post-1"
+    );
+    expect(screen.queryByRole("button", { name: /^reject/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^refine$/i })).not.toBeInTheDocument();
+  });
+
+  it("normalizes legacy Moltbook /posts links for posted rows", () => {
+    renderCard(
+      makePost({
+        status: "posted",
+        externalPostId: "moltbook-post-1",
+        externalPostUrl: "https://www.moltbook.com/posts/moltbook-post-1",
+      })
+    );
+
+    expect(screen.getByRole("link", { name: /view post/i })).toHaveAttribute(
+      "href",
+      "https://www.moltbook.com/post/moltbook-post-1"
+    );
+  });
+
   it("APPROVE fires PATCH action=approve", async () => {
-    mockPatchOk({ id: "post-1", status: "approved", text: "x", revision: 1, score: null });
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    mockPatchOk({
+      id: "post-1",
+      status: "approved",
+      text: "x",
+      moltbook: {
+        submoltName: "general",
+        title: "Original title",
+        content: "Original draft text.",
+        type: "text",
+      },
+      revision: 1,
+      score: null,
+    });
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
 
@@ -104,13 +191,28 @@ describe("DraftCard - review + refine surface", () => {
       `/api/v1/growth/campaigns/${CAMPAIGN_ID}/posts/post-1`
     );
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ action: "approve" });
+    expect(JSON.parse(init.body as string)).toEqual({
+      action: "approve",
+      moltbook: {
+        submoltName: "general",
+        title: "Original title",
+        content: "Original draft text.",
+        type: "text",
+      },
+    });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
   it("REJECT fires PATCH action=reject", async () => {
-    mockPatchOk({ id: "post-1", status: "rejected", text: "x", revision: 1, score: null });
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    mockPatchOk({
+      id: "post-1",
+      status: "rejected",
+      text: "x",
+      moltbook: null,
+      revision: 1,
+      score: null,
+    });
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /^reject/i }));
 
@@ -127,11 +229,17 @@ describe("DraftCard - review + refine surface", () => {
       revision: 1,
       score: 0.82,
     });
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /^edit/i }));
-    const textarea = screen.getByLabelText("Edit draft text");
+    const textarea = screen.getByLabelText("Moltbook post body");
     fireEvent.change(textarea, { target: { value: "Edited text!" } });
+    fireEvent.change(screen.getByLabelText("Moltbook headline"), {
+      target: { value: "Edited title" },
+    });
+    fireEvent.change(screen.getByLabelText("Moltbook destination"), {
+      target: { value: "ai" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
@@ -139,6 +247,12 @@ describe("DraftCard - review + refine surface", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       action: "edit",
       text: "Edited text!",
+      moltbook: {
+        submoltName: "ai",
+        title: "Edited title",
+        content: "Edited text!",
+        type: "text",
+      },
     });
   });
 
@@ -150,7 +264,7 @@ describe("DraftCard - review + refine surface", () => {
       revision: 2,
       score: null,
     });
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /^refine$/i }));
     const note = screen.getByLabelText("Refine feedback note (optional)");
@@ -173,7 +287,7 @@ describe("DraftCard - review + refine surface", () => {
       revision: 2,
       score: null,
     });
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /^refine$/i }));
     fireEvent.click(screen.getByRole("button", { name: /refine draft/i }));
@@ -189,7 +303,7 @@ describe("DraftCard - review + refine surface", () => {
       status: 500,
       json: async () => ({ error: "boom" }),
     } as Response);
-    render(<DraftCard campaignId={CAMPAIGN_ID} post={makePost()} />);
+    renderCard();
 
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
 
@@ -197,5 +311,30 @@ describe("DraftCard - review + refine surface", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("boom")
     );
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("PUBLISH is separate from approve and posts an explicit postId", async () => {
+    mockPatchOk({
+      campaignId: CAMPAIGN_ID,
+      postId: "post-1",
+      considered: 1,
+      published: 1,
+      skippedNoConnection: 0,
+      skippedNotEligible: 0,
+      skippedMissingPayload: 0,
+      failed: 0,
+    });
+    renderCard(makePost({ status: "approved" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
+    expect(screen.getByText(/Publish to Moltbook/)).toBeInTheDocument();
+    expect(screen.getByText(/@flock-leader/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /publish now/i }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    const [url, init] = lastFetch();
+    expect(url).toBe(`/api/v1/growth/campaigns/${CAMPAIGN_ID}/publish-approved`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ postId: "post-1" });
   });
 });

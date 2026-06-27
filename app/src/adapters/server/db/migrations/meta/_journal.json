@@ -281,6 +281,27 @@
       "when": 1782500523339,
       "tag": "0039_public_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782501165419,
+      "tag": "0040_rich_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782518940560,
+      "tag": "0041_lying_hercules",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782536532571,
+      "tag": "0042_low_the_phantom",
+      "breakpoints": true
     }
   ]
 }

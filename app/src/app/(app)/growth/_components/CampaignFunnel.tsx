@@ -47,16 +47,20 @@ const FILTERS: ReadonlyArray<{ key: Filter; label: string }> = [
 
 /** Does a post pass the current filter view? */
 function passes(post: CampaignPost, filter: Filter): boolean {
+  return statusPasses(post.status, filter);
+}
+
+function statusPasses(status: string, filter: Filter): boolean {
   switch (filter) {
     case "all":
       return true;
     case "active":
-      return post.status !== "rejected";
+      return status !== "rejected";
     default:
       // generated also surfaces the transient "refining" state.
       return filter === "generated"
-        ? post.status === "generated" || post.status === "refining"
-        : post.status === filter;
+        ? status === "generated" || status === "refining"
+        : status === filter;
   }
 }
 
@@ -119,6 +123,12 @@ export function CampaignFunnel({
             kpi={campaign.layers[layer]}
             targetRate={campaign.targetRate}
             posts={visiblePosts.filter((p) => p.funnelLayer === layer)}
+            moltbookConnection={campaign.moltbookConnection}
+            onStatusChange={(status) => {
+              if (!statusPasses(status, filter)) {
+                setFilter("active");
+              }
+            }}
           />
         ))}
       </div>

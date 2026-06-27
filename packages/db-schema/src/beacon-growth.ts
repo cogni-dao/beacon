@@ -48,7 +48,6 @@
 
 import { sql } from "drizzle-orm";
 import {
-	boolean,
 	check,
 	index,
 	integer,
@@ -206,43 +205,6 @@ export const findings = pgTable(
 ).enableRLS();
 
 // ---------------------------------------------------------------------------
-// channel_accounts — configured broadcast channels (X / Moltbook)
-// ---------------------------------------------------------------------------
-
-/**
- * channel_accounts — one row per configured broadcast channel account.
- * `credential_ref` points at a secret reference (never the raw credential).
- */
-export const channelAccounts = pgTable(
-	"channel_accounts",
-	{
-		id: uuid("id").defaultRandom().primaryKey(),
-		/** Owning billing account (tenancy axis). RLS scopes rows by this FK. */
-		accountId: text("account_id")
-			.notNull()
-			.references(() => billingAccounts.id, { onDelete: "cascade" }),
-		channel: text("channel").notNull(),
-		handle: text("handle"),
-		credentialRef: text("credential_ref"),
-		enabled: boolean("enabled").notNull().default(true),
-		createdAt: timestamp("created_at", { withTimezone: true })
-			.notNull()
-			.defaultNow(),
-	},
-	(table) => [
-		check(
-			"channel_accounts_channel_check",
-			sql`${table.channel} IN ('x', 'moltbook')`,
-		),
-		index("channel_accounts_account_idx").on(table.accountId),
-		pgPolicy("tenant_isolation", {
-			using: accountOwnershipPredicate,
-			withCheck: accountOwnershipPredicate,
-		}),
-	],
-).enableRLS();
-
-// ---------------------------------------------------------------------------
 // posts — per-platform post variants (review-lane lifecycle)
 // ---------------------------------------------------------------------------
 
@@ -281,12 +243,21 @@ export const posts = pgTable(
 		/** Position within a bundle; 0 for standalone single posts. */
 		seq: integer("seq").notNull().default(0),
 		text: text("text").notNull(),
+		/** Explicit Moltbook destination; null for non-Moltbook channels or legacy rows. */
+		moltbookSubmoltName: text("moltbook_submolt_name"),
+		/** Explicit Moltbook title shown/edited before publish. */
+		moltbookTitle: text("moltbook_title"),
+		/** Explicit Moltbook body shown/edited before publish. */
+		moltbookContent: text("moltbook_content"),
+		/** Moltbook post type; v0 only supports `text`. */
+		moltbookType: text("moltbook_type"),
 		/** Optional pre-post quality score from the critique pass; nullable. */
 		score: real("score"),
 		/** Count of critique→edit revision passes; 0 for first draft. */
 		revision: integer("revision").notNull().default(0),
 		status: text("status").notNull().default("generated"),
 		externalPostId: text("external_post_id"),
+		externalPostUrl: text("external_post_url"),
 		postedAt: timestamp("posted_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
@@ -352,6 +323,52 @@ export const postMetrics = pgTable(
 			table.capturedAt,
 		),
 		index("post_metrics_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// post_decisions — append-only publishing propensity log
+// ---------------------------------------------------------------------------
+
+/**
+ * post_decisions — append-only record of why a post entered a decision lane.
+ * The POST-stage row is uncapturable retroactively: once a publisher ships an
+ * approved row, this table preserves the score/rank/reason that made it leave
+ * the queue. Future rankers/bandits learn from this propensity signal.
+ */
+export const postDecisions = pgTable(
+	"post_decisions",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		/** Owning billing account (tenancy axis), stamped from the parent post. */
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		campaignId: text("campaign_id").notNull(),
+		postId: uuid("post_id")
+			.notNull()
+			.references(() => posts.id),
+		decidedAt: timestamp("decided_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		action: text("action").notNull(),
+		score: real("score"),
+		rank: integer("rank"),
+		reason: text("reason"),
+		modelRef: text("model_ref"),
+	},
+	(table) => [
+		check(
+			"post_decisions_action_check",
+			sql`${table.action} IN ('ranked', 'approved', 'rejected', 'posted')`,
+		),
+		index("post_decisions_post_idx").on(table.postId),
+		index("post_decisions_campaign_idx").on(table.campaignId),
+		index("post_decisions_account_idx").on(table.accountId),
 		pgPolicy("tenant_isolation", {
 			using: accountOwnershipPredicate,
 			withCheck: accountOwnershipPredicate,
