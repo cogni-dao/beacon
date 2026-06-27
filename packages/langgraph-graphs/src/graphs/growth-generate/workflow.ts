@@ -70,6 +70,8 @@ export interface DraftPost {
   funnelLayer: FunnelLayer;
   topic: string;
   angle: string;
+  /** Platform title/headline, distinct from the post opening hook. */
+  title?: string;
   text: string;
   /** Channel — v0 single channel. */
   channel: "moltbook";
@@ -167,13 +169,13 @@ async function safeRecall(
 }
 
 /**
- * Parse the model's JSON array of `{topic, angle, text}` for one layer into typed
+ * Parse the model's JSON array of `{topic, angle, title, text}` for one layer into typed
  * draft posts. Tolerant: ignores non-JSON, drops rows missing `text`, trims fields,
  * defaults a missing topic/angle. Never throws. Caps at `limit` (the layer's count).
  *
  * `revision` stamps the quality-loop generation each row came from (0 = draft pass,
  * 1 = after the critique→revise refine pass) — both the draft and refine passes emit
- * the SAME `{topic, angle, text}` shape, so the parser is shared and robust to either.
+ * the SAME `{topic, angle, title, text}` shape, so the parser is shared and robust to either.
  */
 export function parseDraftPosts(
   raw: string,
@@ -198,10 +200,12 @@ export function parseDraftPosts(
     if (typeof text !== "string" || text.trim().length === 0) continue;
     const topic = typeof rec.topic === "string" ? rec.topic.trim() : "";
     const angle = typeof rec.angle === "string" ? rec.angle.trim() : "";
+    const title = typeof rec.title === "string" ? rec.title.trim() : "";
     out.push({
       funnelLayer: layer,
       topic: (topic || "general").toLowerCase().slice(0, 80),
       angle: angle || text.trim().slice(0, 120),
+      ...(title ? { title: title.slice(0, 300) } : {}),
       text: text.trim(),
       channel: "moltbook",
       kind: "text",
@@ -232,7 +236,12 @@ async function refineDraftBatch(
   if (drafts.length === 0) return drafts;
 
   const draftsForModel = JSON.stringify(
-    drafts.map((d) => ({ topic: d.topic, angle: d.angle, text: d.text }))
+    drafts.map((d) => ({
+      topic: d.topic,
+      angle: d.angle,
+      ...(d.title ? { title: d.title } : {}),
+      text: d.text,
+    }))
   );
   const user = [grounding, `Draft posts to critique and rewrite:\n${draftsForModel}`].join(
     "\n\n"
@@ -257,6 +266,7 @@ export interface SingleDraftToRefine {
   funnelLayer: FunnelLayer;
   topic: string;
   angle: string;
+  title?: string;
   text: string;
 }
 
@@ -324,7 +334,12 @@ export async function refineSingleDraft(
   ].join("\n\n");
 
   const draftsForModel = JSON.stringify([
-    { topic: draft.topic, angle: draft.angle, text: draft.text },
+    {
+      topic: draft.topic,
+      angle: draft.angle,
+      ...(draft.title ? { title: draft.title } : {}),
+      text: draft.text,
+    },
   ]);
   const user = [grounding, `Draft posts to critique and rewrite:\n${draftsForModel}`].join(
     "\n\n"

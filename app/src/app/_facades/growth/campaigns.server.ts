@@ -26,14 +26,19 @@
  * @internal
  */
 
+import {
+	deriveMoltbookPayloadFromDraft,
+	type MoltbookPostPayload,
+} from "@cogni/ai-tools";
 import { withTenantScope } from "@cogni/db-client";
+import { connections } from "@cogni/db-schema";
 import { type UserId, userActor } from "@cogni/ids";
 import {
 	computeEngagementKpi,
 	type EngagementBasis,
 	type PostMetricSnapshot,
 } from "@cogni/knowledge-store";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { resolveAppDb } from "@/bootstrap/container";
 import { campaigns, postMetrics, posts } from "@/shared/db/schema";
@@ -300,6 +305,8 @@ export interface CampaignPost {
 	topic: string | null;
 	angle: string | null;
 	text: string;
+	moltbook: MoltbookPostPayload | null;
+	moltbookPayloadPersisted: boolean;
 	status: string;
 	/** AI quality score from the critique pass (0–1), if present. */
 	score: number | null;
@@ -318,6 +325,10 @@ export interface CampaignPost {
 export interface CampaignDetail extends CampaignLensRow {
 	/** The campaign brief / goal (owned `campaigns.brief`); "" when unset. */
 	brief: string;
+	moltbookConnection: {
+		handle: string | null;
+		displayLabel: string | null;
+	} | null;
 	posts: CampaignPost[];
 }
 
@@ -374,6 +385,10 @@ async function loadCampaignPosts(
 				topic: posts.topic,
 				angle: posts.angle,
 				text: posts.text,
+				moltbookSubmoltName: posts.moltbookSubmoltName,
+				moltbookTitle: posts.moltbookTitle,
+				moltbookContent: posts.moltbookContent,
+				moltbookType: posts.moltbookType,
 				status: posts.status,
 				score: posts.score,
 				revision: posts.revision,
@@ -417,6 +432,27 @@ async function loadCampaignPosts(
 
 	return rows.map((r) => {
 		const m = latest.get(r.id);
+		const hasPersistedMoltbookPayload = Boolean(
+			r.moltbookSubmoltName &&
+				r.moltbookTitle &&
+				r.moltbookContent &&
+				r.moltbookType === "text",
+		);
+		const moltbook =
+			r.channel === "moltbook"
+				? hasPersistedMoltbookPayload
+					? {
+							submoltName: r.moltbookSubmoltName ?? "general",
+							title: r.moltbookTitle ?? "",
+							content: r.moltbookContent ?? "",
+							type: "text" as const,
+						}
+					: deriveMoltbookPayloadFromDraft({
+							text: r.text,
+							...(r.angle ? { angle: r.angle } : {}),
+							...(r.topic ? { topic: r.topic } : {}),
+						})
+				: null;
 		return {
 			id: r.id,
 			channel: r.channel,
@@ -424,6 +460,8 @@ async function loadCampaignPosts(
 			topic: r.topic ?? null,
 			angle: r.angle ?? null,
 			text: r.text,
+			moltbook,
+			moltbookPayloadPersisted: hasPersistedMoltbookPayload,
 			status: r.status,
 			score: r.score ?? null,
 			revision: r.revision ?? 0,
@@ -436,6 +474,31 @@ async function loadCampaignPosts(
 			capturedAt: m?.capturedAt ? m.capturedAt.toISOString() : null,
 		};
 	});
+}
+
+async function loadMoltbookConnection(
+	userId: string,
+): Promise<CampaignDetail["moltbookConnection"]> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				handle: connections.externalHandle,
+				displayLabel: connections.displayLabel,
+			})
+			.from(connections)
+			.where(
+				and(
+					eq(connections.provider, "moltbook"),
+					eq(connections.status, "active"),
+					isNull(connections.revokedAt),
+				),
+			)
+			.limit(1),
+	);
+	const row = rows[0];
+	return row ? { handle: row.handle, displayLabel: row.displayLabel } : null;
 }
 
 /**
@@ -458,6 +521,7 @@ export async function getGrowthCampaign(
 	const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
 	const layers = computeLayerBreakdown(loaded, effectiveTarget);
 	const posts = await loadCampaignPosts(campaignId, userId);
+	const moltbookConnection = await loadMoltbookConnection(userId);
 
 	return {
 		campaignId: rec.campaignId,
@@ -474,6 +538,7 @@ export async function getGrowthCampaign(
 		postedBroadcasts: loaded.postedBroadcasts,
 		layers,
 		brief: rec.brief ?? "",
+		moltbookConnection,
 		posts,
 	};
 }

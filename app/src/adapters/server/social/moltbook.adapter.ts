@@ -27,6 +27,7 @@ import type {
 	SocialXCapability,
 } from "@cogni/ai-tools";
 import {
+	MoltbookPostPayloadSchema,
 	PostContentResultSchema,
 	PostMetricSnapshotSchema,
 } from "@cogni/ai-tools";
@@ -42,8 +43,6 @@ export const DEFAULT_MOLTBOOK_API_BASE_URL =
 
 const DEFAULT_SUBMOLT = "general";
 const DEFAULT_TIMEOUT_MS = 10000;
-const MAX_TITLE_LENGTH = 300;
-const MAX_CONTENT_LENGTH = 40000;
 
 const UnknownRecordSchema = z.record(z.string(), z.unknown());
 
@@ -114,7 +113,16 @@ export class MoltbookSocialAdapter implements SocialXCapability {
 			);
 		}
 
-		const body = buildPostBody(input.text, this.submoltName);
+		const payload = MoltbookPostPayloadSchema.parse({
+			...input.moltbook,
+			submoltName: input.moltbook?.submoltName ?? this.submoltName,
+		});
+		const body = {
+			submolt_name: payload.submoltName,
+			title: payload.title,
+			content: payload.content,
+			type: payload.type,
+		};
 		const json = await this.requestJson("/posts", {
 			method: "POST",
 			body: JSON.stringify(body),
@@ -243,23 +251,6 @@ class MoltbookHttpError extends Error {
 		super(`Moltbook request failed (HTTP ${status})`);
 		this.name = "MoltbookHttpError";
 	}
-}
-
-function buildPostBody(
-	text: string,
-	submoltName: string,
-): { submolt_name: string; title: string; content: string; type: "text" } {
-	const trimmed = text.trim();
-	const [firstLine, ...rest] = trimmed.split(/\r?\n/);
-	const titleSource = firstLine?.trim() || trimmed;
-	const title = titleSource.slice(0, MAX_TITLE_LENGTH);
-	const contentSource = rest.join("\n").trim() || trimmed;
-	return {
-		submolt_name: submoltName,
-		title,
-		content: contentSource.slice(0, MAX_CONTENT_LENGTH),
-		type: "text",
-	};
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

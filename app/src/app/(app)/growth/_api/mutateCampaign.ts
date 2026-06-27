@@ -14,6 +14,8 @@
  * @internal
  */
 
+import type { MoltbookPostPayload } from "@cogni/ai-tools";
+
 /** Owned campaign lifecycle status (mirrors the API/CHECK constraint). */
 export type CampaignStatus = "draft" | "active" | "paused" | "done";
 
@@ -135,6 +137,7 @@ export interface ReviewedPost {
   id: string;
   status: PostStatus;
   text: string;
+  moltbook: MoltbookPostPayload | null;
   revision: number;
   score: number | null;
 }
@@ -164,9 +167,15 @@ async function patchPost(
 /** APPROVE a draft → status 'approved'. */
 export async function approvePost(
   campaignId: string,
-  postId: string
+  postId: string,
+  moltbook: MoltbookPostPayload
 ): Promise<ReviewedPost> {
-  return patchPost(campaignId, postId, { action: "approve" }, "Approve failed");
+  return patchPost(
+    campaignId,
+    postId,
+    { action: "approve", moltbook },
+    "Approve failed"
+  );
 }
 
 /** REJECT a draft → status 'rejected'. */
@@ -181,9 +190,9 @@ export async function rejectPost(
 export async function editPost(
   campaignId: string,
   postId: string,
-  text: string
+  input: { text?: string; moltbook?: MoltbookPostPayload }
 ): Promise<ReviewedPost> {
-  return patchPost(campaignId, postId, { action: "edit", text }, "Edit failed");
+  return patchPost(campaignId, postId, { action: "edit", ...input }, "Edit failed");
 }
 
 /**
@@ -201,4 +210,33 @@ export async function refinePost(
     { action: "refine", ...(feedback?.trim() ? { feedback: feedback.trim() } : {}) },
     "Refine failed"
   );
+}
+
+export async function publishApprovedPost(
+  campaignId: string,
+  postId: string
+): Promise<{
+  campaignId: string;
+  postId: string;
+  considered: number;
+  published: number;
+  skippedNoConnection: number;
+  skippedNotEligible: number;
+  skippedMissingPayload: number;
+  failed: number;
+}> {
+  const response = await fetch(
+    `/api/v1/growth/campaigns/${encodeURIComponent(campaignId)}/publish-approved`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify({ postId }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readError(response, "Publish failed"));
+  }
+  return response.json();
 }

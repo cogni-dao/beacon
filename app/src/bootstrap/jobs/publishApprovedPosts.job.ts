@@ -24,7 +24,11 @@
  * @public
  */
 
-import type { SocialXCapability } from "@cogni/ai-tools";
+import {
+	MoltbookPostPayloadSchema,
+	type MoltbookPostPayload,
+	type SocialXCapability,
+} from "@cogni/ai-tools";
 import { asc, and, eq, isNull, sql } from "drizzle-orm";
 
 import { MoltbookSocialAdapter } from "@/adapters/server";
@@ -39,7 +43,7 @@ import {
 import { serverEnv } from "@/shared/env";
 
 const MAX_POSTS_PER_RUN = 1;
-const PUBLISH_REASON = "approved_queue_highest_score";
+const PUBLISH_REASON = "approved_explicit_post";
 
 export interface PublishApprovedPostsSummary {
 	/** Approved Moltbook rows selected for this run. */
@@ -50,6 +54,8 @@ export interface PublishApprovedPostsSummary {
 	skippedNoConnection: number;
 	/** Rows selected but no longer eligible by the time the job claimed them. */
 	skippedNotEligible: number;
+	/** Approved rows left untouched because final Moltbook fields are incomplete. */
+	skippedMissingPayload: number;
 	/** Rows moved to `failed` because posting threw. */
 	failed: number;
 }
@@ -57,6 +63,7 @@ export interface PublishApprovedPostsSummary {
 export interface PublishApprovedPostsScope {
 	accountId?: string;
 	campaignId?: string;
+	postId?: string;
 }
 
 interface ApprovedPostRow {
@@ -64,6 +71,10 @@ interface ApprovedPostRow {
 	accountId: string;
 	campaignId: string;
 	text: string;
+	moltbookSubmoltName: string | null;
+	moltbookTitle: string | null;
+	moltbookContent: string | null;
+	moltbookType: string | null;
 	score: number | null;
 	ownerUserId: string;
 }
@@ -97,6 +108,7 @@ export async function runPublishApprovedPostsJob(
 			published: 0,
 			skippedNoConnection: 0,
 			skippedNotEligible: 0,
+			skippedMissingPayload: 0,
 			failed: 0,
 		};
 	}
@@ -143,6 +155,7 @@ async function runLockedPublishApprovedPostsJob(args: {
 	];
 	if (scope?.accountId) filters.push(eq(posts.accountId, scope.accountId));
 	if (scope?.campaignId) filters.push(eq(posts.campaignId, scope.campaignId));
+	if (scope?.postId) filters.push(eq(posts.id, scope.postId));
 
 	const rows = await db
 		.select({
@@ -150,6 +163,10 @@ async function runLockedPublishApprovedPostsJob(args: {
 			accountId: posts.accountId,
 			campaignId: posts.campaignId,
 			text: posts.text,
+			moltbookSubmoltName: posts.moltbookSubmoltName,
+			moltbookTitle: posts.moltbookTitle,
+			moltbookContent: posts.moltbookContent,
+			moltbookType: posts.moltbookType,
 			score: posts.score,
 			ownerUserId: billingAccounts.ownerUserId,
 		})
@@ -162,6 +179,7 @@ async function runLockedPublishApprovedPostsJob(args: {
 	let published = 0;
 	let skippedNoConnection = 0;
 	let skippedNotEligible = 0;
+	let skippedMissingPayload = 0;
 	let failed = 0;
 
 	for (const [idx, row] of rows.entries()) {
@@ -175,6 +193,7 @@ async function runLockedPublishApprovedPostsJob(args: {
 		if (result === "published") published++;
 		if (result === "skipped_no_connection") skippedNoConnection++;
 		if (result === "skipped_not_eligible") skippedNotEligible++;
+		if (result === "skipped_missing_payload") skippedMissingPayload++;
 		if (result === "failed") failed++;
 	}
 
@@ -183,6 +202,7 @@ async function runLockedPublishApprovedPostsJob(args: {
 		published,
 		skippedNoConnection,
 		skippedNotEligible,
+		skippedMissingPayload,
 		failed,
 	};
 	logSummary(summary);
@@ -196,9 +216,16 @@ async function publishOne(args: {
 	row: ApprovedPostRow;
 	rank: number;
 }): Promise<
-	"published" | "skipped_no_connection" | "skipped_not_eligible" | "failed"
+	| "published"
+	| "skipped_no_connection"
+	| "skipped_not_eligible"
+	| "skipped_missing_payload"
+	| "failed"
 > {
 	const { db, broker, makeMoltbookAdapter, row, rank } = args;
+	const payload = toMoltbookPayload(row);
+	if (!payload) return "skipped_missing_payload";
+
 	const resolved = await broker.resolveActive(row.accountId, "moltbook", {
 		actorId: row.ownerUserId,
 		tenantId: row.accountId,
@@ -225,6 +252,7 @@ async function publishOne(args: {
 			).postContent({
 				channel: "moltbook",
 				text: row.text,
+				moltbook: payload,
 				idempotencyKey: row.id,
 			});
 
@@ -258,4 +286,14 @@ async function publishOne(args: {
 			.where(and(eq(posts.id, row.id), eq(posts.status, "approved")));
 		return "failed";
 	}
+}
+
+function toMoltbookPayload(row: ApprovedPostRow): MoltbookPostPayload | null {
+	const parsed = MoltbookPostPayloadSchema.safeParse({
+		submoltName: row.moltbookSubmoltName,
+		title: row.moltbookTitle,
+		content: row.moltbookContent,
+		type: row.moltbookType,
+	});
+	return parsed.success ? parsed.data : null;
 }

@@ -44,7 +44,7 @@ const FINDINGS: GenerateFinding[] = [
   { kind: "angle", content: "own your distribution" },
 ];
 
-/** A fake `complete` that returns `n` distinct `{topic,angle,text}` posts. */
+/** A fake `complete` that returns `n` distinct `{topic,angle,title,text}` posts. */
 function fakeCompleteFor(n: number): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation(async ({ system }: { system: string }) => {
     // The prompt is stamped with the layer count; echo distinct posts so the test
@@ -53,6 +53,7 @@ function fakeCompleteFor(n: number): ReturnType<typeof vi.fn> {
     const arr = Array.from({ length: n }, (_, i) => ({
       topic: `topic-${i}`,
       angle: `angle ${i}`,
+      title: `Title ${i}`,
       text: `post body ${i}`,
     }));
     return JSON.stringify(arr);
@@ -83,7 +84,12 @@ describe("resolveLayerCount - volume from funnel_targets", () => {
 describe("parseDraftPosts - output shape", () => {
   it("keeps text-bearing rows, trims, lowercases topic, caps at limit", () => {
     const raw = JSON.stringify([
-      { topic: "Ownership", angle: "own it", text: "  body one  " },
+      {
+        topic: "Ownership",
+        angle: "own it",
+        title: "Distribution Ownership",
+        text: "  body one  ",
+      },
       { topic: "trust", angle: "build trust", text: "body two" },
       { text: "topic-less but valid, angle defaults to text slice" },
       { topic: "x", angle: "y", text: "" }, // empty text → dropped
@@ -96,6 +102,7 @@ describe("parseDraftPosts - output shape", () => {
       funnelLayer: "tofu",
       topic: "ownership",
       angle: "own it",
+      title: "Distribution Ownership",
       text: "body one",
       channel: "moltbook",
       kind: "text",

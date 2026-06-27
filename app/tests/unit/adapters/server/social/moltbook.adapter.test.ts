@@ -44,6 +44,12 @@ describe("MoltbookSocialAdapter", () => {
 		const result = await adapter.postContent({
 			channel: "moltbook",
 			text: "Hook line\nBody line",
+			moltbook: {
+				submoltName: "general",
+				title: "Hook line",
+				content: "Body line",
+				type: "text",
+			},
 			idempotencyKey: "post-key",
 		});
 
@@ -65,6 +71,17 @@ describe("MoltbookSocialAdapter", () => {
 		});
 	});
 
+	it("requires callers to provide the explicit Moltbook payload", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const adapter = new MoltbookSocialAdapter({ accessToken: "mb_secret" });
+
+		await expect(
+			adapter.postContent({ channel: "moltbook", text: "hello" }),
+		).rejects.toThrow(/title|content|payload|Required/i);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("surfaces verification challenges as explicit adapter failures", async () => {
 		vi.stubGlobal(
 			"fetch",
@@ -80,7 +97,16 @@ describe("MoltbookSocialAdapter", () => {
 		const adapter = new MoltbookSocialAdapter({ accessToken: "mb_secret" });
 
 		await expect(
-			adapter.postContent({ channel: "moltbook", text: "hello" }),
+			adapter.postContent({
+				channel: "moltbook",
+				text: "hello",
+				moltbook: {
+					submoltName: "general",
+					title: "hello",
+					content: "hello",
+					type: "text",
+				},
+			}),
 		).rejects.toBeInstanceOf(MoltbookVerificationRequiredError);
 	});
 
@@ -133,10 +159,28 @@ describe("MoltbookSocialAdapter", () => {
 		const adapter = new MoltbookSocialAdapter({ accessToken: "mb_secret" });
 
 		await expect(
-			adapter.postContent({ channel: "moltbook", text: "sensitive draft" }),
+			adapter.postContent({
+				channel: "moltbook",
+				text: "sensitive draft",
+				moltbook: {
+					submoltName: "general",
+					title: "Sensitive",
+					content: "sensitive draft",
+					type: "text",
+				},
+			}),
 		).rejects.toThrow("HTTP 500");
 		await expect(
-			adapter.postContent({ channel: "moltbook", text: "sensitive draft" }),
+			adapter.postContent({
+				channel: "moltbook",
+				text: "sensitive draft",
+				moltbook: {
+					submoltName: "general",
+					title: "Sensitive",
+					content: "sensitive draft",
+					type: "text",
+				},
+			}),
 		).rejects.not.toThrow(/mb_secret|sensitive draft/);
 	});
 });

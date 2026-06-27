@@ -54,12 +54,19 @@ export function FunnelLayerSection({
   kpi,
   targetRate,
   posts,
+  moltbookConnection,
+  onStatusChange,
 }: {
   campaignId: string;
   layer: FunnelLayer;
   kpi: FunnelLayerKpi;
   targetRate: number | null;
   posts: CampaignPost[];
+  moltbookConnection: {
+    handle: string | null;
+    displayLabel: string | null;
+  } | null;
+  onStatusChange?: (status: string) => void;
 }): ReactElement {
   const meta = LAYER_META[layer];
   const targetPct =
@@ -97,7 +104,12 @@ export function FunnelLayerSection({
         <ul className="flex flex-col gap-2">
           {posts.map((post) => (
             <li key={post.id}>
-              <DraftCard campaignId={campaignId} post={post} />
+              <DraftCard
+                campaignId={campaignId}
+                post={post}
+                moltbookConnection={moltbookConnection}
+                {...(onStatusChange ? { onStatusChange } : {})}
+              />
             </li>
           ))}
         </ul>

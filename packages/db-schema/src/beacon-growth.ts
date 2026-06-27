@@ -243,6 +243,14 @@ export const posts = pgTable(
 		/** Position within a bundle; 0 for standalone single posts. */
 		seq: integer("seq").notNull().default(0),
 		text: text("text").notNull(),
+		/** Explicit Moltbook destination; null for non-Moltbook channels or legacy rows. */
+		moltbookSubmoltName: text("moltbook_submolt_name"),
+		/** Explicit Moltbook title shown/edited before publish. */
+		moltbookTitle: text("moltbook_title"),
+		/** Explicit Moltbook body shown/edited before publish. */
+		moltbookContent: text("moltbook_content"),
+		/** Moltbook post type; v0 only supports `text`. */
+		moltbookType: text("moltbook_type"),
 		/** Optional pre-post quality score from the critique pass; nullable. */
 		score: real("score"),
 		/** Count of critique→edit revision passes; 0 for first draft. */

@@ -34,6 +34,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { deriveMoltbookPayloadFromDraft } from "@cogni/ai-tools";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import {
@@ -225,25 +226,40 @@ export const POST = wrapRouteHandlerWithLogging<{
             tx
               .insert(posts)
               .values(
-                drafts.map((d) => ({
-                  id: randomUUID(),
-                  accountId: account.id,
-                  campaignId: slug,
-                  // idea_key groups per-platform variants of one core idea; v0 is
-                  // single-channel single-post, so each draft is its own idea.
-                  ideaKey: randomUUID(),
-                  funnelLayer: d.funnelLayer,
-                  topic: d.topic,
-                  angle: d.angle,
-                  channel: d.channel,
-                  kind: d.kind,
-                  text: d.text,
-                  status: "generated" as const,
-                  // The workflow stamps `revision` per draft: 0 = raw draft pass only,
-                  // 1 = survived the critique→revise refine pass. Persist that so the
-                  // queue reflects which posts went through the quality loop.
-                  revision: d.revision,
-                }))
+                drafts.map((d) => {
+                  const moltbook =
+                    d.channel === "moltbook"
+                      ? deriveMoltbookPayloadFromDraft({
+                          text: d.text,
+                          ...(d.title ? { title: d.title } : {}),
+                          angle: d.angle,
+                          topic: d.topic,
+                        })
+                      : null;
+                  return {
+                    id: randomUUID(),
+                    accountId: account.id,
+                    campaignId: slug,
+                    // idea_key groups per-platform variants of one core idea; v0 is
+                    // single-channel single-post, so each draft is its own idea.
+                    ideaKey: randomUUID(),
+                    funnelLayer: d.funnelLayer,
+                    topic: d.topic,
+                    angle: d.angle,
+                    channel: d.channel,
+                    kind: d.kind,
+                    text: d.text,
+                    moltbookSubmoltName: moltbook?.submoltName ?? null,
+                    moltbookTitle: moltbook?.title ?? null,
+                    moltbookContent: moltbook?.content ?? null,
+                    moltbookType: moltbook?.type ?? null,
+                    status: "generated" as const,
+                    // The workflow stamps `revision` per draft: 0 = raw draft pass only,
+                    // 1 = survived the critique→revise refine pass. Persist that so the
+                    // queue reflects which posts went through the quality loop.
+                    revision: d.revision,
+                  };
+                })
               )
               .returning({
                 id: posts.id,

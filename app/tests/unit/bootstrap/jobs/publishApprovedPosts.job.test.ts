@@ -112,6 +112,7 @@ describe("runPublishApprovedPostsJob", () => {
 			published: 0,
 			skippedNoConnection: 0,
 			skippedNotEligible: 0,
+			skippedMissingPayload: 0,
 			failed: 0,
 		});
 		expect(selectLimit).not.toHaveBeenCalled();
@@ -127,6 +128,10 @@ describe("runPublishApprovedPostsJob", () => {
 				accountId: "acct-1",
 				campaignId: "campaign-1",
 				text: "Beacon update",
+				moltbookSubmoltName: "general",
+				moltbookTitle: "Beacon update",
+				moltbookContent: "Beacon update",
+				moltbookType: "text",
 				score: 0.91,
 				ownerUserId: "user-1",
 			},
@@ -159,6 +164,7 @@ describe("runPublishApprovedPostsJob", () => {
 			published: 1,
 			skippedNoConnection: 0,
 			skippedNotEligible: 0,
+			skippedMissingPayload: 0,
 			failed: 0,
 		});
 		expect(broker.resolveActive).toHaveBeenCalledWith("acct-1", "moltbook", {
@@ -169,6 +175,12 @@ describe("runPublishApprovedPostsJob", () => {
 		expect(postContent).toHaveBeenCalledWith({
 			channel: "moltbook",
 			text: "Beacon update",
+			moltbook: {
+				submoltName: "general",
+				title: "Beacon update",
+				content: "Beacon update",
+				type: "text",
+			},
 			idempotencyKey: "post-1",
 		});
 		expect(updateSet).toHaveBeenCalledWith(
@@ -185,7 +197,7 @@ describe("runPublishApprovedPostsJob", () => {
 				action: "posted",
 				score: 0.91,
 				rank: 1,
-				reason: "approved_queue_highest_score",
+				reason: "approved_explicit_post",
 			}),
 		);
 		expect(transaction).toHaveBeenCalledTimes(1);
