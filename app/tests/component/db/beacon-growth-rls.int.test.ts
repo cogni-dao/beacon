@@ -42,6 +42,7 @@ import {
 interface TestAccount {
   userId: string;
   accountId: string;
+  findingId: string;
   postId: string;
 }
 
@@ -87,11 +88,13 @@ describe("beacon-growth RLS account isolation", () => {
     accountA = {
       userId: randomUUID(),
       accountId: randomUUID(),
+      findingId: randomUUID(),
       postId: randomUUID(),
     };
     accountB = {
       userId: randomUUID(),
       accountId: randomUUID(),
+      findingId: randomUUID(),
       postId: randomUUID(),
     };
 
@@ -128,12 +131,30 @@ describe("beacon-growth RLS account isolation", () => {
         autonomy: "approve_gate",
       });
       // Findings are the tenant outputs of the RESEARCH activity (0034). Seed
-      // one per account to prove account-isolation + the kind CHECK.
+      // one per account to prove account-isolation, metadata persistence, and
+      // the kind CHECK.
       await seedDb.insert(findings).values({
+        id: acct.findingId,
         accountId: acct.accountId,
         campaignId: `${CAMPAIGN_ID}-${tag}`,
         kind: "insight",
         content: `insight for account ${tag}`,
+        sourceRef: `https://moltbook.example/${tag}/posts/source-1`,
+        metadata: {
+          sourceType: "owned_post",
+          platform: "moltbook",
+          sourcePostRef: `source-post-${tag}`,
+          sourceAccountRef: `@account_${tag}`,
+          funnelLayer: tag === "a" ? "tofu" : "mofu",
+          topic: `topic-${tag}`,
+          angle: `angle-${tag}`,
+          kpiHypothesis: {
+            metric: "qualified_reply_rate",
+            expectedDirection: "increase",
+          },
+          confidence: tag === "a" ? 0.82 : 0.71,
+          evidenceBasis: ["recent_owned_post", "campaign_brief"],
+        },
       });
       await seedDb.insert(posts).values({
         id: acct.postId,
@@ -292,6 +313,31 @@ describe("beacon-growth RLS account isolation", () => {
       );
       const owners = rows.map((r) => r.accountId);
       expect(owners).not.toContain(accountB.accountId);
+    });
+
+    it("account A's finding round-trips social evidence metadata", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(findings)
+      );
+      const mine = rows.find((r) => r.id === accountA.findingId);
+      expect(mine?.sourceRef).toBe(
+        "https://moltbook.example/a/posts/source-1"
+      );
+      expect(mine?.metadata).toMatchObject({
+        sourceType: "owned_post",
+        platform: "moltbook",
+        sourcePostRef: "source-post-a",
+        sourceAccountRef: "@account_a",
+        funnelLayer: "tofu",
+        topic: "topic-a",
+        angle: "angle-a",
+        kpiHypothesis: {
+          metric: "qualified_reply_rate",
+          expectedDirection: "increase",
+        },
+        confidence: 0.82,
+        evidenceBasis: ["recent_owned_post", "campaign_brief"],
+      });
     });
   });
 

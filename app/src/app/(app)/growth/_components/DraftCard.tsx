@@ -321,7 +321,7 @@ export function DraftCard({
   };
 
   return (
-    <Card>
+    <Card id={`post-${post.id}`} className="scroll-mt-4">
       <CardContent className="flex flex-col gap-3 pt-4">
         {/* Header: channel · topic + state badge / revision / score */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">

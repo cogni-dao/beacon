@@ -63,6 +63,30 @@ import {
 
 import { billingAccounts } from "./refs";
 
+export type FindingMetadata = {
+	/** Source category for provenance, e.g. owned_post, connected_account, social_post, playbook, campaign, web. */
+	sourceType?: string;
+	/** Social or content platform that produced the evidence, e.g. x, moltbook, linkedin. */
+	platform?: string;
+	/** Stable source post id/url/ref when the finding is grounded in a specific post. */
+	sourcePostRef?: string;
+	/** Stable source account id/handle/ref when the finding is grounded in an account snapshot. */
+	sourceAccountRef?: string;
+	/** Funnel layer this finding is expected to support. */
+	funnelLayer?: "tofu" | "mofu" | "bofu" | string;
+	/** Topic cluster for grouping evidence before generation. */
+	topic?: string;
+	/** Angle/hook family this finding supports. */
+	angle?: string;
+	/** KPI expectation the finding is meant to influence. */
+	kpiHypothesis?: string | Record<string, unknown>;
+	/** Research confidence score, conventionally 0..1 when provided. */
+	confidence?: number;
+	/** Short labels or notes explaining what evidence the finding is based on. */
+	evidenceBasis?: string[];
+	[key: string]: unknown;
+};
+
 /**
  * Account-ownership RLS predicate: a row is visible iff its `account_id` is a
  * billing account the session user owns (GUC `app.current_user_id`, NULL when
@@ -166,6 +190,8 @@ export const campaigns = pgTable(
  *   - `exemplar` / `reference` — collected successful other accounts/posts/styles;
  *     `source_ref` carries the url/handle. (Web-search collection deferred in v0;
  *     the kinds exist in the CHECK so the later pass needs no migration.)
+ * `metadata` optionally carries structured social/source/funnel/KPI context for
+ * organizing C0 evidence without creating a parallel intelligence subsystem.
  * `campaign_id` joins to `campaigns.campaign_id` (slug, no FK — mirrors `posts`).
  * RLS scopes every row to the owning billing account; findings are tenant data and
  * are NEVER written to Doltgres.
@@ -186,6 +212,8 @@ export const findings = pgTable(
 		content: text("content").notNull(),
 		/** Source url or handle for exemplar/reference rows; null for synthesized findings. */
 		sourceRef: text("source_ref"),
+		/** Optional structured provenance + generation context for social evidence. */
+		metadata: jsonb("metadata").$type<FindingMetadata | null>(),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),

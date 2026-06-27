@@ -36,14 +36,24 @@ export {
 // Re-export the growth-research workflow (beacon growth loop RESEARCH activity).
 export {
   type CampaignStrategy,
+  type ConnectedAccountSnapshot,
   type CompleteFn,
+  type ExistingResearchFinding,
+  type JsonObject,
+  type JsonPrimitive,
+  type JsonValue,
+  type OwnedSocialPostSnapshot,
   parseFindings,
+  type ParseFindingsOptions,
+  type PostedDraftMetricSnapshot,
   type RecallPlaybookFn,
+  type ResearchFunnelTargets,
   RESEARCH_FINDING_KINDS,
   type ResearchFinding,
   type ResearchFindingKind,
   runGrowthResearch,
   type RunGrowthResearchInput,
+  type TenantSocialContext,
 } from "./graphs/index";
 
 // Re-export the growth-generate workflow (beacon growth loop GENERATE activity).

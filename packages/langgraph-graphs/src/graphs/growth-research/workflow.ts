@@ -4,18 +4,20 @@
 /**
  * Module: `@cogni/langgraph-graphs/graphs/growth-research/workflow`
  * Purpose: The RESEARCH activity of the beacon growth loop — a thin, one-pass
- *   workflow that turns a campaign's strategy into a handful of structured tenant
- *   `findings`. RESEARCH_IS_AN_ACTIVITY: this is a workflow, not a table; the route
- *   persists its output rows account-scoped (see the research route).
+ *   workflow that turns a campaign's strategy and tenant social evidence into a
+ *   handful of structured tenant `findings`. RESEARCH_IS_AN_ACTIVITY: this is a
+ *   workflow, not a table; the route persists its output rows account-scoped (see
+ *   the research route).
  * Scope: Pure orchestration. Recall generic playbook (injected) → ground the strategy
- *   → one LLM call → parse to typed findings. Does NOT touch the DB, env, HTTP, or
- *   Doltgres directly — all I/O is injected (mirrors the content graph's pure factory).
+ *   and tenant social context → one LLM call → parse to typed findings. Does NOT
+ *   touch the DB, env, HTTP, or Doltgres directly — all I/O is injected (mirrors the
+ *   content graph's pure factory).
  * Invariants:
  *   - PURE_ORCHESTRATION: no side effects beyond the injected callables; no env reads.
  *   - INJECTED_IO: `complete` (LLM) and optional `recallPlaybook` (Dolt) are injected,
  *     so unit tests run with fakes and the package stays decoupled from app ports.
- *   - V0_SYNTHESIZED_KINDS: only insight/pain_point/angle are produced here; the
- *     CHECK-reserved exemplar/reference kinds await the deferred web-search pass.
+ *   - SOURCE_REF_FIREWALL: exemplar/reference findings must cite a sourceRef that
+ *     was injected into the prompt; unsupported sourceRefs are dropped.
  *   - FAIL_OPEN_RECALL: a recall failure degrades to no-playbook, never throws — the
  *     activity must still produce findings on a fresh/empty knowledge hub.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
@@ -50,10 +52,83 @@ export interface CampaignStrategy {
   objective?: string | null;
 }
 
-/** One synthesized research finding (the v0 synthesized kinds only). */
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+/** A connected owned-account snapshot already loaded by the caller. */
+export interface ConnectedAccountSnapshot {
+  /** Stable caller-owned evidence id, e.g. `connection:<id>`. Falls back to `account:<index>`. */
+  sourceRef?: string | null;
+  platform: string;
+  handle?: string | null;
+  displayName?: string | null;
+  profileUrl?: string | null;
+  metricsSnapshot?: JsonObject | null;
+  capturedAt?: string | null;
+}
+
+/** A recent owned/social post plus any cached metrics already loaded by the caller. */
+export interface OwnedSocialPostSnapshot {
+  /** Stable caller-owned evidence id, e.g. `post:<id>`. Falls back to `post:<index>`. */
+  sourceRef?: string | null;
+  platform: string;
+  postId?: string | null;
+  url?: string | null;
+  text?: string | null;
+  publishedAt?: string | null;
+  funnelLayer?: string | null;
+  metrics?: JsonObject | null;
+}
+
+/** An already-known campaign finding that can ground this research pass. */
+export interface ExistingResearchFinding {
+  /** Stable caller-owned evidence id, e.g. `finding:<id>`. Falls back to `finding:<index>`. */
+  sourceRef?: string | null;
+  kind?: string | null;
+  content: string;
+  metadata?: JsonObject | null;
+  createdAt?: string | null;
+}
+
+/** A generated/posted draft and realized metrics already loaded by the caller. */
+export interface PostedDraftMetricSnapshot {
+  /** Stable caller-owned evidence id, e.g. `draft:<id>`. Falls back to `draft:<index>`. */
+  sourceRef?: string | null;
+  platform?: string | null;
+  postId?: string | null;
+  draftId?: string | null;
+  text?: string | null;
+  funnelLayer?: string | null;
+  metrics?: JsonObject | null;
+  measuredAt?: string | null;
+}
+
+/** Per-funnel-layer target values loaded by the caller. */
+export type ResearchFunnelTargets = Record<string, number>;
+
+/** Tenant-owned evidence available to this bounded research activity. */
+export interface TenantSocialContext {
+  connectedAccounts?: readonly ConnectedAccountSnapshot[];
+  recentPosts?: readonly OwnedSocialPostSnapshot[];
+  existingFindings?: readonly ExistingResearchFinding[];
+  postedDraftMetrics?: readonly PostedDraftMetricSnapshot[];
+  funnelTargets?: ResearchFunnelTargets | null;
+}
+
+/** One research finding emitted by this activity. */
 export interface ResearchFinding {
   kind: ResearchFindingKind;
   content: string;
+  /**
+   * Evidence reference copied from the injected sourceRefs. Required for
+   * exemplar/reference; optional for synthesized insight/pain_point/angle.
+   */
+  sourceRef?: string;
+  /** Plain JSON metadata for evidence basis, funnel layer, KPI hints, etc. */
+  metadata?: JsonObject;
 }
 
 /**
@@ -74,6 +149,8 @@ export type RecallPlaybookFn = (query: string) => Promise<string[]>;
 
 export interface RunGrowthResearchInput {
   strategy: CampaignStrategy;
+  /** Tenant-owned social/campaign evidence already loaded by the caller. */
+  socialContext?: TenantSocialContext;
   complete: CompleteFn;
   recallPlaybook?: RecallPlaybookFn;
   /** Hard cap on findings returned (defensive; the prompt already aims for 5-7). */
@@ -83,6 +160,7 @@ export interface RunGrowthResearchInput {
 const DEFAULT_MAX_FINDINGS = 10;
 
 const FINDING_KIND_SET: ReadonlySet<string> = new Set(RESEARCH_FINDING_KINDS);
+const SOURCE_REQUIRED_KINDS: ReadonlySet<string> = new Set(["exemplar", "reference"]);
 
 /** Render the campaign strategy as a compact, labelled brief for the model. */
 function renderStrategy(s: CampaignStrategy): string {
@@ -94,6 +172,161 @@ function renderStrategy(s: CampaignStrategy): string {
     `objective: ${s.objective?.trim() || "(derive from the brief)"}`,
   ];
   return lines.join("\n");
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function compactText(value: string | null | undefined, max = 500): string | null {
+  if (!hasText(value)) return null;
+  return value.trim().replace(/\s+/g, " ").slice(0, max);
+}
+
+function jsonSummary(value: JsonObject | null | undefined, max = 700): string | null {
+  if (!value) return null;
+  try {
+    return JSON.stringify(value).slice(0, max);
+  } catch {
+    return null;
+  }
+}
+
+function sourceRef(provided: string | null | undefined, fallback: string): string {
+  return compactText(provided, 180) ?? fallback;
+}
+
+function pushLabeledField(
+  fields: string[],
+  label: string,
+  value: string | null | undefined
+): void {
+  const text = compactText(value, 260);
+  if (text) fields.push(`${label}=${text}`);
+}
+
+function pushJsonField(
+  fields: string[],
+  label: string,
+  value: JsonObject | null | undefined
+): void {
+  const text = jsonSummary(value);
+  if (text) fields.push(`${label}=${text}`);
+}
+
+function renderTenantSocialContext(context: TenantSocialContext | undefined): {
+  block: string;
+  sourceRefs: string[];
+} {
+  if (!context) {
+    return { block: "Tenant social context:\n(none supplied)", sourceRefs: [] };
+  }
+
+  const sections: string[] = [];
+  const refs: string[] = [];
+
+  const accounts = context.connectedAccounts ?? [];
+  if (accounts.length > 0) {
+    const lines = accounts.map((account, i) => {
+      const ref = sourceRef(account.sourceRef, `account:${i}`);
+      refs.push(ref);
+      const fields = [`[${ref}]`, `platform=${account.platform}`];
+      pushLabeledField(fields, "handle", account.handle);
+      pushLabeledField(fields, "displayName", account.displayName);
+      pushLabeledField(fields, "profileUrl", account.profileUrl);
+      pushLabeledField(fields, "capturedAt", account.capturedAt);
+      pushJsonField(fields, "metrics", account.metricsSnapshot);
+      return `- ${fields.join(" ")}`;
+    });
+    sections.push(`Connected account snapshots:\n${lines.join("\n")}`);
+  }
+
+  const posts = context.recentPosts ?? [];
+  if (posts.length > 0) {
+    const lines = posts.map((post, i) => {
+      const ref = sourceRef(post.sourceRef, `post:${i}`);
+      refs.push(ref);
+      const fields = [`[${ref}]`, `platform=${post.platform}`];
+      pushLabeledField(fields, "postId", post.postId);
+      pushLabeledField(fields, "url", post.url);
+      pushLabeledField(fields, "publishedAt", post.publishedAt);
+      pushLabeledField(fields, "funnelLayer", post.funnelLayer);
+      pushLabeledField(fields, "text", post.text);
+      pushJsonField(fields, "metrics", post.metrics);
+      return `- ${fields.join(" ")}`;
+    });
+    sections.push(`Recent owned posts and metrics:\n${lines.join("\n")}`);
+  }
+
+  const findings = context.existingFindings ?? [];
+  if (findings.length > 0) {
+    const lines = findings
+      .filter((finding) => hasText(finding.content))
+      .map((finding, i) => {
+        const ref = sourceRef(finding.sourceRef, `finding:${i}`);
+        refs.push(ref);
+        const fields = [`[${ref}]`];
+        pushLabeledField(fields, "kind", finding.kind);
+        pushLabeledField(fields, "createdAt", finding.createdAt);
+        pushLabeledField(fields, "content", finding.content);
+        pushJsonField(fields, "metadata", finding.metadata);
+        return `- ${fields.join(" ")}`;
+      });
+    if (lines.length > 0) {
+      sections.push(`Existing campaign findings:\n${lines.join("\n")}`);
+    }
+  }
+
+  const draftMetrics = context.postedDraftMetrics ?? [];
+  if (draftMetrics.length > 0) {
+    const lines = draftMetrics.map((metric, i) => {
+      const ref = sourceRef(metric.sourceRef, `draft:${i}`);
+      refs.push(ref);
+      const fields = [`[${ref}]`];
+      pushLabeledField(fields, "platform", metric.platform);
+      pushLabeledField(fields, "postId", metric.postId);
+      pushLabeledField(fields, "draftId", metric.draftId);
+      pushLabeledField(fields, "funnelLayer", metric.funnelLayer);
+      pushLabeledField(fields, "measuredAt", metric.measuredAt);
+      pushLabeledField(fields, "text", metric.text);
+      pushJsonField(fields, "metrics", metric.metrics);
+      return `- ${fields.join(" ")}`;
+    });
+    sections.push(`Posted draft metrics:\n${lines.join("\n")}`);
+  }
+
+  const targets = jsonSummary(context.funnelTargets ?? null);
+  if (targets) {
+    sections.push(`Funnel targets:\n${targets}`);
+  }
+
+  const uniqueRefs = [...new Set(refs)];
+  const allowed =
+    uniqueRefs.length > 0
+      ? `Allowed sourceRefs for source-backed findings:\n- ${uniqueRefs.join("\n- ")}`
+      : "Allowed sourceRefs for source-backed findings:\n(none)";
+
+  return {
+    block: `Tenant social context:\n${sections.join("\n\n") || "(none supplied)"}\n\n${allowed}`,
+    sourceRefs: uniqueRefs,
+  };
+}
+
+function renderPlaybook(playbook: readonly string[]): {
+  block: string;
+  sourceRefs: string[];
+} {
+  if (playbook.length === 0) return { block: "", sourceRefs: [] };
+  const refs: string[] = [];
+  const lines = playbook.map((note, i) => {
+    const ref = `playbook:${i}`;
+    refs.push(ref);
+    return `- [${ref}] ${note.trim()}`;
+  });
+  return {
+    block: `\n\nRecalled generic playbook (apply customized, do not copy):\n${lines.join("\n")}`,
+    sourceRefs: refs,
+  };
 }
 
 /** Best-effort recall — never throws; an empty/failed hub yields no playbook. */
@@ -137,7 +370,45 @@ export function extractJsonArray(raw: string): string {
  * Parse the model's JSON array into typed findings. Tolerant: ignores non-JSON,
  * drops rows missing a valid kind or content, trims content. Never throws.
  */
-export function parseFindings(raw: string): ResearchFinding[] {
+export interface ParseFindingsOptions {
+  /**
+   * When supplied, any sourceRef on a finding must match one of these injected refs.
+   * This prevents the model from inventing URLs, handles, or opaque competitors as sources.
+   */
+  allowedSourceRefs?: ReadonlySet<string> | readonly string[];
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true;
+  const t = typeof value;
+  if (t === "string" || t === "number" || t === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (t !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return Object.values(value as Record<string, unknown>).every(isJsonValue);
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    isJsonValue(value)
+  );
+}
+
+function makeAllowedSourceSet(
+  refs: ParseFindingsOptions["allowedSourceRefs"]
+): ReadonlySet<string> | undefined {
+  if (!refs) return undefined;
+  return refs instanceof Set ? refs : new Set(refs);
+}
+
+export function parseFindings(
+  raw: string,
+  options: ParseFindingsOptions = {}
+): ResearchFinding[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(extractJsonArray(raw));
@@ -146,6 +417,7 @@ export function parseFindings(raw: string): ResearchFinding[] {
   }
   if (!Array.isArray(parsed)) return [];
 
+  const allowedSourceRefs = makeAllowedSourceSet(options.allowedSourceRefs);
   const out: ResearchFinding[] = [];
   for (const item of parsed) {
     if (typeof item !== "object" || item === null) continue;
@@ -154,17 +426,37 @@ export function parseFindings(raw: string): ResearchFinding[] {
     const content = rec.content;
     if (typeof kind !== "string" || !FINDING_KIND_SET.has(kind)) continue;
     if (typeof content !== "string" || content.trim().length === 0) continue;
-    out.push({ kind: kind as ResearchFindingKind, content: content.trim() });
+
+    const rawSourceRef = rec.sourceRef;
+    const ref = typeof rawSourceRef === "string" ? rawSourceRef.trim() : "";
+    if (ref && allowedSourceRefs && !allowedSourceRefs.has(ref)) continue;
+    if (SOURCE_REQUIRED_KINDS.has(kind) && ref.length === 0) continue;
+
+    const finding: ResearchFinding = {
+      kind: kind as ResearchFindingKind,
+      content: content.trim(),
+    };
+    if (ref) finding.sourceRef = ref;
+    if (isJsonObject(rec.metadata)) finding.metadata = rec.metadata;
+    out.push(finding);
   }
   return out;
+}
+
+function hasRecommendedNextAction(findings: readonly ResearchFinding[]): boolean {
+  return findings.some((finding) => {
+    const action = finding.metadata?.nextAction;
+    return typeof action === "string" && action.trim().length > 0;
+  });
 }
 
 /**
  * Run the one-pass research activity for a campaign.
  *
  * 1. Recall generic brand-voice/playbook from the knowledge hub (injected, fail-open).
- * 2. Ground the campaign strategy + playbook into a single research prompt.
- * 3. One LLM call → parse to typed `findings` (insight/pain_point/angle).
+ * 2. Ground the campaign strategy + tenant social evidence + playbook into a
+ *    single research prompt.
+ * 3. One LLM call → parse to typed `findings`, enforcing the injected sourceRef list.
  *
  * Returns the structured findings; persistence (account-scoped rows) is the caller's
  * job. Pure aside from the injected callables.
@@ -172,22 +464,31 @@ export function parseFindings(raw: string): ResearchFinding[] {
 export async function runGrowthResearch(
   input: RunGrowthResearchInput
 ): Promise<ResearchFinding[]> {
-  const { strategy, complete, recallPlaybook, maxFindings } = input;
+  const { strategy, socialContext, complete, recallPlaybook, maxFindings } = input;
 
   const recallQuery = [strategy.coreTopic, strategy.icp, "brand voice hooks angles"]
     .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
     .join(" ");
   const playbook = await safeRecall(recallPlaybook, recallQuery || "brand voice hooks angles");
 
-  const playbookBlock =
-    playbook.length > 0
-      ? `\n\nRecalled generic playbook (apply customized, do not copy):\n- ${playbook.join("\n- ")}`
+  const social = renderTenantSocialContext(socialContext);
+  const playbookRendered = renderPlaybook(playbook);
+  const allowedSourceRefs = new Set([
+    ...social.sourceRefs,
+    ...playbookRendered.sourceRefs,
+  ]);
+  const sourceRefBlock =
+    playbookRendered.sourceRefs.length > 0
+      ? `\n\nAdditional allowed playbook sourceRefs:\n- ${playbookRendered.sourceRefs.join("\n- ")}`
       : "";
 
-  const user = `Campaign strategy:\n${renderStrategy(strategy)}${playbookBlock}`;
+  const user = `Campaign strategy:\n${renderStrategy(strategy)}\n\n${social.block}${sourceRefBlock}${playbookRendered.block}`;
 
   const text = await complete({ system: RESEARCH_PROMPT, user });
-  const findings = parseFindings(text);
+  const findings = parseFindings(text, { allowedSourceRefs });
+  if (findings.length > 0 && !hasRecommendedNextAction(findings)) {
+    return [];
+  }
 
   const cap = maxFindings ?? DEFAULT_MAX_FINDINGS;
   return findings.slice(0, cap);

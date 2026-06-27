@@ -54,12 +54,22 @@ export {
 } from "./growth-research/prompts";
 export {
   type CampaignStrategy,
+  type ConnectedAccountSnapshot,
   type CompleteFn,
+  type ExistingResearchFinding,
+  type JsonObject,
+  type JsonPrimitive,
+  type JsonValue,
+  type OwnedSocialPostSnapshot,
   parseFindings,
+  type ParseFindingsOptions,
+  type PostedDraftMetricSnapshot,
   type RecallPlaybookFn,
+  type ResearchFunnelTargets,
   type ResearchFinding,
   runGrowthResearch,
   type RunGrowthResearchInput,
+  type TenantSocialContext,
 } from "./growth-research/workflow";
 // Growth-generate (beacon growth loop GENERATE activity). The pure `runGrowthGenerate`
 // workflow stays the SHARED core (the generate route still calls it directly); the
