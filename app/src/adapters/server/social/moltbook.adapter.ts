@@ -33,9 +33,18 @@ import {
 } from "@cogni/ai-tools";
 import { z } from "zod";
 
+import { getNodeId } from "@/shared/config/repoSpec.server";
 import { EVENT_NAMES, makeLogger } from "@/shared/observability";
 
-const logger = makeLogger({ component: "MoltbookSocialAdapter" });
+const logger = makeMoltbookLogger();
+
+function makeMoltbookLogger() {
+	try {
+		return makeLogger({ component: "MoltbookSocialAdapter", nodeId: getNodeId() });
+	} catch {
+		return makeLogger({ component: "MoltbookSocialAdapter" });
+	}
+}
 
 /** Official Moltbook API base. Use `www` to avoid auth-stripping redirects. */
 export const DEFAULT_MOLTBOOK_API_BASE_URL =
