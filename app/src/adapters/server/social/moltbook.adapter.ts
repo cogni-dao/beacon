@@ -322,7 +322,7 @@ function stringField(
 }
 
 function moltbookPostUrl(externalId: string): string {
-	return `https://www.moltbook.com/posts/${encodeURIComponent(externalId)}`;
+	return `https://www.moltbook.com/post/${encodeURIComponent(externalId)}`;
 }
 
 function numberField(

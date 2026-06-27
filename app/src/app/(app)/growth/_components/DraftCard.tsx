@@ -118,18 +118,43 @@ function hasDuplicateMoltbookText(payload: MoltbookPostPayload): boolean {
 
 function inferredPostUrl(post: CampaignPost): string | null {
   if (post.externalPostUrl) {
-    return post.externalPostUrl;
+    return normalizeMoltbookPostUrl(post.externalPostUrl);
   }
   if (!post.externalPostId) {
     return null;
   }
   if (post.channel === "moltbook") {
-    return `https://www.moltbook.com/posts/${encodeURIComponent(post.externalPostId)}`;
+    return `https://www.moltbook.com/post/${encodeURIComponent(post.externalPostId)}`;
   }
   if (post.channel === "x") {
     return `https://x.com/i/web/status/${encodeURIComponent(post.externalPostId)}`;
   }
   return null;
+}
+
+function normalizeMoltbookPostUrl(url: string): string {
+  return url.replace(
+    /^https:\/\/www\.moltbook\.com\/posts\//,
+    "https://www.moltbook.com/post/"
+  );
+}
+
+function relativePostedAt(postedAt: string | null): string | null {
+  if (!postedAt) return null;
+  const time = new Date(postedAt).getTime();
+  if (!Number.isFinite(time)) return null;
+
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function submoltOptions(currentValue: string): string[] {
@@ -257,7 +282,9 @@ export function DraftCard({
   const disabled = busy !== null;
   const payloadReady = isMoltbookPayloadReady(payload);
   const isMoltbook = post.channel === "moltbook";
-  const postUrl = post.status === "posted" ? inferredPostUrl(post) : null;
+  const isPosted = post.status === "posted";
+  const postUrl = isPosted ? inferredPostUrl(post) : null;
+  const postedRelative = isPosted ? relativePostedAt(post.postedAt) : null;
   const accountLabel =
     moltbookConnection?.handle ??
     moltbookConnection?.displayLabel ??
@@ -267,6 +294,11 @@ export function DraftCard({
     setDraftText(post.text);
     setPayload(initialMoltbookPayload(post));
     setPublishOpen(false);
+    if (post.status === "posted") {
+      setEditing(false);
+      setRefineOpen(false);
+      setFeedback("");
+    }
   }, [post.id, post.text, post.revision, post.status]);
 
   const run = async <T,>(
@@ -316,7 +348,23 @@ export function DraftCard({
             <Badge intent={badge.intent} size="sm">
               {badge.label}
             </Badge>
-            {notice && (
+            {postedRelative && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-foreground">
+                {postedRelative}
+              </span>
+            )}
+            {postUrl && (
+              <a
+                className="inline-flex items-center gap-1.5 text-primary underline-offset-4 hover:underline"
+                href={postUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+                View post
+              </a>
+            )}
+            {!isPosted && notice && (
               <span className="rounded bg-muted px-1.5 py-0.5 text-foreground">
                 {notice}
               </span>
@@ -360,92 +408,90 @@ export function DraftCard({
         )}
 
         {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2 border-border/60 border-t pt-2">
-          {editing ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={
-                  disabled ||
-                  (isMoltbook
-                    ? !payloadReady
-                    : draftText.trim().length === 0)
-                }
-                onClick={() =>
-                  run("edit", async () => {
-                    const nextText = isMoltbook
-                      ? payload.content.trim()
-                      : draftText.trim();
-                    const result = await editPost(campaignId, post.id, {
-                      text: nextText,
-                      moltbook: {
-                        submoltName: payload.submoltName.trim(),
-                        title: payload.title.trim(),
-                        content: payload.content.trim(),
-                        type: "text",
-                      },
-                    });
+        {!isPosted && (
+          <div className="flex flex-wrap items-center gap-2 border-border/60 border-t pt-2">
+            {editing ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  disabled={
+                    disabled ||
+                    (isMoltbook ? !payloadReady : draftText.trim().length === 0)
+                  }
+                  onClick={() =>
+                    run("edit", async () => {
+                      const nextText = isMoltbook
+                        ? payload.content.trim()
+                        : draftText.trim();
+                      const result = await editPost(campaignId, post.id, {
+                        text: nextText,
+                        moltbook: {
+                          submoltName: payload.submoltName.trim(),
+                          title: payload.title.trim(),
+                          content: payload.content.trim(),
+                          type: "text",
+                        },
+                      });
+                      setEditing(false);
+                      setNotice("Saved just now");
+                      return result;
+                    })
+                  }
+                >
+                  <Save className="size-3.5" aria-hidden="true" />
+                  {busy === "edit" ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  disabled={disabled}
+                  onClick={() => {
                     setEditing(false);
-                    setNotice("Saved just now");
-                    return result;
-                  })
-                }
-              >
-                <Save className="size-3.5" aria-hidden="true" />
-                {busy === "edit" ? "Saving…" : "Save"}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8"
-                disabled={disabled}
-                onClick={() => {
-                  setEditing(false);
-                  setDraftText(post.text);
-                  setPayload(initialMoltbookPayload(post));
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : refineOpen ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={disabled}
-                onClick={() =>
-                  run("refine", async () => {
-                    await refinePost(campaignId, post.id, feedback);
+                    setDraftText(post.text);
+                    setPayload(initialMoltbookPayload(post));
+                  }}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : refineOpen ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  disabled={disabled}
+                  onClick={() =>
+                    run("refine", async () => {
+                      await refinePost(campaignId, post.id, feedback);
+                      setRefineOpen(false);
+                      setFeedback("");
+                    })
+                  }
+                >
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                  {busy === "refine" ? "Refining…" : "Refine draft"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  disabled={disabled}
+                  onClick={() => {
                     setRefineOpen(false);
                     setFeedback("");
-                  })
-                }
-              >
-                <Sparkles className="size-3.5" aria-hidden="true" />
-                {busy === "refine" ? "Refining…" : "Refine draft"}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8"
-                disabled={disabled}
-                onClick={() => {
-                  setRefineOpen(false);
-                  setFeedback("");
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              {post.status !== "posted" && (
+                  }}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
                 <Button
                   type="button"
                   size="sm"
@@ -471,67 +517,71 @@ export function DraftCard({
                   <Check className="size-3.5" aria-hidden="true" />
                   {busy === "approve" ? "Approving…" : "Approve"}
                 </Button>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5"
-                disabled={disabled || post.status === "rejected"}
-                onClick={() =>
-                  run("reject", () => rejectPost(campaignId, post.id), (result) => {
-                    setNotice("Rejected just now");
-                    onStatusChange?.(result.status);
-                  })
-                }
-              >
-                <X className="size-3.5" aria-hidden="true" />
-                {busy === "reject" ? "Rejecting…" : "Reject"}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5"
-                disabled={disabled}
-                onClick={() => {
-                  setDraftText(post.text);
-                  setPayload(initialMoltbookPayload(post));
-                  setEditing(true);
-                }}
-              >
-                <Pencil className="size-3.5" aria-hidden="true" />
-                Edit
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5"
-                disabled={disabled}
-                onClick={() => setRefineOpen(true)}
-              >
-                <Sparkles className="size-3.5" aria-hidden="true" />
-                Refine
-              </Button>
-              {post.status === "approved" && (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   className="h-8 gap-1.5"
-                  disabled={disabled || !moltbookConnection || !payloadReady}
-                  onClick={() => setPublishOpen((open) => !open)}
+                  disabled={disabled || post.status === "rejected"}
+                  onClick={() =>
+                    run(
+                      "reject",
+                      () => rejectPost(campaignId, post.id),
+                      (result) => {
+                        setNotice("Rejected just now");
+                        onStatusChange?.(result.status);
+                      }
+                    )
+                  }
                 >
-                  <Rocket className="size-3.5" aria-hidden="true" />
-                  Publish
+                  <X className="size-3.5" aria-hidden="true" />
+                  {busy === "reject" ? "Rejecting…" : "Reject"}
                 </Button>
-              )}
-            </>
-          )}
-        </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5"
+                  disabled={disabled}
+                  onClick={() => {
+                    setDraftText(post.text);
+                    setPayload(initialMoltbookPayload(post));
+                    setEditing(true);
+                  }}
+                >
+                  <Pencil className="size-3.5" aria-hidden="true" />
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5"
+                  disabled={disabled}
+                  onClick={() => setRefineOpen(true)}
+                >
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                  Refine
+                </Button>
+                {post.status === "approved" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5"
+                    disabled={disabled || !moltbookConnection || !payloadReady}
+                    onClick={() => setPublishOpen((open) => !open)}
+                  >
+                    <Rocket className="size-3.5" aria-hidden="true" />
+                    Publish
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-        {publishOpen && (
+        {!isPosted && publishOpen && (
           <div className="rounded-md border border-border bg-background p-3 text-sm">
             <div className="mb-2 grid gap-1">
               <p className="font-medium">Publish to Moltbook?</p>
@@ -582,18 +632,6 @@ export function DraftCard({
               </Button>
             </div>
           </div>
-        )}
-
-        {postUrl && (
-          <a
-            className="inline-flex w-fit items-center gap-1.5 text-primary text-sm underline-offset-4 hover:underline"
-            href={postUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ExternalLink className="size-3.5" aria-hidden="true" />
-            View posted post
-          </a>
         )}
 
         {error && (

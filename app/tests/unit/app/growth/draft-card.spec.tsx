@@ -132,17 +132,38 @@ describe("DraftCard - review + refine surface", () => {
     expect(screen.getByText("Approved")).toBeInTheDocument();
   });
 
-  it("renders a clickable post link for posted Moltbook rows", () => {
+  it("renders a compact header post link for posted Moltbook rows", () => {
     renderCard(
       makePost({
         status: "posted",
         externalPostId: "moltbook-post-1",
+        postedAt: new Date().toISOString(),
       })
     );
 
-    expect(screen.getByRole("link", { name: /view posted post/i })).toHaveAttribute(
+    expect(screen.getByText("Posted")).toBeInTheDocument();
+    expect(screen.getByText("just now")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view post/i })).toHaveAttribute(
       "href",
-      "https://www.moltbook.com/posts/moltbook-post-1"
+      "https://www.moltbook.com/post/moltbook-post-1"
+    );
+    expect(screen.queryByRole("button", { name: /^reject/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^refine$/i })).not.toBeInTheDocument();
+  });
+
+  it("normalizes legacy Moltbook /posts links for posted rows", () => {
+    renderCard(
+      makePost({
+        status: "posted",
+        externalPostId: "moltbook-post-1",
+        externalPostUrl: "https://www.moltbook.com/posts/moltbook-post-1",
+      })
+    );
+
+    expect(screen.getByRole("link", { name: /view post/i })).toHaveAttribute(
+      "href",
+      "https://www.moltbook.com/post/moltbook-post-1"
     );
   });
 
