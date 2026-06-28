@@ -70,7 +70,7 @@ export function CampaignActions({
             run("research", () => runResearch(campaignId), (n) =>
               n > 0
                 ? `Research added ${n} finding${n === 1 ? "" : "s"}.`
-                : "Research ran — no findings produced."
+                : "Research did not produce actionable findings."
             )
           }
         >

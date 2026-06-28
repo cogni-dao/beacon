@@ -41,7 +41,7 @@ import {
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { resolveAppDb } from "@/bootstrap/container";
-import { campaigns, postMetrics, posts } from "@/shared/db/schema";
+import { campaigns, findings, postMetrics, posts } from "@/shared/db/schema";
 
 import { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
 
@@ -322,6 +322,16 @@ export interface CampaignPost {
 	capturedAt: string | null;
 }
 
+/** One persisted research finding for the campaign detail lens. */
+export interface CampaignFinding {
+	id: string;
+	kind: string;
+	content: string;
+	sourceRef: string | null;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
 /** Full detail for one campaign — the lens row plus its brief and posts. */
 export interface CampaignDetail extends CampaignLensRow {
 	/** The campaign brief / goal (owned `campaigns.brief`); "" when unset. */
@@ -330,6 +340,8 @@ export interface CampaignDetail extends CampaignLensRow {
 		handle: string | null;
 		displayLabel: string | null;
 	} | null;
+	/** Research outputs persisted by the RESEARCH activity, including source refs. */
+	findings: CampaignFinding[];
 	posts: CampaignPost[];
 }
 
@@ -504,10 +516,43 @@ async function loadMoltbookConnection(
 	return row ? { handle: row.handle, displayLabel: row.displayLabel } : null;
 }
 
+async function loadCampaignFindings(
+	campaignId: string,
+	userId: string,
+): Promise<CampaignFinding[]> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				id: findings.id,
+				kind: findings.kind,
+				content: findings.content,
+				sourceRef: findings.sourceRef,
+				metadata: findings.metadata,
+				createdAt: findings.createdAt,
+			})
+			.from(findings)
+			.where(eq(findings.campaignId, campaignId))
+			.orderBy(desc(findings.createdAt)),
+	);
+
+	return rows.map((r) => ({
+		id: r.id,
+		kind: r.kind,
+		content: r.content,
+		sourceRef: r.sourceRef ?? null,
+		metadata: r.metadata ?? null,
+		createdAt: r.createdAt.toISOString(),
+	}));
+}
+
 /**
  * Full detail for one owned campaign: its brief, target/budget, lifecycle status,
- * independent KPI, and the posts (broadcasts) + their latest cached metrics that
- * produced it. Returns `null` when the campaign is unknown to the user's account.
+ * independent KPI, research findings, and the posts (broadcasts) + their latest
+ * cached metrics that produced it. Returns `null` when the campaign is unknown
+ * to the user's account.
  *
  * @param userId - Session user id; the Postgres reads run under this user's RLS
  *   scope so the record/posts/metrics reflect only the user's own account(s).
@@ -523,6 +568,7 @@ export async function getGrowthCampaign(
 	const effectiveTarget = rec.targetRate ?? DEFAULT_TARGET_RATE;
 	const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
 	const layers = computeLayerBreakdown(loaded, effectiveTarget);
+	const findings = await loadCampaignFindings(campaignId, userId);
 	const posts = await loadCampaignPosts(campaignId, userId);
 	const moltbookConnection = await loadMoltbookConnection(userId);
 
@@ -542,6 +588,7 @@ export async function getGrowthCampaign(
 		layers,
 		brief: rec.brief ?? "",
 		moltbookConnection,
+		findings,
 		posts,
 	};
 }

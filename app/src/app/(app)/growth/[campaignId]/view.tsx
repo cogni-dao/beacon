@@ -28,6 +28,7 @@ import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
 import { CampaignActions } from "../_components/CampaignActions";
 import { CampaignControls } from "../_components/CampaignControls";
 import { CampaignFunnel } from "../_components/CampaignFunnel";
+import { CampaignResearchEvidence } from "../_components/CampaignResearchEvidence";
 import {
   campaignStatusInfo,
   CampaignStatusBadge,
@@ -110,6 +111,8 @@ export function CampaignDetailView({
           </p>
         </CardContent>
       </Card>
+
+      <CampaignResearchEvidence findings={campaign.findings} />
 
       {/* Queue grouped by funnel layer, each with its own independent KPI, plus a
           status filter so the operator can blast through review (approve/reject/
