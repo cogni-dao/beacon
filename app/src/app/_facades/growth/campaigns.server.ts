@@ -38,10 +38,17 @@ import {
 	type EngagementBasis,
 	type PostMetricSnapshot,
 } from "@cogni/knowledge-store";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { resolveAppDb } from "@/bootstrap/container";
-import { campaigns, findings, postMetrics, posts } from "@/shared/db/schema";
+import {
+	campaignCurrentState,
+	campaignPostPriorities,
+	campaigns,
+	findings,
+	postMetrics,
+	posts,
+} from "@/shared/db/schema";
 
 import { FUNNEL_LAYERS, type FunnelLayer } from "./campaigns.shared";
 
@@ -332,6 +339,32 @@ export interface CampaignFinding {
 	createdAt: string;
 }
 
+/** Latest campaign intelligence Decide snapshot. */
+export interface CampaignCurrentThinking {
+	id: string;
+	summary: string;
+	nextAction: string;
+	confidence: number;
+	metadata: Record<string, unknown> | null;
+	updatedAt: string;
+}
+
+/** Ranked next-post recommendation for the campaign's Act step. */
+export interface CampaignPostPriority {
+	id: string;
+	rank: number;
+	score: number;
+	status: string;
+	funnelLayer: FunnelLayer;
+	topic: string | null;
+	angle: string | null;
+	premise: string;
+	justification: string;
+	kpiMetric: string;
+	metadata: Record<string, unknown> | null;
+	createdAt: string;
+}
+
 /** Full detail for one campaign — the lens row plus its brief and posts. */
 export interface CampaignDetail extends CampaignLensRow {
 	/** The campaign brief / goal (owned `campaigns.brief`); "" when unset. */
@@ -342,6 +375,10 @@ export interface CampaignDetail extends CampaignLensRow {
 	} | null;
 	/** Research outputs persisted by the RESEARCH activity, including source refs. */
 	findings: CampaignFinding[];
+	/** Latest campaign intelligence summary for agents/operators. */
+	currentThinking: CampaignCurrentThinking | null;
+	/** Ranked queue of next posts the agent should generate/refine first. */
+	nextPostPriorities: CampaignPostPriority[];
 	posts: CampaignPost[];
 }
 
@@ -548,6 +585,84 @@ async function loadCampaignFindings(
 	}));
 }
 
+async function loadCampaignCurrentThinking(
+	campaignId: string,
+	userId: string,
+): Promise<CampaignCurrentThinking | null> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				id: campaignCurrentState.id,
+				summary: campaignCurrentState.summary,
+				nextAction: campaignCurrentState.nextAction,
+				confidence: campaignCurrentState.confidence,
+				metadata: campaignCurrentState.metadata,
+				updatedAt: campaignCurrentState.updatedAt,
+			})
+			.from(campaignCurrentState)
+			.where(eq(campaignCurrentState.campaignId, campaignId))
+			.limit(1),
+	);
+	const row = rows[0];
+	return row
+		? {
+				id: row.id,
+				summary: row.summary,
+				nextAction: row.nextAction,
+				confidence: row.confidence,
+				metadata: row.metadata ?? null,
+				updatedAt: row.updatedAt.toISOString(),
+			}
+		: null;
+}
+
+async function loadCampaignPostPriorities(
+	campaignId: string,
+	userId: string,
+): Promise<CampaignPostPriority[]> {
+	const db = resolveAppDb();
+	const actorId = userActor(userId as UserId);
+
+	const rows = await withTenantScope(db, actorId, async (tx) =>
+		tx
+			.select({
+				id: campaignPostPriorities.id,
+				rank: campaignPostPriorities.rank,
+				score: campaignPostPriorities.score,
+				status: campaignPostPriorities.status,
+				funnelLayer: campaignPostPriorities.funnelLayer,
+				topic: campaignPostPriorities.topic,
+				angle: campaignPostPriorities.angle,
+				premise: campaignPostPriorities.premise,
+				justification: campaignPostPriorities.justification,
+				kpiMetric: campaignPostPriorities.kpiMetric,
+				metadata: campaignPostPriorities.metadata,
+				createdAt: campaignPostPriorities.createdAt,
+			})
+			.from(campaignPostPriorities)
+			.where(eq(campaignPostPriorities.campaignId, campaignId))
+			.orderBy(asc(campaignPostPriorities.rank)),
+	);
+
+	return rows.map((row) => ({
+		id: row.id,
+		rank: row.rank,
+		score: row.score,
+		status: row.status,
+		funnelLayer: asFunnelLayer(row.funnelLayer),
+		topic: row.topic ?? null,
+		angle: row.angle ?? null,
+		premise: row.premise,
+		justification: row.justification,
+		kpiMetric: row.kpiMetric,
+		metadata: row.metadata ?? null,
+		createdAt: row.createdAt.toISOString(),
+	}));
+}
+
 /**
  * Full detail for one owned campaign: its brief, target/budget, lifecycle status,
  * independent KPI, research findings, and the posts (broadcasts) + their latest
@@ -569,6 +684,8 @@ export async function getGrowthCampaign(
 	const kpi = computeEngagementKpi(loaded.snapshots, { rate: effectiveTarget });
 	const layers = computeLayerBreakdown(loaded, effectiveTarget);
 	const findings = await loadCampaignFindings(campaignId, userId);
+	const currentThinking = await loadCampaignCurrentThinking(campaignId, userId);
+	const nextPostPriorities = await loadCampaignPostPriorities(campaignId, userId);
 	const posts = await loadCampaignPosts(campaignId, userId);
 	const moltbookConnection = await loadMoltbookConnection(userId);
 
@@ -589,6 +706,8 @@ export async function getGrowthCampaign(
 		brief: rec.brief ?? "",
 		moltbookConnection,
 		findings,
+		currentThinking,
+		nextPostPriorities,
 		posts,
 	};
 }

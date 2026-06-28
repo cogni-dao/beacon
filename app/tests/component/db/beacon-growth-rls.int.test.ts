@@ -31,6 +31,9 @@ import type { Database } from "@/adapters/server/db/client";
 import { getAppDb } from "@/adapters/server/db/client";
 import {
   billingAccounts,
+  campaignCurrentState,
+  campaignIntelligenceRuns,
+  campaignPostPriorities,
   campaigns,
   findings,
   postDecisions,
@@ -44,6 +47,9 @@ interface TestAccount {
   accountId: string;
   findingId: string;
   postId: string;
+  runId: string;
+  currentStateId: string;
+  priorityId: string;
 }
 
 /**
@@ -90,12 +96,18 @@ describe("beacon-growth RLS account isolation", () => {
       accountId: randomUUID(),
       findingId: randomUUID(),
       postId: randomUUID(),
+      runId: randomUUID(),
+      currentStateId: randomUUID(),
+      priorityId: randomUUID(),
     };
     accountB = {
       userId: randomUUID(),
       accountId: randomUUID(),
       findingId: randomUUID(),
       postId: randomUUID(),
+      runId: randomUUID(),
+      currentStateId: randomUUID(),
+      priorityId: randomUUID(),
     };
 
     // Seed via service role (bypasses RLS).
@@ -175,6 +187,54 @@ describe("beacon-growth RLS account isolation", () => {
         impressions: 100,
         likes: 5,
       });
+      await seedDb.insert(campaignIntelligenceRuns).values({
+        id: acct.runId,
+        accountId: acct.accountId,
+        campaignId: `${CAMPAIGN_ID}-${tag}`,
+        status: "completed",
+        trigger: "manual_refresh",
+        completedAt: new Date(),
+        modelRef: "test-scorer",
+        sourceCounts: {
+          ownedPosts: 1,
+          priorFindings: 1,
+          sourceBackedFindings: 1,
+        },
+        findingCount: 1,
+        recommendationCount: 1,
+      });
+      await seedDb.insert(campaignCurrentState).values({
+        id: acct.currentStateId,
+        accountId: acct.accountId,
+        campaignId: `${CAMPAIGN_ID}-${tag}`,
+        runId: acct.runId,
+        summary: `current thinking for account ${tag}`,
+        nextAction: `generate next post for account ${tag}`,
+        confidence: tag === "a" ? 0.84 : 0.72,
+        metadata: {
+          sourceRefs: [`https://moltbook.example/${tag}/posts/source-1`],
+          nextPostPriorityIds: [acct.priorityId],
+          kpiMetric: "qualified_reply_rate",
+        },
+      });
+      await seedDb.insert(campaignPostPriorities).values({
+        id: acct.priorityId,
+        accountId: acct.accountId,
+        campaignId: `${CAMPAIGN_ID}-${tag}`,
+        runId: acct.runId,
+        rank: 1,
+        score: tag === "a" ? 0.83 : 0.7,
+        funnelLayer: tag === "a" ? "tofu" : "mofu",
+        topic: `topic-${tag}`,
+        angle: `angle-${tag}`,
+        premise: `priority premise for account ${tag}`,
+        justification: `source-backed priority for account ${tag}`,
+        kpiMetric: "qualified_reply_rate",
+        metadata: {
+          findingId: acct.findingId,
+          evidenceBasis: [`https://moltbook.example/${tag}/posts/source-1`],
+        },
+      });
       await seedDb.insert(postDecisions).values({
         accountId: acct.accountId,
         campaignId: CAMPAIGN_ID,
@@ -191,6 +251,15 @@ describe("beacon-growth RLS account isolation", () => {
     // Cleanup via service role (bypasses RLS); children before parents (FKs).
     const seedDb = getSeedDb();
     const ids = [accountA.accountId, accountB.accountId];
+    await seedDb
+      .delete(campaignPostPriorities)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
+    await seedDb
+      .delete(campaignCurrentState)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
+    await seedDb
+      .delete(campaignIntelligenceRuns)
+      .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
     await seedDb
       .delete(postDecisions)
       .where(sql`account_id IN (${ids[0]}, ${ids[1]})`);
@@ -296,6 +365,52 @@ describe("beacon-growth RLS account isolation", () => {
     });
   });
 
+  describe("campaign_intelligence_runs - account isolation", () => {
+    it("account A sees only its own intelligence runs", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(campaignIntelligenceRuns)
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      expect(rows.map((r) => r.id)).toContain(accountA.runId);
+      expect(rows.map((r) => r.id)).not.toContain(accountB.runId);
+      for (const r of rows) {
+        expect(r.accountId).toBe(accountA.accountId);
+      }
+    });
+  });
+
+  describe("campaign_current_state - account isolation", () => {
+    it("account A sees only its own current thinking", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(campaignCurrentState)
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      const mine = rows.find((r) => r.id === accountA.currentStateId);
+      expect(mine?.summary).toBe("current thinking for account a");
+      expect(mine?.confidence).toBe(0.84);
+      expect(rows.map((r) => r.id)).not.toContain(accountB.currentStateId);
+      for (const r of rows) {
+        expect(r.accountId).toBe(accountA.accountId);
+      }
+    });
+  });
+
+  describe("campaign_post_priorities - account isolation", () => {
+    it("account A sees only its own ranked next-post priorities", async () => {
+      const rows = await withTenantScope(db, accountA.userId, (tx) =>
+        tx.select().from(campaignPostPriorities)
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      const mine = rows.find((r) => r.id === accountA.priorityId);
+      expect(mine?.rank).toBe(1);
+      expect(mine?.kpiMetric).toBe("qualified_reply_rate");
+      expect(rows.map((r) => r.id)).not.toContain(accountB.priorityId);
+      for (const r of rows) {
+        expect(r.accountId).toBe(accountA.accountId);
+      }
+    });
+  });
+
   describe("findings - account isolation", () => {
     it("account A sees only its own findings", async () => {
       const rows = await withTenantScope(db, accountA.userId, (tx) =>
@@ -370,6 +485,27 @@ describe("beacon-growth RLS account isolation", () => {
       expect(rows).toHaveLength(0);
     });
 
+    it("no SET LOCAL on campaign_intelligence_runs returns zero rows", async () => {
+      const rows = await withoutTenantScope(db, (tx) =>
+        tx.select().from(campaignIntelligenceRuns)
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it("no SET LOCAL on campaign_current_state returns zero rows", async () => {
+      const rows = await withoutTenantScope(db, (tx) =>
+        tx.select().from(campaignCurrentState)
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it("no SET LOCAL on campaign_post_priorities returns zero rows", async () => {
+      const rows = await withoutTenantScope(db, (tx) =>
+        tx.select().from(campaignPostPriorities)
+      );
+      expect(rows).toHaveLength(0);
+    });
+
     it("no SET LOCAL on findings returns zero rows", async () => {
       const rows = await withoutTenantScope(db, (tx) =>
         tx.select().from(findings)
@@ -428,6 +564,68 @@ describe("beacon-growth RLS account isolation", () => {
             campaignId: CAMPAIGN_ID,
             kind: "angle",
             content: "cross-account finding",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
+    it("cross-account intelligence run INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(campaignIntelligenceRuns).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: CAMPAIGN_ID,
+            status: "running",
+            trigger: "manual_refresh",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
+    it("cross-account current state INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(campaignCurrentState).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: `cross-${randomUUID().slice(0, 8)}`,
+            runId: accountB.runId,
+            summary: "cross-account current thinking",
+            nextAction: "cross-account next action",
+          })
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeDefined();
+      const cause = (caught as { cause?: { code?: string } }).cause;
+      expect(cause?.code).toBe("42501"); // insufficient_privilege (RLS WITH CHECK)
+    });
+
+    it("cross-account post priority INSERT is rejected by RLS policy", async () => {
+      let caught: unknown;
+      try {
+        await withTenantScope(db, accountA.userId, (tx) =>
+          tx.insert(campaignPostPriorities).values({
+            accountId: accountB.accountId, // A writing as B
+            campaignId: CAMPAIGN_ID,
+            runId: accountB.runId,
+            rank: 1,
+            score: 0.7,
+            funnelLayer: "tofu",
+            premise: "cross-account priority",
+            justification: "cross-account priority justification",
           })
         );
       } catch (e) {
