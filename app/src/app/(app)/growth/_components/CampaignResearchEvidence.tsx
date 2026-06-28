@@ -195,17 +195,10 @@ export function CampaignResearchEvidence({
         </div>
 
         {findings.length === 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border border-dashed p-3">
-            <p className="text-muted-foreground text-sm">
-              No research takeaways yet.
-            </p>
-            <p className="inline-flex items-center gap-1.5 font-medium text-xs">
-              <ArrowRight className="size-3.5" aria-hidden="true" />
-              Run Research
-            </p>
-          </div>
+          <ActivityPriorityQueue priorities={activityPriorities} />
         ) : (
           <div className="grid gap-3">
+            <ActivityPriorityQueue priorities={activityPriorities} />
             {currentThinking && (
               <div className="grid gap-2 rounded-md border border-border/70 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -221,9 +214,6 @@ export function CampaignResearchEvidence({
                   Next: {compact(currentThinking.nextAction, 220)}
                 </p>
               </div>
-            )}
-            {activityPriorities.length > 0 && (
-              <ActivityPriorityQueue priorities={activityPriorities} />
             )}
             {sourceBacked.length > 0 && (
               <details className="group rounded-md border border-border/70 p-3 text-sm">
