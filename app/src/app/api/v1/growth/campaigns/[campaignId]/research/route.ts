@@ -49,7 +49,15 @@ import { chatCompletion } from "@/app/_facades/ai/completion.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { campaigns, findings, postMetrics, posts } from "@/shared/db/schema";
+import {
+  campaignCurrentState,
+  campaignIntelligenceRuns,
+  campaignPostPriorities,
+  campaigns,
+  findings,
+  postMetrics,
+  posts,
+} from "@/shared/db/schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -79,10 +87,32 @@ type PersistableFinding = {
   metadata?: JsonObject | null;
 };
 
+type PersistedFinding = {
+  id: string;
+  kind: string;
+  content: string;
+  sourceRef: string | null;
+  metadata: JsonObject | null;
+  createdAt: Date;
+};
+
+type NextPostPriority = {
+  rank: number;
+  score: number;
+  funnelLayer: "tofu" | "mofu" | "bofu";
+  topic: string | null;
+  angle: string | null;
+  premise: string;
+  justification: string;
+  kpiMetric: string;
+  metadata: JsonObject;
+};
+
 interface PriorFinding {
   kind: string;
   content: string;
   sourceRef: string | null;
+  metadata: JsonObject | null;
 }
 
 interface OwnedPostEvidence {
@@ -157,6 +187,260 @@ function toJsonObject(value: unknown): JsonObject | null {
   }
 }
 
+function stringFromMeta(
+  metadata: JsonObject | null | undefined,
+  key: string
+): string | null {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function numberFromMeta(
+  metadata: JsonObject | null | undefined,
+  key: string
+): number | null {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function arrayFromMeta(
+  metadata: JsonObject | null | undefined,
+  key: string
+): string[] {
+  const value = metadata?.[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function asFunnelLayer(value: string | null): "tofu" | "mofu" | "bofu" | null {
+  return value === "tofu" || value === "mofu" || value === "bofu"
+    ? value
+    : null;
+}
+
+function inferFunnelLayer(finding: PersistedFinding): "tofu" | "mofu" | "bofu" {
+  const explicit = asFunnelLayer(stringFromMeta(finding.metadata, "funnelLayer"));
+  if (explicit) return explicit;
+  if (finding.kind === "pain_point") return "mofu";
+  if (finding.kind === "insight") return "mofu";
+  return "tofu";
+}
+
+function extractKpiMetric(metadata: JsonObject | null): string {
+  const direct = stringFromMeta(metadata, "kpiMetric");
+  if (direct) return direct;
+  const hypothesis = metadata?.kpiHypothesis;
+  if (
+    hypothesis &&
+    typeof hypothesis === "object" &&
+    !Array.isArray(hypothesis)
+  ) {
+    const metric = (hypothesis as Record<string, unknown>).metric;
+    if (typeof metric === "string" && metric.trim().length > 0) {
+      return metric.trim();
+    }
+  }
+  if (typeof hypothesis === "string" && hypothesis.trim().length > 0) {
+    return hypothesis.trim();
+  }
+  return "qualified_engagement_rate";
+}
+
+function sourceRefsForFinding(finding: PersistedFinding): string[] {
+  const refs = new Set<string>();
+  if (finding.sourceRef) refs.add(finding.sourceRef);
+  for (const key of ["basis", "evidenceBasis", "sourceRefs"]) {
+    for (const ref of arrayFromMeta(finding.metadata, key)) refs.add(ref);
+  }
+  return [...refs];
+}
+
+function metadataConfidence(finding: PersistedFinding): number | null {
+  return (
+    numberFromMeta(finding.metadata, "confidence") ??
+    numberFromMeta(finding.metadata, "scoreHint") ??
+    numberFromMeta(finding.metadata, "score")
+  );
+}
+
+function baseFindingScore(kind: string): number {
+  switch (kind) {
+    case "angle":
+      return 0.62;
+    case "insight":
+      return 0.56;
+    case "pain_point":
+      return 0.54;
+    case "exemplar":
+      return 0.46;
+    case "reference":
+      return 0.38;
+    default:
+      return 0.3;
+  }
+}
+
+function scoreFindingForNextPost(finding: PersistedFinding): number {
+  const sourceRefs = sourceRefsForFinding(finding);
+  const confidence = metadataConfidence(finding);
+  const sourceBoost = sourceRefs.length > 0 ? 0.12 : 0;
+  const nextActionBoost = stringFromMeta(finding.metadata, "nextAction")
+    ? 0.08
+    : 0;
+  const kpiBoost =
+    extractKpiMetric(finding.metadata) !== "qualified_engagement_rate"
+      ? 0.05
+      : 0;
+  const confidenceBoost =
+    confidence === null ? 0 : (clamp01(confidence) - 0.5) * 0.18;
+  return clamp01(
+    baseFindingScore(finding.kind) +
+      sourceBoost +
+      nextActionBoost +
+      kpiBoost +
+      confidenceBoost
+  );
+}
+
+function buildPostPriorities(findings: PersistedFinding[]): NextPostPriority[] {
+  const actionable = findings
+    .filter(
+      (f) =>
+        f.kind === "angle" ||
+        f.kind === "insight" ||
+        f.kind === "pain_point"
+    )
+    .map((finding) => {
+      const score = scoreFindingForNextPost(finding);
+      const sourceRefs = sourceRefsForFinding(finding);
+      const funnelLayer = inferFunnelLayer(finding);
+      const topic = stringFromMeta(finding.metadata, "topic");
+      const angle =
+        stringFromMeta(finding.metadata, "angle") ??
+        (finding.kind === "angle" ? truncateText(finding.content, 90) : null);
+      const kpiMetric = extractKpiMetric(finding.metadata);
+      const confidence = metadataConfidence(finding);
+      return {
+        finding,
+        priority: {
+          rank: 0,
+          score,
+          funnelLayer,
+          topic,
+          angle,
+          premise: finding.content,
+          justification: [
+            `${finding.kind} finding scored ${Math.round(score * 100)}/100`,
+            sourceRefs.length > 0
+              ? `${sourceRefs.length} evidence refs`
+              : "synthesized finding",
+            confidence !== null
+              ? `model confidence ${Math.round(clamp01(confidence) * 100)}/100`
+              : null,
+            `KPI focus: ${kpiMetric}`,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join("; "),
+          kpiMetric,
+          metadata: {
+            findingId: finding.id,
+            findingKind: finding.kind,
+            evidenceBasis: sourceRefs,
+            confidenceBasis: "deterministic_v0_source_kind_confidence_scorer",
+            ...(finding.metadata?.kpiHypothesis
+              ? { kpiHypothesis: finding.metadata.kpiHypothesis }
+              : {}),
+          },
+        },
+      };
+    })
+    .sort((a, b) => b.priority.score - a.priority.score)
+    .slice(0, 5);
+
+  return actionable.map((item, i) => ({
+    ...item.priority,
+    rank: i + 1,
+  }));
+}
+
+function strongestNextAction(findings: PersistedFinding[]): string | null {
+  for (const finding of findings) {
+    const action =
+      stringFromMeta(finding.metadata, "nextAction") ??
+      stringFromMeta(finding.metadata, "recommendedNextAction");
+    if (action) return action;
+  }
+  return null;
+}
+
+function buildCurrentState(params: {
+  findings: PersistedFinding[];
+  priorities: NextPostPriority[];
+}): {
+  summary: string;
+  nextAction: string;
+  confidence: number;
+  metadata: JsonObject;
+} {
+  const { findings, priorities } = params;
+  const topPriority = priorities[0];
+  const topFinding = findings.find((f) => f.kind === "insight") ?? findings[0];
+  const refs = new Set<string>();
+  for (const finding of findings) {
+    for (const ref of sourceRefsForFinding(finding)) refs.add(ref);
+  }
+  const nextAction =
+    strongestNextAction(findings) ??
+    (topPriority
+      ? [
+          `Generate the rank ${topPriority.rank}`,
+          `${topPriority.funnelLayer.toUpperCase()} post`,
+          `and keep it tied to ${topPriority.kpiMetric}.`,
+        ].join(" ")
+      : "Refresh intelligence with more evidence before generating posts.");
+  const summary = topPriority
+    ? `Best next post: ${truncateText(topPriority.premise, 180)}`
+    : topFinding
+      ? truncateText(topFinding.content, 180)
+      : "No actionable campaign thinking yet.";
+  const confidence =
+    topPriority?.score ??
+    (topFinding ? scoreFindingForNextPost(topFinding) : 0.3);
+  return {
+    summary,
+    nextAction,
+    confidence,
+    metadata: {
+      sourceRefs: [...refs].slice(0, 12),
+      nextPostCount: priorities.length,
+      kpiMetric: topPriority?.kpiMetric ?? "qualified_engagement_rate",
+      kpiRationale: [
+        "v0 deterministic scorer prioritizes source-backed, actionable findings",
+        "with funnel/KPI hints.",
+      ].join(" "),
+    },
+  };
+}
+
+function sourceCountsFor(
+  evidence: TenantEvidence,
+  sourceBackedCount: number
+): JsonObject {
+  return {
+    connections: evidence.connections.length,
+    ownedPosts: evidence.ownedPosts.length,
+    priorFindings: evidence.priorFindings.length,
+    sourceBackedFindings: sourceBackedCount,
+  };
+}
+
 function postMetricSummary(
   metrics: OwnedPostEvidence["latestMetrics"]
 ): string {
@@ -205,7 +489,9 @@ function buildSourceBackedFindings(
   }> = [];
 
   for (const c of evidence.connections
-    .filter((row) => row.metricsSnapshot !== null && row.metricsSnapshot !== undefined)
+    .filter(
+      (row) => row.metricsSnapshot !== null && row.metricsSnapshot !== undefined
+    )
     .slice(0, SOURCE_BACKED_CONNECTION_FINDINGS_LIMIT)) {
     const sourceRef = `connection:${c.id}`;
     if (emittedRefs.has(sourceRef)) continue;
@@ -213,9 +499,11 @@ function buildSourceBackedFindings(
     out.push({
       kind: "reference",
       sourceRef,
-      content: `Cached ${c.provider} snapshot for ${accountLabel(c)} (${c.status}, fetched ${formatDate(
-        c.metricsFetchedAt
-      )}): ${summarizeSnapshot(c.metricsSnapshot)}`,
+      content: [
+        `Cached ${c.provider} snapshot for ${accountLabel(c)}`,
+        `(${c.status}, fetched ${formatDate(c.metricsFetchedAt)}):`,
+        summarizeSnapshot(c.metricsSnapshot),
+      ].join(" "),
       metadata: {
         sourceType: "connected_account",
         platform: c.provider,
@@ -238,7 +526,10 @@ function buildSourceBackedFindings(
       platform: p.channel,
       sourcePostRef: p.externalPostId ?? p.id,
       funnelLayer: p.funnelLayer,
-      evidenceBasis: ["owned_post_history", p.latestMetrics ? "cached_post_metrics" : "post_record"],
+      evidenceBasis: [
+        "owned_post_history",
+        p.latestMetrics ? "cached_post_metrics" : "post_record",
+      ],
     };
     if (p.topic) metadata.topic = p.topic;
     if (p.angle) metadata.angle = p.angle;
@@ -301,16 +592,21 @@ async function loadTenantEvidence(params: {
 }): Promise<TenantEvidence> {
   const { db, actorId, accountId, campaignId } = params;
   return withTenantScope(db, actorId, async (tx) => {
-    const priorFindings = await tx
+    const priorFindingRows = await tx
       .select({
         kind: findings.kind,
         content: findings.content,
         sourceRef: findings.sourceRef,
+        metadata: findings.metadata,
       })
       .from(findings)
       .where(eq(findings.campaignId, campaignId))
       .orderBy(desc(findings.createdAt))
       .limit(PRIOR_FINDINGS_LIMIT);
+    const priorFindings: PriorFinding[] = priorFindingRows.map((f) => ({
+      ...f,
+      metadata: toJsonObject(f.metadata),
+    }));
 
     const postRows = await tx
       .select({
@@ -470,6 +766,28 @@ export const POST = wrapRouteHandlerWithLogging<{
       campaignId: slug,
     });
     const socialContext = toTenantSocialContext(tenantEvidence);
+    const run = await withTenantScope(db, actorId, async (tx) => {
+      const rows = await tx
+        .insert(campaignIntelligenceRuns)
+        .values({
+          id: randomUUID(),
+          accountId: account.id,
+          campaignId: slug,
+          status: "running",
+          trigger: "manual_refresh",
+          modelRef: RESEARCH_MODEL,
+          sourceCounts: sourceCountsFor(tenantEvidence, 0),
+        })
+        .returning({ id: campaignIntelligenceRuns.id });
+      return rows[0];
+    });
+
+    if (!run) {
+      return NextResponse.json(
+        { error: "failed to start intelligence run" },
+        { status: 500 }
+      );
+    }
 
     // Inject the real LLM through the BILLABLE_AI_THROUGH_EXECUTOR path: the
     // chatCompletion facade routes through GraphRunWorkflow → GraphExecutorPort,
@@ -507,13 +825,39 @@ export const POST = wrapRouteHandlerWithLogging<{
         }
       : undefined;
 
-    const produced = await runGrowthResearch({
-      strategy,
-      socialContext,
-      complete,
-      ...(recallPlaybook ? { recallPlaybook } : {}),
-    });
+    let produced: ResearchFinding[];
+    try {
+      produced = await runGrowthResearch({
+        strategy,
+        socialContext,
+        complete,
+        ...(recallPlaybook ? { recallPlaybook } : {}),
+      });
+    } catch (e) {
+      await withTenantScope(db, actorId, async (tx) =>
+        tx
+          .update(campaignIntelligenceRuns)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            errorCode: e instanceof Error ? e.message.slice(0, 120) : "research_error",
+          })
+          .where(eq(campaignIntelligenceRuns.id, run.id))
+      );
+      throw e;
+    }
+
     if (produced.length === 0) {
+      await withTenantScope(db, actorId, async (tx) =>
+        tx
+          .update(campaignIntelligenceRuns)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            errorCode: "no_actionable_findings",
+          })
+          .where(eq(campaignIntelligenceRuns.id, run.id))
+      );
       return NextResponse.json(
         { error: "research did not produce actionable findings" },
         { status: 502 }
@@ -527,37 +871,138 @@ export const POST = wrapRouteHandlerWithLogging<{
 
     // RLS_SCOPED_WRITES + FINDINGS_ARE_TENANT_DATA: persist account-scoped to
     // Postgres under the user's GUC (the WITH CHECK authorizes the rows). Never Dolt.
-    const persisted = await withTenantScope(db, actorId, async (tx) => {
-      await tx.delete(findings).where(eq(findings.campaignId, slug));
-      return tx
-        .insert(findings)
-        .values(
-          findingsToPersist.map((f) => ({
+    const { persisted, priorities, state } = await withTenantScope(
+      db,
+      actorId,
+      async (tx) => {
+        await tx
+          .delete(campaignPostPriorities)
+          .where(eq(campaignPostPriorities.campaignId, slug));
+        await tx
+          .delete(campaignCurrentState)
+          .where(eq(campaignCurrentState.campaignId, slug));
+        await tx.delete(findings).where(eq(findings.campaignId, slug));
+
+        const persisted = await tx
+          .insert(findings)
+          .values(
+            findingsToPersist.map((f) => ({
+              id: randomUUID(),
+              accountId: account.id,
+              campaignId: slug,
+              kind: f.kind,
+              content: f.content,
+              sourceRef: f.sourceRef ?? null,
+              metadata: f.metadata ?? null,
+            }))
+          )
+          .returning({
+            id: findings.id,
+            kind: findings.kind,
+            content: findings.content,
+            sourceRef: findings.sourceRef,
+            metadata: findings.metadata,
+            createdAt: findings.createdAt,
+          });
+
+        const prioritiesToPersist = buildPostPriorities(
+          persisted.map((f) => ({
+            ...f,
+            metadata: toJsonObject(f.metadata),
+          }))
+        );
+        const priorities =
+          prioritiesToPersist.length > 0
+            ? await tx
+                .insert(campaignPostPriorities)
+                .values(
+                  prioritiesToPersist.map((p) => ({
+                    id: randomUUID(),
+                    accountId: account.id,
+                    campaignId: slug,
+                    runId: run.id,
+                    rank: p.rank,
+                    score: p.score,
+                    status: "proposed",
+                    funnelLayer: p.funnelLayer,
+                    topic: p.topic,
+                    angle: p.angle,
+                    premise: p.premise,
+                    justification: p.justification,
+                    kpiMetric: p.kpiMetric,
+                    metadata: p.metadata,
+                  }))
+                )
+                .returning({
+                  id: campaignPostPriorities.id,
+                  rank: campaignPostPriorities.rank,
+                  score: campaignPostPriorities.score,
+                  funnelLayer: campaignPostPriorities.funnelLayer,
+                  topic: campaignPostPriorities.topic,
+                  angle: campaignPostPriorities.angle,
+                  premise: campaignPostPriorities.premise,
+                  justification: campaignPostPriorities.justification,
+                  kpiMetric: campaignPostPriorities.kpiMetric,
+                  metadata: campaignPostPriorities.metadata,
+                })
+            : [];
+
+        const current = buildCurrentState({
+          findings: persisted.map((f) => ({
+            ...f,
+            metadata: toJsonObject(f.metadata),
+          })),
+          priorities: prioritiesToPersist,
+        });
+        const stateMetadata = {
+          ...current.metadata,
+          nextPostPriorityIds: priorities.map((p) => p.id),
+        };
+        const states = await tx
+          .insert(campaignCurrentState)
+          .values({
             id: randomUUID(),
             accountId: account.id,
             campaignId: slug,
-            kind: f.kind,
-            content: f.content,
-            sourceRef: f.sourceRef ?? null,
-            metadata: f.metadata ?? null,
-          }))
-        )
-        .returning({
-          id: findings.id,
-          kind: findings.kind,
-          content: findings.content,
-          sourceRef: findings.sourceRef,
-          metadata: findings.metadata,
-          createdAt: findings.createdAt,
-        });
-    });
+            runId: run.id,
+            summary: current.summary,
+            nextAction: current.nextAction,
+            confidence: current.confidence,
+            metadata: stateMetadata,
+            updatedAt: new Date(),
+          })
+          .returning({
+            id: campaignCurrentState.id,
+            summary: campaignCurrentState.summary,
+            nextAction: campaignCurrentState.nextAction,
+            confidence: campaignCurrentState.confidence,
+            metadata: campaignCurrentState.metadata,
+            updatedAt: campaignCurrentState.updatedAt,
+          });
+
+        await tx
+          .update(campaignIntelligenceRuns)
+          .set({
+            status: "completed",
+            completedAt: new Date(),
+            sourceCounts: sourceCountsFor(tenantEvidence, sourceBacked.length),
+            findingCount: persisted.length,
+            recommendationCount: priorities.length,
+          })
+          .where(eq(campaignIntelligenceRuns.id, run.id));
+
+        return { persisted, priorities, state: states[0] };
+      }
+    );
 
     ctx.log.info(
       {
         route: "growth.campaigns.research",
         campaignId: slug,
+        runId: run.id,
         findingsCount: persisted.length,
         sourceBackedCount: sourceBacked.length,
+        priorityCount: priorities.length,
       },
       "growth.campaign.research_complete"
     );
@@ -565,6 +1010,33 @@ export const POST = wrapRouteHandlerWithLogging<{
     return NextResponse.json(
       {
         campaignId: slug,
+        intelligenceRun: {
+          id: run.id,
+          status: "completed",
+          modelRef: RESEARCH_MODEL,
+        },
+        currentState: state
+          ? {
+              id: state.id,
+              summary: state.summary,
+              nextAction: state.nextAction,
+              confidence: state.confidence,
+              metadata: state.metadata,
+              updatedAt: state.updatedAt.toISOString(),
+            }
+          : null,
+        nextPosts: priorities.map((p) => ({
+          id: p.id,
+          rank: p.rank,
+          score: p.score,
+          funnelLayer: p.funnelLayer,
+          topic: p.topic,
+          angle: p.angle,
+          premise: p.premise,
+          justification: p.justification,
+          kpiMetric: p.kpiMetric,
+          metadata: p.metadata,
+        })),
         findings: persisted.map((f) => ({
           id: f.id,
           kind: f.kind,

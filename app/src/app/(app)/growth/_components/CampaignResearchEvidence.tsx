@@ -20,7 +20,11 @@ import { ArrowRight, ExternalLink, Lightbulb, Link2 } from "lucide-react";
 import type { ReactElement } from "react";
 
 import { Card, CardContent } from "@/components";
-import type { CampaignFinding } from "@/app/_facades/growth/campaigns.server";
+import type {
+  CampaignCurrentThinking,
+  CampaignFinding,
+  CampaignPostPriority,
+} from "@/app/_facades/growth/campaigns.server";
 
 const SOURCE_BACKED_KINDS = new Set(["exemplar", "reference"]);
 const TAKEAWAY_KIND_PRIORITY = ["angle", "insight", "pain_point"] as const;
@@ -163,8 +167,12 @@ function nextAction(findings: CampaignFinding[]): string {
 
 export function CampaignResearchEvidence({
   findings,
+  currentThinking,
+  nextPostPriorities,
 }: {
   findings: CampaignFinding[];
+  currentThinking: CampaignCurrentThinking | null;
+  nextPostPriorities: CampaignPostPriority[];
 }): ReactElement {
   const sourceBacked = findings.filter(isSourceBacked);
   const takeaways = selectTakeaways(findings);
@@ -197,6 +205,61 @@ export function CampaignResearchEvidence({
           </div>
         ) : (
           <div className="grid gap-3">
+            {currentThinking && (
+              <div className="grid gap-2 rounded-md border border-border/70 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-sm">Current thinking</p>
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    confidence {Math.round(currentThinking.confidence * 100)}
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed">
+                  {compact(currentThinking.summary, 220)}
+                </p>
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  Next: {compact(currentThinking.nextAction, 220)}
+                </p>
+              </div>
+            )}
+            {nextPostPriorities.length > 0 && (
+              <details className="group rounded-md border border-border/70 p-3 text-sm">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-muted-foreground text-xs">
+                  <span>{nextPostPriorities.length} ranked next posts</span>
+                  <span className="text-foreground group-open:hidden">
+                    View queue
+                  </span>
+                  <span className="hidden text-foreground group-open:inline">
+                    Hide queue
+                  </span>
+                </summary>
+                <ol className="mt-3 grid gap-2">
+                  {nextPostPriorities.map((priority) => (
+                    <li
+                      key={priority.id}
+                      className="grid gap-1 rounded-md bg-muted/60 p-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">
+                          #{priority.rank} {priority.funnelLayer.toUpperCase()}
+                        </span>
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                          score {Math.round(priority.score * 100)}
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          {priority.kpiMetric}
+                        </span>
+                      </div>
+                      <p className="text-xs leading-relaxed">
+                        {compact(priority.premise, 170)}
+                      </p>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        {compact(priority.justification, 180)}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
             {sourceBacked.length > 0 && (
               <details className="group rounded-md border border-border/70 p-3 text-sm">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-muted-foreground text-xs">

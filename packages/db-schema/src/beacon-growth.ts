@@ -87,6 +87,32 @@ export type FindingMetadata = {
 	[key: string]: unknown;
 };
 
+export type CampaignSourceCounts = {
+	connections?: number;
+	ownedPosts?: number;
+	postedDraftMetrics?: number;
+	priorFindings?: number;
+	sourceBackedFindings?: number;
+	[key: string]: unknown;
+};
+
+export type CampaignCurrentStateMetadata = {
+	sourceRefs?: string[];
+	nextPostPriorityIds?: string[];
+	kpiMetric?: string;
+	kpiRationale?: string;
+	[key: string]: unknown;
+};
+
+export type CampaignPostPriorityMetadata = {
+	findingId?: string;
+	findingKind?: string;
+	evidenceBasis?: string[];
+	confidenceBasis?: string;
+	kpiHypothesis?: string | Record<string, unknown>;
+	[key: string]: unknown;
+};
+
 /**
  * Account-ownership RLS predicate: a row is visible iff its `account_id` is a
  * billing account the session user owns (GUC `app.current_user_id`, NULL when
@@ -351,6 +377,161 @@ export const postMetrics = pgTable(
 			table.capturedAt,
 		),
 		index("post_metrics_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// campaign_intelligence_runs — tenant Observe/Decide run ledger
+// ---------------------------------------------------------------------------
+
+/**
+ * campaign_intelligence_runs — append-only-ish ledger for the tenant campaign
+ * intelligence pass. Dolt EDO stores reusable public knowledge; this table stores
+ * private operational EDO: what evidence was observed, which model/scorer ran,
+ * and whether the run produced current thinking and next-post priorities.
+ */
+export const campaignIntelligenceRuns = pgTable(
+	"campaign_intelligence_runs",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		campaignId: text("campaign_id").notNull(),
+		status: text("status").notNull().default("running"),
+		trigger: text("trigger").notNull().default("manual_refresh"),
+		startedAt: timestamp("started_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+		errorCode: text("error_code"),
+		modelRef: text("model_ref"),
+		sourceCounts: jsonb("source_counts").$type<CampaignSourceCounts | null>(),
+		findingCount: integer("finding_count").notNull().default(0),
+		recommendationCount: integer("recommendation_count").notNull().default(0),
+	},
+	(table) => [
+		check(
+			"campaign_intelligence_runs_status_check",
+			sql`${table.status} IN ('running', 'completed', 'failed')`,
+		),
+		check(
+			"campaign_intelligence_runs_trigger_check",
+			sql`${table.trigger} IN ('manual_refresh', 'heartbeat', 'agent')`,
+		),
+		index("campaign_intelligence_runs_campaign_idx").on(table.campaignId),
+		index("campaign_intelligence_runs_account_idx").on(table.accountId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// campaign_current_state — latest Decide snapshot for one campaign
+// ---------------------------------------------------------------------------
+
+/**
+ * campaign_current_state — the latest synthesized campaign belief/recommendation.
+ * It is the tenant-private "current thinking" cache agents read before acting.
+ * Raw findings remain evidence artifacts; this row is the concise Decide state.
+ */
+export const campaignCurrentState = pgTable(
+	"campaign_current_state",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		campaignId: text("campaign_id").notNull(),
+		runId: uuid("run_id").references(() => campaignIntelligenceRuns.id),
+		summary: text("summary").notNull(),
+		nextAction: text("next_action").notNull(),
+		confidence: real("confidence").notNull().default(0.3),
+		metadata:
+			jsonb("metadata").$type<CampaignCurrentStateMetadata | null>(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		check(
+			"campaign_current_state_confidence_check",
+			sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`,
+		),
+		uniqueIndex("campaign_current_state_account_campaign_idx").on(
+			table.accountId,
+			table.campaignId,
+		),
+		index("campaign_current_state_campaign_idx").on(table.campaignId),
+		pgPolicy("tenant_isolation", {
+			using: accountOwnershipPredicate,
+			withCheck: accountOwnershipPredicate,
+		}),
+	],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// campaign_post_priorities — ranked Act queue for the next generation pass
+// ---------------------------------------------------------------------------
+
+/**
+ * campaign_post_priorities — ranked next-post recommendations derived from the
+ * current intelligence run. Generation can consume this queue before falling back
+ * to raw findings; later outcome rows close the Learn loop through post_decisions
+ * and post_metrics.
+ */
+export const campaignPostPriorities = pgTable(
+	"campaign_post_priorities",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => billingAccounts.id, { onDelete: "cascade" }),
+		campaignId: text("campaign_id").notNull(),
+		runId: uuid("run_id").references(() => campaignIntelligenceRuns.id),
+		rank: integer("rank").notNull(),
+		score: real("score").notNull(),
+		status: text("status").notNull().default("proposed"),
+		funnelLayer: text("funnel_layer").notNull().default("tofu"),
+		topic: text("topic"),
+		angle: text("angle"),
+		premise: text("premise").notNull(),
+		justification: text("justification").notNull(),
+		kpiMetric: text("kpi_metric").notNull().default("qualified_engagement_rate"),
+		metadata:
+			jsonb("metadata").$type<CampaignPostPriorityMetadata | null>(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		check(
+			"campaign_post_priorities_status_check",
+			sql`${table.status} IN ('proposed', 'selected', 'generated', 'dismissed')`,
+		),
+		check(
+			"campaign_post_priorities_layer_check",
+			sql`${table.funnelLayer} IN ('tofu', 'mofu', 'bofu')`,
+		),
+		check(
+			"campaign_post_priorities_score_check",
+			sql`${table.score} >= 0 AND ${table.score} <= 1`,
+		),
+		index("campaign_post_priorities_campaign_idx").on(table.campaignId),
+		index("campaign_post_priorities_account_idx").on(table.accountId),
+		index("campaign_post_priorities_run_idx").on(table.runId),
 		pgPolicy("tenant_isolation", {
 			using: accountOwnershipPredicate,
 			withCheck: accountOwnershipPredicate,

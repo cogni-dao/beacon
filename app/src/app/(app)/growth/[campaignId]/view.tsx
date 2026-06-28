@@ -112,7 +112,11 @@ export function CampaignDetailView({
         </CardContent>
       </Card>
 
-      <CampaignResearchEvidence findings={campaign.findings} />
+      <CampaignResearchEvidence
+        findings={campaign.findings}
+        currentThinking={campaign.currentThinking}
+        nextPostPriorities={campaign.nextPostPriorities}
+      />
 
       {/* Queue grouped by funnel layer, each with its own independent KPI, plus a
           status filter so the operator can blast through review (approve/reject/

@@ -5,8 +5,9 @@
  * Module: `@app/api/v1/growth/campaigns/[campaignId]/generate`
  * Purpose: The GENERATE activity of the beacon growth loop, exposed on-demand (v0).
  *   `POST` loads the campaign's strategy (voice/core_topic/icp/objective/funnel_targets)
- *   AND its research `findings`, recalls generic brand-voice playbook from the Dolt
- *   knowledge hub, runs the pure `runGrowthGenerate` workflow (which POPULATES THE
+ *   AND its ranked next-post priorities / research `findings`, recalls generic
+ *   brand-voice playbook from the Dolt knowledge hub, runs the pure `runGrowthGenerate`
+ *   workflow (which POPULATES THE
  *   FUNNEL — a spread of drafts across TOFU/MOFU/BOFU, volume DERIVED from
  *   `funnel_targets`, never a hardcoded N), and PERSISTS the drafts as `posts`
  *   (status 'generated', score null, revision 0) account-scoped — then returns them.
@@ -43,14 +44,19 @@ import {
   type GenerateFinding,
   runGrowthGenerate,
 } from "@cogni/langgraph-graphs";
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { chatCompletion } from "@/app/_facades/ai/completion.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { campaigns, findings, posts } from "@/shared/db/schema";
+import {
+  campaignPostPriorities,
+  campaigns,
+  findings,
+  posts,
+} from "@/shared/db/schema";
 import { EVENT_NAMES, logEvent } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +74,8 @@ const GENERATE_MODEL = "gpt-4o-mini";
 const PLAYBOOK_RECALL_LIMIT = 5;
 /** Cap on findings fed into the prompt (defensive context-size guard). */
 const FINDINGS_CONTEXT_LIMIT = 20;
+/** Cap on ranked next-post priorities fed before raw findings. */
+const PRIORITIES_CONTEXT_LIMIT = 8;
 
 /** Funnel layers the queue is classified into (matches the workflow + schema CHECK). */
 type FunnelLayer = "tofu" | "mofu" | "bofu";
@@ -88,6 +96,31 @@ function asFunnelTargets(raw: unknown): FunnelTargets | undefined {
     }
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+type PriorityContext = {
+  id: string;
+  rank: number;
+  funnelLayer: string;
+  topic: string | null;
+  angle: string | null;
+  premise: string;
+  justification: string;
+  kpiMetric: string;
+};
+
+function priorityToFinding(priority: PriorityContext): GenerateFinding {
+  const topic = priority.topic ? ` topic=${priority.topic};` : "";
+  const angle = priority.angle ? ` angle=${priority.angle};` : "";
+  return {
+    kind: "angle",
+    content: [
+      `Rank ${priority.rank} next-post priority`,
+      `(${priority.funnelLayer.toUpperCase()}; KPI=${priority.kpiMetric};${topic}${angle})`,
+      priority.premise,
+      `Justification: ${priority.justification}`,
+    ].join(" "),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -156,14 +189,36 @@ export const POST = wrapRouteHandlerWithLogging<{
         .where(eq(campaigns.campaignId, slug))
         .limit(1);
       const campaignRow = campaignRows[0];
-      if (!campaignRow) return { campaignRow: undefined, findingRows: [] };
+      if (!campaignRow) {
+        return {
+          campaignRow: undefined,
+          findingRows: [],
+          priorityRows: [],
+        };
+      }
+
+      const priorityRows = await tx
+        .select({
+          id: campaignPostPriorities.id,
+          rank: campaignPostPriorities.rank,
+          funnelLayer: campaignPostPriorities.funnelLayer,
+          topic: campaignPostPriorities.topic,
+          angle: campaignPostPriorities.angle,
+          premise: campaignPostPriorities.premise,
+          justification: campaignPostPriorities.justification,
+          kpiMetric: campaignPostPriorities.kpiMetric,
+        })
+        .from(campaignPostPriorities)
+        .where(eq(campaignPostPriorities.campaignId, slug))
+        .orderBy(asc(campaignPostPriorities.rank))
+        .limit(PRIORITIES_CONTEXT_LIMIT);
 
       const findingRows = await tx
         .select({ kind: findings.kind, content: findings.content })
         .from(findings)
         .where(eq(findings.campaignId, slug));
 
-      return { campaignRow, findingRows };
+      return { campaignRow, findingRows, priorityRows };
     });
 
     if (!loaded.campaignRow) {
@@ -180,7 +235,7 @@ export const POST = wrapRouteHandlerWithLogging<{
         { status: 404 }
       );
     }
-    const { campaignRow, findingRows } = loaded;
+    const { campaignRow, findingRows, priorityRows } = loaded;
 
     const container = getContainer();
 
@@ -200,9 +255,11 @@ export const POST = wrapRouteHandlerWithLogging<{
       objective: campaignRow.objective,
     };
     const funnelTargets = asFunnelTargets(campaignRow.funnelTargets);
-    const generateFindings: GenerateFinding[] = findingRows
-      .slice(0, FINDINGS_CONTEXT_LIMIT)
-      .map((f) => ({ kind: f.kind, content: f.content }));
+    const priorityFindings = priorityRows.map(priorityToFinding);
+    const generateFindings: GenerateFinding[] = [
+      ...priorityFindings,
+      ...findingRows.map((f) => ({ kind: f.kind, content: f.content })),
+    ].slice(0, FINDINGS_CONTEXT_LIMIT);
 
     // Inject the real LLM through the BILLABLE_AI_THROUGH_EXECUTOR path: the
     // chatCompletion facade routes through GraphRunWorkflow → GraphExecutorPort,
@@ -253,8 +310,8 @@ export const POST = wrapRouteHandlerWithLogging<{
     // queue), score null, revision 0. Never Dolt, never published.
     const persisted =
       drafts.length > 0
-        ? await withTenantScope(db, actorId, async (tx) =>
-            tx
+        ? await withTenantScope(db, actorId, async (tx) => {
+            const inserted = await tx
               .insert(posts)
               .values(
                 drafts.map((d) => {
@@ -301,8 +358,21 @@ export const POST = wrapRouteHandlerWithLogging<{
                 text: posts.text,
                 status: posts.status,
                 createdAt: posts.createdAt,
-              })
-          )
+              });
+
+            const consumedPriorityIds = priorityRows.map((p) => p.id);
+            if (consumedPriorityIds.length > 0) {
+              await tx
+                .update(campaignPostPriorities)
+                .set({
+                  status: "generated",
+                  updatedAt: new Date(),
+                })
+                .where(inArray(campaignPostPriorities.id, consumedPriorityIds));
+            }
+
+            return inserted;
+          })
         : [];
 
     logComplete({
@@ -310,12 +380,14 @@ export const POST = wrapRouteHandlerWithLogging<{
       outcome: "success",
       campaignId: slug,
       findingsCount: generateFindings.length,
+      priorityCount: priorityRows.length,
       postsCount: persisted.length,
     });
 
     return NextResponse.json(
       {
         campaignId: slug,
+        priorityCount: priorityRows.length,
         posts: persisted.map((p) => ({
           id: p.id,
           funnelLayer: p.funnelLayer,
