@@ -115,7 +115,7 @@ export function CampaignDetailView({
       <CampaignResearchEvidence
         findings={campaign.findings}
         currentThinking={campaign.currentThinking}
-        nextPostPriorities={campaign.nextPostPriorities}
+        activityPriorities={campaign.nextPostPriorities}
       />
 
       {/* Queue grouped by funnel layer, each with its own independent KPI, plus a

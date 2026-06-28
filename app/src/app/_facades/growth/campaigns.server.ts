@@ -349,7 +349,7 @@ export interface CampaignCurrentThinking {
 	updatedAt: string;
 }
 
-/** Ranked next-post recommendation for the campaign's Act step. */
+/** Ranked research-backed activity recommendation for the campaign's Act step. */
 export interface CampaignPostPriority {
 	id: string;
 	rank: number;
@@ -377,7 +377,7 @@ export interface CampaignDetail extends CampaignLensRow {
 	findings: CampaignFinding[];
 	/** Latest campaign intelligence summary for agents/operators. */
 	currentThinking: CampaignCurrentThinking | null;
-	/** Ranked queue of next posts the agent should generate/refine first. */
+	/** Ranked queue of activities the agent should prioritize first. */
 	nextPostPriorities: CampaignPostPriority[];
 	posts: CampaignPost[];
 }

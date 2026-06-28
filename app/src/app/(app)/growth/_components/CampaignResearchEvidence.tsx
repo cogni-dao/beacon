@@ -25,6 +25,7 @@ import type {
   CampaignFinding,
   CampaignPostPriority,
 } from "@/app/_facades/growth/campaigns.server";
+import { ActivityPriorityQueue } from "./ActivityPriorityQueue";
 
 const SOURCE_BACKED_KINDS = new Set(["exemplar", "reference"]);
 const TAKEAWAY_KIND_PRIORITY = ["angle", "insight", "pain_point"] as const;
@@ -154,25 +155,25 @@ function nextAction(findings: CampaignFinding[]): string {
   const aiSuggested = metadataNextAction(findings);
   if (aiSuggested) return aiSuggested;
   if (findings.some((finding) => finding.kind === "angle")) {
-    return "Generate or refine drafts around the strongest angle, then approve only the ones that match the campaign voice.";
+    return "Work the strongest activity priority first, then approve only public content that matches the campaign voice.";
   }
   if (findings.some((finding) => finding.kind === "pain_point")) {
-    return "Generate drafts that name the pain clearly before pitching Beacon.";
+    return "Prioritize activity that names the pain clearly before pitching Beacon.";
   }
   if (findings.some(isSourceBacked)) {
-    return "Use the evidence-backed pattern as grounding for the next generation pass.";
+    return "Use the evidence-backed pattern as grounding for the next activity.";
   }
-  return "Run research before generating more drafts.";
+  return "Run research before taking more growth actions.";
 }
 
 export function CampaignResearchEvidence({
   findings,
   currentThinking,
-  nextPostPriorities,
+  activityPriorities,
 }: {
   findings: CampaignFinding[];
   currentThinking: CampaignCurrentThinking | null;
-  nextPostPriorities: CampaignPostPriority[];
+  activityPriorities: CampaignPostPriority[];
 }): ReactElement {
   const sourceBacked = findings.filter(isSourceBacked);
   const takeaways = selectTakeaways(findings);
@@ -221,44 +222,8 @@ export function CampaignResearchEvidence({
                 </p>
               </div>
             )}
-            {nextPostPriorities.length > 0 && (
-              <details className="group rounded-md border border-border/70 p-3 text-sm">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-muted-foreground text-xs">
-                  <span>{nextPostPriorities.length} ranked next posts</span>
-                  <span className="text-foreground group-open:hidden">
-                    View queue
-                  </span>
-                  <span className="hidden text-foreground group-open:inline">
-                    Hide queue
-                  </span>
-                </summary>
-                <ol className="mt-3 grid gap-2">
-                  {nextPostPriorities.map((priority) => (
-                    <li
-                      key={priority.id}
-                      className="grid gap-1 rounded-md bg-muted/60 p-2"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">
-                          #{priority.rank} {priority.funnelLayer.toUpperCase()}
-                        </span>
-                        <span className="text-muted-foreground text-xs tabular-nums">
-                          score {Math.round(priority.score * 100)}
-                        </span>
-                        <span className="text-muted-foreground text-xs">
-                          {priority.kpiMetric}
-                        </span>
-                      </div>
-                      <p className="text-xs leading-relaxed">
-                        {compact(priority.premise, 170)}
-                      </p>
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        {compact(priority.justification, 180)}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              </details>
+            {activityPriorities.length > 0 && (
+              <ActivityPriorityQueue priorities={activityPriorities} />
             )}
             {sourceBacked.length > 0 && (
               <details className="group rounded-md border border-border/70 p-3 text-sm">
