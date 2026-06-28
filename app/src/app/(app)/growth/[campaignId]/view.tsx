@@ -29,6 +29,7 @@ import { CampaignActions } from "../_components/CampaignActions";
 import { CampaignControls } from "../_components/CampaignControls";
 import { CampaignFunnel } from "../_components/CampaignFunnel";
 import { CampaignResearchEvidence } from "../_components/CampaignResearchEvidence";
+import { CampaignStrategyPanel } from "../_components/CampaignStrategyPanel";
 import {
   campaignStatusInfo,
   CampaignStatusBadge,
@@ -100,22 +101,12 @@ export function CampaignDetailView({
         </CardContent>
       </Card>
 
-      {/* Brief */}
-      <Card>
-        <CardContent className="pt-6">
-          <h2 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Brief
-          </h2>
-          <p className="whitespace-pre-wrap text-muted-foreground text-sm leading-relaxed">
-            {campaign.brief}
-          </p>
-        </CardContent>
-      </Card>
+      <CampaignStrategyPanel campaign={campaign} />
 
       <CampaignResearchEvidence
         findings={campaign.findings}
         currentThinking={campaign.currentThinking}
-        nextPostPriorities={campaign.nextPostPriorities}
+        activityPriorities={campaign.nextPostPriorities}
       />
 
       {/* Queue grouped by funnel layer, each with its own independent KPI, plus a

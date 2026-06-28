@@ -202,3 +202,126 @@ export function renderBundleMarkdown(input: RenderBundleInput): string {
 		"",
 	].join("\n");
 }
+
+export interface RenderResearchBundleInput extends RenderBundleInput {
+	researchPointers: readonly string[];
+	agentSurfacePointers: readonly string[];
+}
+
+/**
+ * Render a focused briefing for research agents. This deliberately reuses the
+ * session cognition index shape but narrows the call-to-action: recall first,
+ * synthesize a priority queue, and keep tenant facts out of Dolt.
+ */
+export function renderResearchBundleMarkdown(
+	input: RenderResearchBundleInput,
+): string {
+	const {
+		node,
+		name,
+		mission,
+		generatedAt,
+		origin,
+		buildSha,
+		toolingInvariants,
+		orientation,
+		researchPointers,
+		agentSurfacePointers,
+	} = input;
+	const { skillsIndex, domainPointers } = input;
+	const loadedAt = generatedAt.replace("T", " ").slice(0, 16);
+	const subtitle = [
+		mission,
+		`${skillsIndex.length} skills`,
+		`${domainPointers.length} domains`,
+		`loaded ${loadedAt}`,
+	]
+		.filter(Boolean)
+		.join(" · ");
+
+	const invariants = toolingInvariants
+		.map((line, i) => `${i + 1}. ${line}`)
+		.join("\n");
+
+	const skillRows =
+		skillsIndex.length > 0
+			? skillsIndex
+					.map(
+						(s) => `| \`${s.id}\` | ${s.entryType} | ${escapeCell(s.title)} |`,
+					)
+					.join("\n")
+			: "| _(none merged yet)_ | | |";
+
+	const domainRows =
+		domainPointers.length > 0
+			? domainPointers
+					.map(
+						(d) =>
+							`| \`${d.domain}\` | ${d.entryCount} | ${escapeCell(d.description)} |`,
+					)
+					.join("\n")
+			: "| _(none)_ | | |";
+
+	const orientationLines = orientation
+		? [
+				"## Orientation — recall this first",
+				"",
+				orientation.excerpt,
+				"",
+				`_Recall \`${orientation.id}\` for the full node operating map._`,
+			]
+		: [
+				"## Orientation — recall this first",
+				"",
+				`_No \`${name}-agent-orientation\` entry was found. Recall the hub before acting._`,
+			];
+
+	return [
+		`# ${name} — Research Agent Cognition`,
+		"",
+		`> ${subtitle}`,
+		">",
+		`> Delivered from ${origin}/api/v1/cognition/research. (node \`${node}\` · build \`${buildSha}\`)`,
+		"",
+		...orientationLines,
+		"",
+		"## Research Contract",
+		"",
+		"- Start with hub recall; use web/current sources only when the hub is insufficient.",
+		"- Produce concise activity priorities, not reports.",
+		"- Keep tenant campaign facts, private sources, metrics, and priorities in Postgres-only surfaces.",
+		"- Dolt is for reusable anonymized playbook knowledge after outcomes prove durable value.",
+		"- Mark unsupported high-value recommendations as platform gaps instead of pretending Beacon can execute them.",
+		"",
+		"## Tooling Invariants",
+		"",
+		invariants,
+		"",
+		"## Research Pointers",
+		"",
+		...researchPointers.map((p) => `- ${p}`),
+		"",
+		"## Agent-Visible Surfaces",
+		"",
+		...agentSurfacePointers.map((p) => `- ${p}`),
+		"",
+		"## Skills index",
+		"",
+		"| entry | type | use when |",
+		"| --- | --- | --- |",
+		skillRows,
+		"",
+		"## Knowledge domains",
+		"",
+		"| domain | entries | about |",
+		"| --- | --- | --- |",
+		domainRows,
+		"",
+		"## Recall + contribute",
+		"",
+		`- Browse a domain: \`GET ${origin}/api/v1/knowledge?domain=<domain>\``,
+		`- Full entry body: \`GET ${origin}/api/v1/knowledge/{id}\``,
+		"- Preserve tenant specificity in operational storage; contribute only reusable anonymized learnings.",
+		"",
+	].join("\n");
+}
