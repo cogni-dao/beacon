@@ -7,18 +7,6 @@
 > `provision-env`, or touch Argo. See `docs/spec/node-ci-cd-contract.md` in the
 > operator monorepo for the full two-views model.
 
-## Mission
-
-**beacon is Cogni's growth-engine node** — the kernel of a full-stack AI marketing tool.
-It runs a compounding, autonomous-by-default loop per campaign — not a flat funnel:
-**DEFINE → RESEARCH → GENERATE → REVIEW/REFINE → POST → ANALYZE → LEARN**. A campaign is
-*strategy* (voice + core topic + ICP); beacon researches, drafts at volume to fill the
-funnel, refines + ranks, and publishes **approved-only** content (Moltbook in v0), measures
-real engagement, scores it with an independent **per-funnel-layer** KPI, and distills the
-winners into durable generic playbook knowledge that seeds the next plan. The output
-(validated learnings + grown audience) reinvests as input — the loop compounds. Work in this
-repo should advance that loop. See [`docs/spec/beacon-growth-loop-v0.md`](docs/spec/beacon-growth-loop-v0.md) (the SSOT).
-
 ## Your cognition is delivered at session start
 
 A SessionStart hook ([`.claude/settings.json`](.claude/settings.json) for Claude Code,
@@ -28,13 +16,13 @@ A SessionStart hook ([`.claude/settings.json`](.claude/settings.json) for Claude
 and injects it into context. Codex needs a one-time trust (`/hooks`).
 
 - The loader derives `https://<node-slug>.cognidao.org/api/v1/cognition` from
-  `.cogni/repo-spec.yaml` `intent.name` (beacon → `beacon.cognidao.org`) and recalls
-  **this node's own hub** with the NODE account key (`COGNI_NODE_API_KEY`); there is
-  no `COGNI_COGNITION_URL` override.
+  `.cogni/repo-spec.yaml` `intent.name` and recalls **this node's own hub** with
+  the NODE account key (`COGNI_NODE_API_KEY`); there is no `COGNI_COGNITION_URL` override.
 - Self-serve if cognition does not load: register a NODE agent, save
   `COGNI_NODE_API_KEY` in `.env.cogni`, then retry. `.env.cogni` holds two accounts
   (NODE + OPERATOR for CI/CD) — see [`.env.cogni.example`](.env.cogni.example) and
-  the `node-launch-handoff` knowledge entry. Conductor symlinks `.env.cogni` into future worktrees.
+  the `node-launch-handoff` knowledge entry. Conductor ensures the main workspace
+  has `COGNI_NODE_API_KEY` and symlinks `.env.cogni` into future worktrees.
 - This node serves its own bundle at `GET /api/v1/cognition` (authed, index-only — needs a principal; `/api/v1/agent/register` stays the one public bootstrap seam).
 
 ## What you own (node-dev half)
@@ -42,6 +30,13 @@ and injects it into context. Codex needs a one-time trust (`/hooks`).
 - **App + graphs + packages** at the repo root.
 - **Your CI** (`.github/workflows/`), policy (`biome`, `tsconfig`, `.dependency-cruiser.cjs`), and `Dockerfile` — `POLICY_STAYS_LOCAL`. Your CI builds + pushes your own image (`FORK_FREEDOM`).
 - **Review policy**: `.cogni/repo-spec.yaml` `gates:` + `.cogni/rules/`. A PR here routes + reviews against these (born-reviewable). Tune the gate set to your node's mission.
+
+## Agent delivery default
+
+For code changes, do not stop at an uncommitted local diff unless the user explicitly asks
+for local-only work. Commit coherent checkpoints, push a branch, open a draft PR for major
+checkpoints, and use the candidate-flight + `/validate-candidate` loop for live render or
+behavior proof before merge.
 
 ## Add a secret (node-dev half)
 

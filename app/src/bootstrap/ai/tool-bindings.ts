@@ -15,7 +15,6 @@
  */
 
 import type {
-  BroadcastCapability,
   EdoCapability,
   KnowledgeCapability,
   MetricsCapability,
@@ -27,8 +26,6 @@ import type {
   WorkItemCapability,
 } from "@cogni/ai-tools";
 import {
-  BROADCAST_POST_NAME,
-  createBroadcastPostImplementation,
   createEdoDecideImplementation,
   createEdoHypothesizeImplementation,
   createEdoRecordOutcomeImplementation,
@@ -78,7 +75,6 @@ import {
  * These are resolved from the container at bootstrap time.
  */
 export interface ToolBindingDeps {
-  readonly broadcastCapability: BroadcastCapability;
   readonly knowledgeCapability: KnowledgeCapability;
   readonly edoCapability: EdoCapability;
   readonly metricsCapability: MetricsCapability;
@@ -117,12 +113,6 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
     // Pure tools (no I/O dependencies)
     [GET_CURRENT_TIME_NAME]:
       getCurrentTimeImplementation as AnyToolImplementation,
-
-    // Broadcast tool — posts staged variants + persists `posts` (growth-loop v0).
-    // NO_POST_METRICS_WRITE: BroadcastCapability writes `posts` only.
-    [BROADCAST_POST_NAME]: createBroadcastPostImplementation({
-      broadcastCapability: deps.broadcastCapability,
-    }) as AnyToolImplementation,
 
     // Knowledge tools (Doltgres-backed knowledge store)
     [KNOWLEDGE_SEARCH_NAME]: createKnowledgeSearchImplementation({

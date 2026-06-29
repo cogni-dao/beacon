@@ -68,14 +68,6 @@ export {
 } from "./ports";
 // Services (pure orchestration — no adapters, no I/O beyond ports)
 export {
-  type BuildGrowthGenerateScheduleParamsInput,
-  buildGrowthGenerateScheduleParams,
-  GROWTH_GENERATE_DEFAULT_CRON,
-  GROWTH_GENERATE_DEFAULT_TIMEZONE,
-  GROWTH_GENERATE_GRAPH_ID,
-  GROWTH_GENERATE_SCHEDULE_ID,
-} from "./services/growthGenerateSchedule";
-export {
   type GovernanceScheduleConfig,
   type GovernanceScheduleEntry,
   type GovernanceScheduleSyncDeps,

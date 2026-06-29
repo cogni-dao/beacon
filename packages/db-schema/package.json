@@ -55,11 +55,6 @@
       "types": "./dist/profile.d.ts",
       "import": "./dist/profile.js",
       "default": "./dist/profile.js"
-    },
-    "./beacon-growth": {
-      "types": "./dist/beacon-growth.d.ts",
-      "import": "./dist/beacon-growth.js",
-      "default": "./dist/beacon-growth.js"
     }
   },
   "files": [

@@ -59,11 +59,11 @@ You are adding a new AI agent graph. This covers shared graph implementations (T
 
 Per `SINGLE_DOMAIN_HARD_FAIL` (see [`node-ci-cd-contract.md`](../spec/node-ci-cd-contract.md#single-domain-scope)) and the bug.0319 substrate move, decide where the agent lives before scaffolding files:
 
-| Question                                                                 | Put implementation in                          | Expose through                     | Reference graph |
-| ------------------------------------------------------------------------ | ---------------------------------------------- | ---------------------------------- | --------------- |
-| Should every node runtime expose this agent? (e.g. `brain`, `poet`)      | `packages/langgraph-graphs/src/graphs/<name>/` | `NODE_LANGGRAPH_CATALOG`           | `ponderer/`     |
-| Is this operator lifecycle-only? (e.g. `pr-manager`, `operating-review`) | `packages/langgraph-graphs/src/graphs/<name>/` | `OPERATOR_LANGGRAPH_CATALOG`       | `pr-manager/`   |
-| Is this specific to one node fork?                                       | `graphs/src/graphs/<name>/`       | `graphs/src/index.ts` | local package   |
+| Question                                                                 | Put implementation in                          | Expose through               | Reference graph |
+| ------------------------------------------------------------------------ | ---------------------------------------------- | ---------------------------- | --------------- |
+| Should every node runtime expose this agent? (e.g. `brain`, `poet`)      | `packages/langgraph-graphs/src/graphs/<name>/` | `NODE_LANGGRAPH_CATALOG`     | `ponderer/`     |
+| Is this operator lifecycle-only? (e.g. `pr-manager`, `operating-review`) | `packages/langgraph-graphs/src/graphs/<name>/` | `OPERATOR_LANGGRAPH_CATALOG` | `pr-manager/`   |
+| Is this specific to one node fork?                                       | `graphs/src/graphs/<name>/`                    | `graphs/src/index.ts`        | local package   |
 
 Default to the narrowest runtime catalog. Promoting node-local → shared is a deliberate hoist. Adding an operator lifecycle graph to the default node catalog leaks operator-only affordances into node-template forks.
 

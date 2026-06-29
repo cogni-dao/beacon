@@ -154,10 +154,10 @@
     --syntax-string: 27 87% 67%; /* orange/peach - strings & variables */
     --syntax-keyword: 10 50% 50%; /* red/brown - keywords */
 
-    /* Accent gradient stops (aligned with beacon brand hue 38 — amber signal) */
-    --accent-from: 38 90% 50%;
-    --accent-to: 45 100% 62%;
-    --accent-glow: 40 95% 56%;
+    /* Accent gradient stops (aligned with brand hue 217) */
+    --accent-from: 217 85% 50%;
+    --accent-to: 217 100% 70%;
+    --accent-glow: 217 95% 60%;
 
     /* Status colors */
     --color-danger: 0 84.2% 60.2%;
@@ -200,8 +200,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 217.2 32.6% 9%;
     --popover-foreground: 215 20.2% 76.1%;
-    --primary: 38 92% 52%;
-    --primary-foreground: 38 60% 8%;
+    --primary: 217 71% 40%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 9%;
@@ -212,7 +212,7 @@
     --destructive-foreground: var(--color-red-600);
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 38 92% 52%;
+    --ring: 217 71% 40%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -227,20 +227,20 @@
     --syntax-string: 20 90% 80%; /* peach/orange - strings & variables */
     --syntax-keyword: 220 100% 65%; /* blue - keywords */
 
-    /* Accent gradient stops (aligned with beacon brand hue 38, darker for dark mode) */
-    --accent-from: 38 88% 48%;
-    --accent-to: 45 100% 60%;
-    --accent-glow: 40 92% 54%;
+    /* Accent gradient stops (aligned with brand hue 217, darker for dark mode) */
+    --accent-from: 217 80% 45%;
+    --accent-to: 217 100% 60%;
+    --accent-glow: 217 90% 52%;
 
     /* Sidebar */
     --sidebar: 0 0% 3%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 38 92% 52%;
-    --sidebar-primary-foreground: 38 60% 8%;
+    --sidebar-primary: 217 71% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217.2 32.6% 17.5%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 38 92% 52%;
+    --sidebar-ring: 217 71% 40%;
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-600);
     --info: var(--color-violet-500);
