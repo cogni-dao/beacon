@@ -13,11 +13,6 @@
 
 export type {
   AuthCapability,
-  BroadcastCapability,
-  BroadcastInput,
-  BroadcastResult,
-  BroadcastVariant,
-  BroadcastVariantResult,
   ChainDirection,
   ChainNodeEntry,
   CheckInfo,
@@ -43,12 +38,7 @@ export type {
   MetricsCapability,
   MetricTemplate,
   MetricWindow,
-  MoltbookPostPayload,
-  PostContentInput,
-  PostContentResult,
-  PostMetricSnapshot,
   PrSummary,
-  ReadAccountMetricsOptions,
   RecordOutcomeParams,
   RecordOutcomeResult,
   RepoCapability,
@@ -63,8 +53,6 @@ export type {
   ScheduleCreateParams,
   ScheduleInfo,
   ScheduleUpdateParams,
-  SocialChannel,
-  SocialXCapability,
   TemplateQueryParams,
   ToolCapabilities,
   VcsCapability,
@@ -78,39 +66,15 @@ export type {
   WorkItemInfo,
   WorkItemQueryParams,
   WorkItemTransitionResult,
-  XAccountMetrics,
-  XAccountProfile,
-  XInsightsCapability,
-  XRecentPost,
 } from "./capabilities";
 // Capabilities
 export {
-  BroadcastInputSchema,
-  BroadcastResultSchema,
-  BroadcastVariantResultSchema,
-  BroadcastVariantSchema,
   CONFIDENCE,
   createFixedClock,
-  DEFAULT_MOLTBOOK_SUBMOLT,
-  deriveMoltbookPayloadFromDraft,
-  deriveMoltbookPayloadFromText,
   makeRepoCitation,
-  MOLTBOOK_MAX_CONTENT_LENGTH,
-  MOLTBOOK_MAX_TITLE_LENGTH,
-  MOLTBOOK_SUBMOLT_OPTIONS,
-  MoltbookPostPayloadSchema,
-  PostContentInputSchema,
-  PostContentResultSchema,
-  PostMetricSnapshotSchema,
   REPO_CITATION_REGEX,
-  SOCIAL_CHANNELS,
   stubAuthCapability,
   systemClock,
-  X_API_VERSION,
-  X_MAX_TEXT_LENGTH,
-  XAccountMetricsSchema,
-  XAccountProfileSchema,
-  XRecentPostSchema,
 } from "./capabilities";
 // Tool catalog
 export {
@@ -133,19 +97,6 @@ export {
   toToolSpecs,
 } from "./schema";
 // Tools
-export {
-  BROADCAST_POST_NAME,
-  broadcastPostBoundTool,
-  broadcastPostContract,
-  broadcastPostStubImplementation,
-  type BroadcastPostDeps,
-  type BroadcastPostInput,
-  BroadcastPostInputSchema,
-  type BroadcastPostOutput,
-  BroadcastPostOutputSchema,
-  type BroadcastPostRedacted,
-  createBroadcastPostImplementation,
-} from "./tools/broadcast-post";
 export {
   createEdoDecideImplementation,
   EDO_DECIDE_NAME,

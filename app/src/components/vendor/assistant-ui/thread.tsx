@@ -102,11 +102,11 @@ const ThreadWelcome: FC = () => {
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
         <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-8">
           <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in font-semibold text-2xl duration-300 ease-out">
-            What should we broadcast today?
+            What do you want to build together?
           </div>
           <div className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-2 animate-in text-2xl text-muted-foreground/65 delay-100 duration-300 ease-out">
-            Draft a post, plan a campaign, or read the numbers—Beacon grows the
-            network from here.
+            Start a project, join one, or ship a change—Cogni helps with the
+            next step.
           </div>
         </div>
       </div>
@@ -119,16 +119,15 @@ const ThreadSuggestions: FC = () => {
     <div className="aui-thread-welcome-suggestions grid w-full grid-cols-1 gap-2 pb-2 sm:grid-cols-2">
       {[
         {
-          title: "Draft a post",
-          label: "about Cogni for X",
+          title: "Dream of",
+          label: "a community-owned project",
           action:
-            "Draft a punchy post for X about why community-owned AI matters, in Cogni's voice",
+            "Dream of a community-owned AI, serving one random niche of your choice",
         },
         {
-          title: "Plan a campaign",
-          label: "to grow the network",
-          action:
-            "Plan a bounded content campaign to grow awareness of Cogni, with a measurable engagement target",
+          title: "Tell me about",
+          label: "the builders behind cogni",
+          action: "Tell me about the builders behind Cogni",
         },
       ].map((suggestedAction, index) => (
         <div

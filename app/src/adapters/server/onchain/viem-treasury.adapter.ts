@@ -31,15 +31,20 @@ export class ViemTreasuryAdapter implements TreasuryReadPort {
     treasuryAddress: string;
     tokenAddresses?: string[];
   }): Promise<TreasurySnapshot> {
-    // Validate chainId against the node's DAO config (payment-independent): a
-    // treasury READ must work for any node with a DAO, activated or not (op #1843 follow-up).
+    // Validate chainId against the node's DAO identity (governance section).
+    // Treasury reads depend on chain identity, NOT payment-rail activation —
+    // a node can read its treasury before payments are turned on.
     const dao = getDaoConfig();
     if (!dao) {
-      throw new Error("[ViemTreasuryAdapter] Node DAO identity not configured (governance section incomplete)");
-    }
-    if (params.chainId !== Number(dao.chain_id)) {
       throw new Error(
-        `[ViemTreasuryAdapter] Chain ID mismatch: expected ${dao.chain_id}, got ${params.chainId}`
+        "[ViemTreasuryAdapter] Node DAO identity not configured (governance section incomplete)"
+      );
+    }
+
+    const daoChainId = Number(dao.chain_id);
+    if (params.chainId !== daoChainId) {
+      throw new Error(
+        `[ViemTreasuryAdapter] Chain ID mismatch: expected ${daoChainId}, got ${params.chainId}`
       );
     }
 

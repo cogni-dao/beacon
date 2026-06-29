@@ -2,7 +2,7 @@
 # Session-start cognition loader — shared by the Claude Code (.claude/settings.json)
 # and Codex (.codex/config.toml) SessionStart hooks. Pulls THIS node's own
 # cognition bundle and prints it to stdout; both runtimes inject it into context.
-# Non-fatal by design: any failure degrades to a one-line self-serve hint.
+# Non-fatal by design: any failure degrades to a loud self-serve prompt.
 #
 # .env.cogni holds two accounts (see .env.cogni.example): the NODE account
 # (this node's own hub — the bearer used here) and the OPERATOR account

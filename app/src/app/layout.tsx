@@ -34,9 +34,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Cogni Beacon — the AI that grows every Cogni node",
-  description:
-    "Beacon is Cogni's growth engine: an autonomous loop that drafts, broadcasts, and measures content across channels, then compounds what works into the network's knowledge.",
+  title: "Cogni",
+  description: "Web3 Gov + Web2 AI",
 };
 
 // See operator/app/src/app/layout.tsx for rationale — `headers()` in the

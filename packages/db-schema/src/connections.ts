@@ -19,7 +19,6 @@ import {
   check,
   customType,
   index,
-  jsonb,
   pgTable,
   text,
   timestamp,
@@ -42,27 +41,6 @@ const CONNECTION_PROVIDERS = [
   "github",
   "google",
   "bluesky",
-  // Social platforms (see docs/spec/platform-connections.md)
-  "x",
-  "moltbook",
-  // Fake platform for exercising the connect→resolve→post pipeline with no
-  // external calls (test harness; see docs/spec/platform-connections.md).
-  "sandbox",
-] as const;
-
-/** Connection health — legible without decrypting the credential blob.
- * `needs_billing` / `rate_limited` are read-cost circuit-breaker states: a paid
- * platform read returned 402/403 (no credits) or 429 (rate-limited), so the data
- * plane stops calling until the connection is re-armed. Because resolveActive
- * resolves only `active` rows, every caller (card, cron, agent) is short-circuited
- * — not just the UI. See docs/spec/platform-connections.md §Read-cost governance. */
-const CONNECTION_STATUSES = [
-  "active",
-  "needs_reauth",
-  "expired",
-  "review_pending",
-  "needs_billing",
-  "rate_limited",
 ] as const;
 
 const CREDENTIAL_TYPES = [
@@ -92,20 +70,6 @@ export const connections = pgTable(
     encryptionKeyId: text("encryption_key_id").notNull(),
     /** OAuth scopes granted (empty array for non-OAuth types) */
     scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
-    /** Non-secret platform account identity — for display + multi-account uniqueness. NULL for non-social providers. */
-    externalAccountId: text("external_account_id"),
-    /** Non-secret handle/username (e.g. "@acme") for UI display without decryption. */
-    externalHandle: text("external_handle"),
-    /** Non-secret human label (e.g. "Acme on X"). */
-    displayLabel: text("display_label"),
-    /** Connection health, legible without decrypting credentials. */
-    status: text("status").notNull().default("active"),
-    /** Last paid read result, cached so passive views + scheduled jobs serve
-     * from here with ZERO platform calls (read-cost governance). Non-secret
-     * public metrics only — never tokens. NULL until the first explicit read. */
-    metricsSnapshot: jsonb("metrics_snapshot"),
-    /** When metricsSnapshot was last refreshed from the platform. */
-    metricsFetchedAt: timestamp("metrics_fetched_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -132,23 +96,9 @@ export const connections = pgTable(
         sql`, `
       )})`
     ),
-    check(
-      "connections_status_check",
-      sql`${table.status} IN (${sql.join(
-        CONNECTION_STATUSES.map((s) => sql`${s}`),
-        sql`, `
-      )})`
-    ),
     index("connections_billing_account_id_idx").on(table.billingAccountId),
-    // One active connection per (account, provider, external account). COALESCE
-    // collapses NULL external_account_id to '' so non-social providers (openai-*)
-    // keep "one active per provider" while social providers allow multiple handles.
-    uniqueIndex("connections_billing_provider_account_active_idx")
-      .on(
-        table.billingAccountId,
-        table.provider,
-        sql`COALESCE(${table.externalAccountId}, '')`
-      )
+    uniqueIndex("connections_billing_account_provider_active_idx")
+      .on(table.billingAccountId, table.provider)
       .where(sql`${table.revokedAt} IS NULL`),
   ]
 ).enableRLS();

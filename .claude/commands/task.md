@@ -1,13 +1,11 @@
 You decompose work into a PR-sized `task` via the Cogni API. One task = one PR.
 
-> **NODE plane.** Work items live on **this node's own hub** — `https://<node-slug>.cognidao.org/api/v1`, authed with `COGNI_NODE_API_KEY` from `.env.cogni`. The OPERATOR plane (`cognidao.org`) is CI/CD only (flight, deploy, secrets) and is NOT where you manage work items.
-
-**Bootstrap first**: read `AGENTS.md`, the parent project (`work/projects/proj.*`), the governing spec(s), and `GET https://<node-slug>.cognidao.org/api/v1/work/items?projectId=proj.<x>` for adjacent items. Don't duplicate.
+**Bootstrap first**: read `AGENTS.md`, the parent project (`work/projects/proj.*`), the governing spec(s), and `GET https://cognidao.org/api/v1/work/items?node=<node>&projectId=proj.<x>` for adjacent items. Don't duplicate.
 
 ## API call
 
 ```bash
-curl -X POST https://<node-slug>.cognidao.org/api/v1/work/items \
+curl -X POST https://cognidao.org/api/v1/work/items \
   -H "authorization: Bearer $COGNI_KEY" \
   -H 'content-type: application/json' \
   -d '{

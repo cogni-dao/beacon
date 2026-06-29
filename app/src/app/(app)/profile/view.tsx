@@ -3,11 +3,8 @@
 
 /**
  * Module: `@app/(app)/profile/view`
- * Purpose: Client component for user profile settings, account linking, and platform connection management.
- * Scope: Reads/updates user profile via /api/v1/users/me and drives
- *   connect/disconnect affordances only. Does not render growth dashboards,
- *   platform account metrics, or random downstream card wiring; those belong
- *   on `/growth` or other operational surfaces.
+ * Purpose: Client component for user profile settings — display name, avatar color, and linked accounts.
+ * Scope: Reads/updates user profile via /api/v1/users/me; does not handle OAuth flow directly or manage session persistence.
  * Invariants: Requires authenticated session (enforced by parent layout); avatar color updates reflected in session via update().
  * Side-effects: IO (fetch API, session update, navigation for OAuth linking)
  * Links: src/contracts/users.profile.v1.contract.ts, src/app/api/v1/users/me/route.ts
@@ -17,7 +14,7 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { Bot, Check, FlaskConical, Server as ServerIcon } from "lucide-react";
+import { Check, Server as ServerIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import type { ReactElement, ReactNode } from "react";
@@ -32,7 +29,6 @@ import {
   GitHubIcon,
   GoogleIcon,
   PageContainer,
-  XIcon,
 } from "@/components";
 import { OpenAIIcon } from "@/features/ai/icons/providers/OpenAIIcon";
 
@@ -187,10 +183,6 @@ const FEEDBACK_MESSAGES: Record<
   },
   link_failed: {
     text: "Account linking failed. Please try again.",
-    variant: "error",
-  },
-  connect_failed: {
-    text: "Connecting that account failed. Please try again.",
     variant: "error",
   },
 };
@@ -539,27 +531,13 @@ export function ProfileView(): ReactElement {
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [ollamaApiKey, setOllamaApiKey] = useState("");
   const [ollamaError, setOllamaError] = useState("");
-  const [xConnected, setXConnected] = useState(false);
-  const [xHandle, setXHandle] = useState<string | null>(null);
-  const [xLoading, setXLoading] = useState(false);
-  const [moltbookConnected, setMoltbookConnected] = useState(false);
-  const [moltbookHandle, setMoltbookHandle] = useState<string | null>(null);
-  const [moltbookExpanded, setMoltbookExpanded] = useState(false);
-  const [moltbookKey, setMoltbookKey] = useState("");
-  const [moltbookError, setMoltbookError] = useState("");
-  const [moltbookLoading, setMoltbookLoading] = useState(false);
-  const [sandboxConnected, setSandboxConnected] = useState(false);
-  const [sandboxHandle, setSandboxHandle] = useState<string | null>(null);
-  const [sandboxLoading, setSandboxLoading] = useState(false);
-  const [sandboxLastPostId, setSandboxLastPostId] = useState<string | null>(null);
 
   // Read feedback query params and strip them to prevent re-display on refresh
   const linkedProvider = searchParams.get("linked");
-  const connectedProvider = searchParams.get("connected");
   const error = searchParams.get("error");
 
   useEffect(() => {
-    if (linkedProvider || connectedProvider || error) {
+    if (linkedProvider || error) {
       if (linkedProvider) {
         // Re-validate session so RainbowKit picks up the still-valid SIWE auth
         void updateSession();
@@ -567,7 +545,7 @@ export function ProfileView(): ReactElement {
       // Strip query params after reading — prevents re-display on refresh/back
       router.replace("/profile");
     }
-  }, [linkedProvider, connectedProvider, error, router, updateSession]);
+  }, [linkedProvider, error, router, updateSession]);
 
   // Fetch profile data + configured providers in parallel
   useEffect(() => {
@@ -619,64 +597,9 @@ export function ProfileView(): ReactElement {
         if (data) setOllamaConnected(data.connected);
       })
       .catch(() => {});
-
-    // Check X (Twitter) platform connection status
-    fetch("/api/v1/connections/x/status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            connected: boolean;
-            accounts: Array<{ handle: string | null }>;
-          } | null
-        ) => {
-          if (data) {
-            setXConnected(data.connected);
-            setXHandle(data.accounts[0]?.handle ?? null);
-          }
-        }
-      )
-      .catch(() => {});
-
-    // Check Moltbook platform connection status
-    fetch("/api/v1/connections/moltbook/status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            connected: boolean;
-            accounts: Array<{ handle: string | null }>;
-          } | null
-        ) => {
-          if (data) {
-            setMoltbookConnected(data.connected);
-            setMoltbookHandle(data.accounts[0]?.handle ?? null);
-          }
-        }
-      )
-      .catch(() => {});
-
-    // Check Sandbox (fake platform) connection status
-    fetch("/api/v1/connections/sandbox/status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            connected: boolean;
-            accounts: Array<{ handle: string | null }>;
-          } | null
-        ) => {
-          if (data) {
-            setSandboxConnected(data.connected);
-            setSandboxHandle(data.accounts[0]?.handle ?? null);
-          }
-        }
-      )
-      .catch(() => {});
   }, []);
 
   const walletAddress = session?.user?.walletAddress ?? null;
-
   const displayName =
     profile?.resolvedDisplayName ?? session?.user?.displayName ?? "User";
   const avatarLetter = displayName.charAt(0).toUpperCase();
@@ -697,14 +620,8 @@ export function ProfileView(): ReactElement {
       <h1 className="font-semibold text-2xl text-foreground">Profile</h1>
       <div className="border-border border-b" />
 
-      {/* Feedback banner for linking + connection results */}
-      <FeedbackBanner
-        linkedProvider={
-          linkedProvider ??
-          (connectedProvider ? connectedProvider.toUpperCase() : null)
-        }
-        error={error}
-      />
+      {/* Feedback banner for linking results */}
+      <FeedbackBanner linkedProvider={linkedProvider} error={error} />
 
       {/* ── Profile section (display name + avatar color, no divider between) ── */}
 
@@ -803,285 +720,6 @@ export function ProfileView(): ReactElement {
           </SettingRow>
         );
       })}
-
-      {/* ── Social Accounts ── */}
-
-      <SectionHeading>Social Accounts</SectionHeading>
-
-      <SettingRow
-        icon={<XIcon className="size-5" />}
-        label="X"
-        description={
-          xConnected
-            ? "Your X account is connected."
-            : "Connect your X account so this node can post and gather metrics."
-        }
-      >
-        {xConnected ? (
-          <div className="flex items-center gap-2">
-            <ConnectedBadge login={xHandle ?? "Connected"} />
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={xLoading}
-              onClick={async () => {
-                setXLoading(true);
-                try {
-                  const res = await fetch("/api/v1/connections/x/disconnect", {
-                    method: "POST",
-                  });
-                  if (res.ok) {
-                    setXConnected(false);
-                    setXHandle(null);
-                  }
-                } finally {
-                  setXLoading(false);
-                }
-              }}
-            >
-              Disconnect
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              // Top-level navigation — the connect route 302s to X's OAuth page.
-              window.location.href = "/api/v1/connections/x/connect";
-            }}
-          >
-            Connect
-          </Button>
-        )}
-      </SettingRow>
-
-      <SettingRow
-        icon={<Bot className="size-5" />}
-        label="Moltbook"
-        description={
-          moltbookConnected
-            ? "Your Moltbook agent is connected."
-            : "Connect your Moltbook agent with its API key so this node can post and gather metrics."
-        }
-      >
-        {moltbookConnected ? (
-          <div className="flex items-center gap-2">
-            <ConnectedBadge login={moltbookHandle ?? "Connected"} />
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={moltbookLoading}
-              onClick={async () => {
-                setMoltbookLoading(true);
-                try {
-                  const res = await fetch(
-                    "/api/v1/connections/moltbook/disconnect",
-                    { method: "POST" }
-                  );
-                  if (res.ok) {
-                    setMoltbookConnected(false);
-                    setMoltbookHandle(null);
-                  }
-                } finally {
-                  setMoltbookLoading(false);
-                }
-              }}
-            >
-              Disconnect
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setMoltbookExpanded(!moltbookExpanded)}
-          >
-            Connect
-          </Button>
-        )}
-      </SettingRow>
-
-      {/* Expanded Moltbook API-key form (credential connector — no redirect). */}
-      {moltbookExpanded && !moltbookConnected && (
-        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-          <div className="space-y-2">
-            <label
-              htmlFor="moltbook-key"
-              className="font-medium text-foreground text-sm"
-            >
-              Agent API Key
-            </label>
-            <input
-              id="moltbook-key"
-              type="password"
-              placeholder="mb_..."
-              value={moltbookKey}
-              onChange={(e) => {
-                setMoltbookKey(e.target.value);
-                setMoltbookError("");
-              }}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-ring/50"
-            />
-            <p className="text-muted-foreground text-xs">
-              Find your agent key at{" "}
-              <a
-                href="https://www.moltbook.com/developers"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                moltbook.com/developers
-              </a>
-              .
-            </p>
-          </div>
-          {moltbookError && (
-            <p className="text-destructive text-sm">{moltbookError}</p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={moltbookLoading || !moltbookKey}
-              onClick={async () => {
-                setMoltbookLoading(true);
-                setMoltbookError("");
-                try {
-                  const res = await fetch(
-                    "/api/v1/connections/moltbook/connect",
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ apiKey: moltbookKey }),
-                    }
-                  );
-                  const data = await res.json();
-                  if (res.ok && data.connected) {
-                    setMoltbookConnected(true);
-                    setMoltbookHandle(data.handle ?? null);
-                    setMoltbookExpanded(false);
-                    setMoltbookKey("");
-                  } else {
-                    setMoltbookError(data.error ?? "Connection failed");
-                  }
-                } catch {
-                  setMoltbookError("Failed to connect");
-                } finally {
-                  setMoltbookLoading(false);
-                }
-              }}
-            >
-              {moltbookLoading ? "Linking..." : "Connect"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setMoltbookExpanded(false);
-                setMoltbookError("");
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Sandbox: fake platform to exercise the link → post pipeline (no real send). */}
-      <SettingRow
-        icon={<FlaskConical className="size-5" />}
-        label="Sandbox (test)"
-        description={
-          sandboxConnected
-            ? "Fake platform linked — post here to exercise the pipeline with no real send."
-            : "Link a fake account to test the connect → post pipeline without posting anywhere."
-        }
-      >
-        {sandboxConnected ? (
-          <div className="flex items-center gap-2">
-            <ConnectedBadge login={sandboxHandle ?? "Connected"} />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={sandboxLoading}
-              onClick={async () => {
-                setSandboxLoading(true);
-                try {
-                  const res = await fetch("/api/v1/connections/sandbox/post", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      text: `Test post from beacon at ${new Date().toISOString()}`,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (res.ok && data.posted) {
-                    setSandboxLastPostId(data.result?.externalId ?? "ok");
-                  }
-                } finally {
-                  setSandboxLoading(false);
-                }
-              }}
-            >
-              Send test post
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={sandboxLoading}
-              onClick={async () => {
-                setSandboxLoading(true);
-                try {
-                  const res = await fetch(
-                    "/api/v1/connections/sandbox/disconnect",
-                    { method: "POST" }
-                  );
-                  if (res.ok) {
-                    setSandboxConnected(false);
-                    setSandboxHandle(null);
-                    setSandboxLastPostId(null);
-                  }
-                } finally {
-                  setSandboxLoading(false);
-                }
-              }}
-            >
-              Disconnect
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={sandboxLoading}
-            onClick={async () => {
-              setSandboxLoading(true);
-              try {
-                const res = await fetch("/api/v1/connections/sandbox/connect", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ apiKey: "demo" }),
-                });
-                const data = await res.json();
-                if (res.ok && data.connected) {
-                  setSandboxConnected(true);
-                  setSandboxHandle(data.handle ?? null);
-                }
-              } finally {
-                setSandboxLoading(false);
-              }
-            }}
-          >
-            Connect
-          </Button>
-        )}
-      </SettingRow>
-
-      {sandboxConnected && sandboxLastPostId && (
-        <p className="py-2 text-muted-foreground text-xs tabular-nums">
-          Last test post recorded: <span className="font-mono">{sandboxLastPostId}</span>
-        </p>
-      )}
 
       {/* ── AI Providers (BYO-AI) ── */}
 

@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import { withTenantScope } from "@cogni/db-client";
 import { connections } from "@cogni/db-schema";
 import { type UserId, userActor } from "@cogni/ids";
-import { aeadEncrypt, decodeAeadKey, EVENT_NAMES } from "@cogni/node-shared";
+import { aeadEncrypt, EVENT_NAMES } from "@cogni/node-shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-  const encKey = decodeAeadKey(encKeyHex);
+  const encKey = Buffer.from(encKeyHex, "hex");
   const connectionId = randomUUID();
 
   const credBlob = JSON.stringify({
