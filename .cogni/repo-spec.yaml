@@ -33,7 +33,7 @@ knowledge:
   remote:
     provider: dolthub
     owner: "cogni-dao"
-    repo: "knowledge-beacon"
+    repo: "beacon"
     url: "https://doltremoteapi.dolthub.com/cogni-dao/knowledge-beacon"
     custody: cogni-owned
 
