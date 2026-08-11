@@ -28,15 +28,6 @@ governance:
   chain_id: "8453"
   base_url: "https://proposal.cognidao.org"
 
-knowledge:
-  database: "knowledge_beacon"
-  remote:
-    provider: dolthub
-    owner: "cogni-dao"
-    repo: "knowledge-beacon"
-    url: "https://doltremoteapi.dolthub.com/cogni-dao/knowledge-beacon"
-    custody: cogni-owned
-
 # Activity ledger ingestion + approver allowlist.
 # `approvers` gates the `(admin)/` route group and write routes under
 # `/api/v1/attribution/*`. Replace with the fork's DAO-owner wallet(s) when
