@@ -37,7 +37,7 @@ import { CUMULATIVE_MERKLE_DISTRIBUTOR_ABI } from "@cogni/cogni-contracts";
 import { getTransactionExplorerUrl } from "@cogni/node-shared";
 import Link from "next/link";
 import { type ReactNode, useCallback, useMemo } from "react";
-import { encodeFunctionData, keccak256, parseAbi, toBytes } from "viem";
+import { encodeFunctionData, parseAbi } from "viem";
 import {
   useAccount,
   useChainId,
@@ -73,11 +73,6 @@ const TOKEN_MINT_ABI = parseAbi(["function mint(address to, uint256 amount)"]);
 const DISTRIBUTOR_MERKLE_ROOT_ABI = parseAbi([
   "function merkleRoot() view returns (bytes32)",
 ]);
-
-/** Deterministic per-epoch callId for DAO.execute — cosmetic (uniqueness only). */
-function publishCallId(epochId: string): `0x${string}` {
-  return keccak256(toBytes(`cogni.publish.${epochId}`));
-}
 
 export function ExecuteDistributionPanel({
   epochId,
@@ -122,9 +117,9 @@ function NotReadyNotice({ reason }: { reason: string | null }) {
       title: "Epoch not finalized yet",
       body: "Finalize this epoch before executing its distribution.",
     },
-    no_distribution_manifest: {
+    no_settlement_revision: {
       title: "No distribution built yet",
-      body: "The cumulative manifest for this epoch hasn't been persisted yet.",
+      body: "No wallet-resolved settlement is ready to publish yet.",
     },
     distributor_not_recorded: {
       title: "Distributor not recorded",
@@ -136,7 +131,23 @@ function NotReadyNotice({ reason }: { reason: string | null }) {
     },
     negative_mint_delta: {
       title: "Nothing to mint",
-      body: "This epoch's cumulative total does not increase over the prior distribution.",
+      body: "The new cumulative total does not increase over the live distribution.",
+    },
+    live_root_unavailable: {
+      title: "Can’t verify the live distribution",
+      body: "The chain root is temporarily unavailable. Publishing is paused to protect token supply.",
+    },
+    live_root_unknown: {
+      title: "Live distribution needs reconciliation",
+      body: "The on-chain root isn't present in this node's settlement history.",
+    },
+    live_root_not_ancestor: {
+      title: "Settlement history diverged",
+      body: "The newest settlement does not descend from the live on-chain root.",
+    },
+    already_published: {
+      title: "Published",
+      body: "The newest settlement root is already live on-chain.",
     },
   };
   const { title, body } = copy[reason ?? ""] ?? {
@@ -170,7 +181,11 @@ function PublishBody({ payload }: { payload: ExecuteDistributionPayload }) {
 
   // SETUP_GATES_PUBLISH: does the connected wallet already hold scoped EXECUTE_PERMISSION on the
   // DAO? Probed with token + distributor so the scoped condition evaluates a real publish shape.
-  const { hasPermission, isLoading: isPermLoading } = useHasExecutePermission({
+  const {
+    hasPermission,
+    permissionState,
+    isLoading: isPermLoading,
+  } = useHasExecutePermission({
     daoAddress: payload.daoAddress,
     wallet: address,
     tokenAddress: payload.tokenAddress,
@@ -236,7 +251,9 @@ function PublishBody({ payload }: { payload: ExecuteDistributionPayload }) {
           chainName={chainName}
         />
       ) : (
-        <SetupNeededNotice />
+        <SetupNeededNotice
+          needsCasUpgrade={permissionState === "legacy_or_unscoped"}
+        />
       )}
     </div>
   );
@@ -246,16 +263,21 @@ function PublishBody({ payload }: { payload: ExecuteDistributionPayload }) {
  * Quiet notice shown when the wallet is NOT yet authorized to publish. The authorize governance step
  * is deliberately NOT offered here — it belongs to the one-time distribution SETUP.
  */
-function SetupNeededNotice() {
+function SetupNeededNotice({ needsCasUpgrade }: { needsCasUpgrade: boolean }) {
   return (
     <Alert>
-      <AlertTitle>Finish distribution setup first</AlertTitle>
+      <AlertTitle>
+        {needsCasUpgrade
+          ? "Upgrade publishing authorization"
+          : "Finish distribution setup first"}
+      </AlertTitle>
       <AlertDescription>
-        Your wallet isn&apos;t authorized to publish yet. Complete the one-time
-        &ldquo;Authorize publishing&rdquo; step in distribution setup{" "}
+        {needsCasUpgrade
+          ? "The existing authorization lacks the on-chain compare-and-swap guard. Reauthorize publishing before continuing. "
+          : "Your wallet isn’t authorized to publish yet. Complete the one-time Authorize publishing step. "}
         <Link
           href="/gov/system"
-          className="underline transition-colors hover:text-foreground"
+          className="hover:text-foreground underline transition-colors"
         >
           on the governance setup page →
         </Link>
@@ -334,10 +356,18 @@ function PublishStep({
       abi: DAO_ABI,
       address: payload.daoAddress,
       functionName: "execute",
-      args: [publishCallId(payload.epochId), actions, 0n],
+      // CAS V2: callId is the server-observed root that MUST still be live when the DAO
+      // evaluates permission. A concurrent/stale publish is denied before mint executes.
+      args: [payload.alreadyExecutedRoot, actions, 0n],
       account: address,
     });
-  }, [actions, address, payload.daoAddress, payload.epochId, writeContract]);
+  }, [
+    actions,
+    address,
+    payload.daoAddress,
+    payload.alreadyExecutedRoot,
+    writeContract,
+  ]);
 
   // Already live on-chain (this session or a prior one) → terminal state, no button.
   if (published) {
@@ -389,7 +419,7 @@ function TxLink({ url, children }: { url: string; children: ReactNode }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="underline transition-colors hover:text-foreground"
+      className="hover:text-foreground underline transition-colors"
     >
       {children}
     </a>
@@ -428,12 +458,12 @@ function DistributionSummary({
   chainName: string;
 }) {
   return (
-    <div className="rounded-lg border border-border p-5">
+    <div className="border-border rounded-lg border p-5">
       <p className="text-muted-foreground text-sm">Minting this epoch</p>
-      <p className="font-bold text-2xl tracking-tight">
+      <p className="text-2xl font-bold tracking-tight">
         {formatAmount(mintDelta)}
       </p>
-      <dl className="mt-3 space-y-1 text-muted-foreground text-sm">
+      <dl className="text-muted-foreground mt-3 space-y-1 text-sm">
         <div className="flex justify-between gap-4">
           <dt>New claim root</dt>
           <dd className="truncate font-mono" title={merkleRoot}>

@@ -3,13 +3,13 @@
 
 /**
  * Module: `@cogni/attribution-pipeline-plugins/finalize/run-finalize-epoch`
- * Purpose: Runtime-agnostic epoch finalization — sign-verify → atomic off-chain finalize → R3 cumulative fold. Extracted from scheduler-worker/activities/ledger.ts so it runs identically in a Temporal activity OR synchronously in a node's own HTTP route (story.5007 finalize-in-process).
- * Scope: One pure-DI async function + its fold/guard closures. Performs I/O only through the injected `AttributionStore` and (optional) distribution-config resolver + wallet resolver. Does not send on-chain transactions, dispatch Temporal, read env/repo-spec, or import framework or Node built-ins (platform:neutral) — it only BUILDS + persists the manifest.
+ * Purpose: Runtime-agnostic epoch finalization — sign-verify → atomic statement/liability seal → settlement reconciliation.
+ * Scope: One pure-DI async function. Performs I/O only through injected ports and never sends on-chain transactions.
  * Invariants:
  *   - EPOCH_FINALIZE_IDEMPOTENT: already-finalized epoch → repair via finalizeEpochAtomic, returns existing statement.
  *   - FINALIZE_CLAIMANT_AWARE: loads locked claimant rows, dispatches the pinned allocator, explodes to claimant allocations.
- *   - FINALIZE_BUILDS_CUMULATIVE_ROOT (R3): the SINGLE finalize signature folds this epoch's claimant deltas onto the prior cumulative manifest and persists the new root + per-epoch mint delta. Never sends an on-chain tx.
- *   - FREEZE (bug.5022): a persisted manifest is IMMUTABLE — repair/re-finalize preserves it, never re-folds (a re-fold → new root for an already-published epoch → double-mint).
+ *   - FINALIZE_MATERIALIZES_LIABILITIES: every positive signed line becomes one fixed atomic liability in the finalize transaction.
+ *   - LATE_BINDING_SETTLES: reconciliation is independent of epoch lifecycle; unresolved liabilities remain pending.
  *   - bug.5020 execute-guard: a non-production runtime refuses to build a distribution against the production Cogni DAO; fail-closed on a null emissions holder (baked-fallback path).
  *   - FOLD_NEVER_UNDOES_FINALIZE: the cumulative fold runs AFTER the atomic off-chain finalize commits, in try/catch — a fold failure leaves the signed statement intact.
  * Side-effects: IO (AttributionStore DB, viem EIP-712 verification, optional HTTP/in-process config resolver).
@@ -17,14 +17,9 @@
  * @public
  */
 
+import { type ClaimantWalletResolver } from "@cogni/aragon-osx";
 import {
-  buildCumulativeEpochDistribution,
-  type ClaimantWalletResolver,
-  type FinalizedEpochStatement,
-  type HexAddress,
-  type PriorCumulativeBalance,
-} from "@cogni/aragon-osx";
-import {
+  type AttributionEpoch,
   type AttributionStore,
   applyReceiptWeightOverrides,
   buildEIP712TypedData,
@@ -41,21 +36,17 @@ import { dispatchAllocator } from "@cogni/attribution-pipeline-contracts";
 import { verifyTypedData } from "viem";
 
 import type { DefaultRegistries } from "../registry";
+import { assertSettlementGovernanceTargetSafe } from "../settlement/governance-target-guard";
+import {
+  runReconcileSettlements,
+  type SettlementReconcileTrigger,
+} from "../settlement/run-reconcile-settlements";
 
 /**
- * 18-decimal base-unit scale for the GovernanceERC20. The per-epoch mint delta
- * maps 1 signed credit → 1 whole token (× 10^18 base units).
+ * 18-decimal base-unit scale for the GovernanceERC20. Each immutable signed
+ * credit becomes one whole-token liability (× 10^18 base units).
  */
 const TOKEN_BASE_UNITS = 10n ** 18n;
-
-/**
- * The PRODUCTION Cogni DAO / emissions-holder address. The bug.5020 execute-guard
- * refuses to build any distribution against this address on a non-production runtime,
- * so a candidate/preview deploy can never mint into or set a root for production
- * governance — defense-in-depth behind the per-node-spec seam.
- */
-const PROD_COGNI_DAO_ADDRESS =
-  "0xF61c3fafD4D34b4568e7a500d92b28Ac175e83C6".toLowerCase();
 
 /**
  * Codes for CLIENT/REQUEST-STATE finalize failures — the caller can fix these (wrong
@@ -170,6 +161,78 @@ export interface FinalizeEpochInput {
   readonly signerAddress: string; // from SIWE session
 }
 
+async function verifyFinalizeAuthorization(params: {
+  readonly epoch: AttributionEpoch;
+  readonly input: FinalizeEpochInput;
+  readonly nodeId: string;
+  readonly scopeId: string;
+  readonly deploymentEnvironment: ReturnType<
+    typeof parseEIP712DeploymentEnvironment
+  >;
+  readonly finalAllocationSetHash: string;
+  readonly poolTotalCredits: bigint;
+  readonly chainId: number;
+}): Promise<void> {
+  const {
+    epoch,
+    input,
+    nodeId,
+    scopeId,
+    deploymentEnvironment,
+    finalAllocationSetHash,
+    poolTotalCredits,
+    chainId,
+  } = params;
+
+  if (!epoch.approvers || epoch.approvers.length === 0) {
+    throw new FinalizeEpochError(
+      "no_approvers",
+      `finalizeEpoch: epoch ${input.epochId} has no pinned approvers (APPROVERS_PINNED_AT_REVIEW violated)`
+    );
+  }
+  const signerLower = input.signerAddress.toLowerCase();
+  const approversLower = epoch.approvers.map((approver) =>
+    approver.toLowerCase()
+  );
+  if (!approversLower.includes(signerLower)) {
+    throw new FinalizeEpochError(
+      "signer_not_approver",
+      `finalizeEpoch: signer ${input.signerAddress} not in approvers`
+    );
+  }
+
+  const pinnedApproverSetHash = await computeApproverSetHash(epoch.approvers);
+  if (epoch.approverSetHash !== pinnedApproverSetHash) {
+    throw new Error(
+      `finalizeEpoch: approver set hash integrity failure — stored hash ${epoch.approverSetHash} does not match recomputed ${pinnedApproverSetHash}`
+    );
+  }
+
+  const typedData = buildEIP712TypedData({
+    nodeId,
+    scopeId,
+    epochId: input.epochId,
+    deploymentEnvironment,
+    finalAllocationSetHash,
+    poolTotalCredits: poolTotalCredits.toString(),
+    chainId,
+  });
+  const isValid = await verifyTypedData({
+    address: input.signerAddress as `0x${string}`,
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: input.signature as `0x${string}`,
+  });
+  if (!isValid) {
+    throw new FinalizeEpochError(
+      "signature_invalid",
+      `finalizeEpoch: signature verification failed for signer ${input.signerAddress}`
+    );
+  }
+}
+
 /** Output from finalizeEpoch. */
 export interface FinalizeEpochOutput {
   readonly statementId: string;
@@ -177,10 +240,8 @@ export interface FinalizeEpochOutput {
   readonly finalAllocationSetHash: string;
   readonly statementLineCount: number;
   /**
-   * Cumulative distribution produced by the SAME finalize signature (R3). Null when
-   * distributions are not activated or no wallet-resolved cumulative balance remains.
-   * When present, the per-epoch on-chain action is: DAO.mint(mintDelta) into the
-   * existing distributor + distributor.setMerkleRoot(merkleRoot). BUILT, never sent.
+   * Settlement revision appended after the atomic finalize. Null when distributions
+   * are inactive or every new liability is still unresolved. BUILT, never published.
    */
   readonly cumulativeDistribution: {
     readonly distributionId: string;
@@ -242,39 +303,6 @@ export async function runFinalizeEpoch(
   );
 
   /**
-   * bug.5020 execute-guard: fail-closed refusal to build a distribution against the
-   * PRODUCTION Cogni DAO from a non-production runtime. Thrown inside the fold, which
-   * the finalize body wraps in try/catch — a trip leaves the off-chain statement
-   * finalized and simply skips the on-chain manifest (safe no-op), loudly logged.
-   */
-  function assertNotProdGovernanceOnNonProd(
-    emissionsHolderAddress: string | null,
-    epochId: bigint
-  ): void {
-    if (deploymentEnvironment === "production") return;
-    if (
-      emissionsHolderAddress &&
-      emissionsHolderAddress.toLowerCase() === PROD_COGNI_DAO_ADDRESS
-    ) {
-      throw new Error(
-        `[bug.5020 execute-guard] refusing to build a distribution against the PRODUCTION Cogni DAO ${emissionsHolderAddress} from a non-production runtime (DEPLOY_ENVIRONMENT=${deploymentEnvironment ?? "<unset>"}, epoch ${epochId.toString()})`
-      );
-    }
-    // NULL-BLIND FAIL-CLOSED: this guard runs AFTER the tokenAddress gate, i.e. we are
-    // about to build a real distribution. On a non-prod runtime a null emissionsHolder
-    // means the baked-fallback path (the gateway didn't authoritatively give us the DAO)
-    // — we CANNOT prove the governance target is not prod, so we refuse rather than trust
-    // a baked identity. The legitimate non-prod path (own spec) no-ops earlier on a null
-    // tokenAddress and never reaches here; the authoritative gateway always supplies a
-    // non-null holder.
-    if (emissionsHolderAddress === null) {
-      throw new Error(
-        `[bug.5020 execute-guard] refusing to build a distribution with an UNKNOWN emissions holder (baked-fallback path) from a non-production runtime (DEPLOY_ENVIRONMENT=${deploymentEnvironment ?? "<unset>"}, epoch ${epochId.toString()}) — cannot prove the governance target is not the production DAO`
-      );
-    }
-  }
-
-  /**
    * Resolve the effective per-node distribution config for THIS runtime's node at fold
    * time (bug.5020). Order: (1) the per-node gateway (authoritative — the finalizing
    * node's own repo-spec); (2) on a transient gateway failure, the baked config (prod
@@ -330,220 +358,52 @@ export async function runFinalizeEpoch(
     }
   }
 
-  /**
-   * R3 — build + persist the cumulative distribution from a just-finalized epoch.
-   * No-ops (returns null) when distributions are not activated (no tokenAddress or
-   * resolver) or no wallet-resolved cumulative balance remains — the off-chain
-   * ledger finalize already succeeded and must not be undone.
-   */
-  async function buildAndPersistCumulativeDistribution(args: {
-    readonly epochId: bigint;
-    readonly statementId: string;
-    readonly finalAllocationSetHash: string;
-    readonly statementLines: ReadonlyArray<{
-      readonly claimant_key: string;
-      readonly credit_amount: string;
-      readonly receipt_ids: readonly string[];
-    }>;
-  }): Promise<FinalizeEpochOutput["cumulativeDistribution"]> {
-    // FREEZE (bug.5022): once an epoch's manifest is persisted it is IMMUTABLE. A repair /
-    // re-finalize must never re-fold and OVERWRITE it — a re-fold that picks up a newly
-    // wallet-linked contributor produces a NEW merkle root for an epoch that may already be
-    // published on-chain, which the client-side "already-live root" guard no longer
-    // recognizes → a second DAO.mint(delta) re-opens the double-mint that stranded tokens on
-    // Base. The first finalize builds the manifest; every later call preserves it. Late
-    // resolutions flow into the NEXT epoch's cumulative fold (never a retro-overwrite).
-    const existingManifest =
-      await attributionStore.getDistributionManifestForEpoch(args.epochId);
-    if (existingManifest) {
-      const frozenLeaves = await attributionStore.getDistributionLeavesForEpoch(
-        args.epochId
-      );
+  async function reconcileSettlementAfterFinalize(
+    epochId: bigint,
+    trigger: SettlementReconcileTrigger
+  ): Promise<FinalizeEpochOutput["cumulativeDistribution"]> {
+    const effective = await resolveEffectiveDistributionConfig(epochId);
+    if (
+      !effective.tokenAddress ||
+      !effective.distributorAddress ||
+      !walletResolver
+    ) {
       logger.info(
-        {
-          epochId: args.epochId.toString(),
-          nodeId,
-          merkleRoot: `${existingManifest.merkleRoot.slice(0, 12)}...`,
-          leafCount: frozenLeaves.length,
-        },
-        "Cumulative distribution FROZEN — manifest already persisted; preserving without re-fold (bug.5022)"
-      );
-      return {
-        distributionId: existingManifest.distributionId,
-        merkleRoot: existingManifest.merkleRoot,
-        // No new mint on a preserved manifest — this repair emits nothing to publish.
-        mintDelta: "0",
-        cumulativeTotal: existingManifest.distributionAmount.toString(),
-        leafCount: frozenLeaves.length,
-        tokenAddress: existingManifest.tokenAddress,
-        chainId: existingManifest.chainId,
-        distributorAddress: existingManifest.distributorAddress,
-      };
-    }
-
-    // bug.5020: resolve the finalizing node's governance from ITS OWN repo-spec via the
-    // gateway — the runtime bakes no node's governance identity. The wallet resolver is
-    // DB-backed (not spec-derived) and stays from deps, gated on a token.
-    const effective = await resolveEffectiveDistributionConfig(args.epochId);
-    const effectiveTokenAddress = effective.tokenAddress;
-    const effectiveDistributorAddress = effective.distributorAddress;
-
-    if (!effectiveTokenAddress || !walletResolver) {
-      logger.info(
-        { epochId: args.epochId.toString(), nodeId },
-        "Cumulative distribution skipped — distributions not activated (no tokenAddress/walletResolver)"
+        { epochId: epochId.toString(), nodeId },
+        "Settlement reconciliation skipped — distributions not activated"
       );
       return null;
     }
 
-    // bug.5020 execute-guard (defense-in-depth): a non-production runtime must never build
-    // a distribution against the production Cogni DAO, even via a baked-spec fallback.
-    assertNotProdGovernanceOnNonProd(
-      effective.emissionsHolderAddress,
-      args.epochId
-    );
-
-    // Prior cumulative balances = the most-recent persisted cumulative manifest's
-    // per-account leaf amounts (each cumulative leaf carries the account's
-    // cumulative-to-date). We find the highest epoch id BEFORE this one that has a
-    // persisted manifest. No new store method: enumerate epochs and read manifests.
-    const allEpochs = await attributionStore.listEpochs(nodeId);
-    const priorEpochIds = allEpochs
-      .map((e) => e.id)
-      .filter((id) => id < args.epochId)
-      .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0)); // descending
-
-    let priorManifest: Awaited<
-      ReturnType<typeof attributionStore.getDistributionManifestForEpoch>
-    > = null;
-    let priorLeaves: Awaited<
-      ReturnType<typeof attributionStore.getDistributionLeavesForEpoch>
-    > = [];
-    for (const priorEpochId of priorEpochIds) {
-      const manifest =
-        await attributionStore.getDistributionManifestForEpoch(priorEpochId);
-      if (manifest) {
-        priorManifest = manifest;
-        priorLeaves =
-          await attributionStore.getDistributionLeavesForEpoch(priorEpochId);
-        break;
-      }
-    }
-
-    const priorCumulative: PriorCumulativeBalance[] = priorLeaves.map(
-      (leaf) => ({
-        account: leaf.account as HexAddress,
-        cumulativeAmount: leaf.amount,
-      })
-    );
-
-    const distributorAddress =
-      priorManifest?.distributorAddress ??
-      (await attributionStore.getDistributionManifestForEpoch(args.epochId))
-        ?.distributorAddress ??
-      // R2↔R3 seam: the FIRST epoch has no prior/current manifest, so fall back to
-      // the ONE per-node distributor R2 recorded in the finalizing node's repo-spec at
-      // activation (resolved per-node via the gateway; baked value as fallback).
-      effectiveDistributorAddress ??
-      null;
-
-    // The per-epoch mint delta is THIS epoch's poolTotal in base units
-    // (poolTotalCredits × 10^18), mapped 1 credit → 1 whole token.
-    const poolTotalCredits = args.statementLines.reduce(
-      (sum, line) => sum + BigInt(line.credit_amount),
-      0n
-    );
-    const mintDelta = poolTotalCredits * TOKEN_BASE_UNITS;
-
-    const finalized: FinalizedEpochStatement = {
-      distributionId: `epoch-${args.epochId.toString()}`,
-      nodeId,
-      scopeId,
-      statementHash: args.finalAllocationSetHash,
-      chainId,
-      tokenAddress: effectiveTokenAddress as HexAddress,
-      lines: args.statementLines.map((line) => ({
-        claimantKey: line.claimant_key,
-        creditAmount: BigInt(line.credit_amount),
-        receiptIds: line.receipt_ids,
-      })),
-    };
-
-    if (mintDelta <= 0n && priorCumulative.length === 0) {
-      logger.info(
-        { epochId: args.epochId.toString() },
-        "Cumulative distribution skipped — zero mint delta and no prior cumulative balance"
-      );
-      return null;
-    }
-
-    const { distribution, blockers, unresolvedClaimantKeys } =
-      await buildCumulativeEpochDistribution(
-        finalized,
-        mintDelta,
-        priorCumulative,
-        walletResolver
-      );
-
-    if (!distribution) {
-      logger.warn(
-        {
-          epochId: args.epochId.toString(),
-          blockers: blockers.map((b) => b.code),
-          unresolvedClaimantKeys,
-        },
-        "Cumulative distribution not built — no wallet-resolved cumulative balance"
-      );
-      return null;
-    }
-
-    // Persist the cumulative manifest (header + cumulative leaves). The
-    // distributionAmount column holds the cumulative supply distributed to date;
-    // totalAllocated holds the same (every leaf is wallet-backed). The
-    // distributorAddress carries forward from the prior manifest (R2 records it).
-    await attributionStore.upsertDistributionManifest({
-      nodeId: distribution.nodeId,
-      scopeId: distribution.scopeId,
-      epochId: args.epochId,
-      distributionId: distribution.distributionId,
-      statementHash: distribution.statementHash,
-      merkleRoot: distribution.merkleRoot,
-      chainId: distribution.chainId,
-      tokenAddress: distribution.tokenAddress,
-      distributionAmount: distribution.cumulativeTotal,
-      totalAllocated: distribution.cumulativeTotal,
-      distributorAddress,
-      leaves: distribution.leaves.map((leaf) => ({
-        index: leaf.index,
-        claimantKey: leaf.claimantKey,
-        account: leaf.account,
-        amount: leaf.cumulativeAmount,
-        leafHash: leaf.leafHash,
-        proof: [...leaf.proof],
-      })),
+    assertSettlementGovernanceTargetSafe({
+      deploymentEnvironment,
+      emissionsHolderAddress: effective.emissionsHolderAddress,
+      context: `epoch ${epochId.toString()}`,
     });
-
-    logger.info(
+    const result = await runReconcileSettlements(
       {
-        epochId: args.epochId.toString(),
-        merkleRoot: `${distribution.merkleRoot.slice(0, 12)}...`,
-        mintDelta: distribution.mintDelta.toString(),
-        cumulativeTotal: distribution.cumulativeTotal.toString(),
-        leafCount: distribution.leaves.length,
-        unresolvedClaimantKeys,
+        settlementStore: attributionStore,
+        walletResolver,
+        nodeId,
+        scopeId,
+        chainId,
+        tokenAddress: effective.tokenAddress,
+        distributorAddress: effective.distributorAddress,
+        logger,
       },
-      "Cumulative distribution built + persisted from finalize signature"
+      trigger
     );
+    if (result.status === "noop") return null;
 
     return {
-      distributionId: distribution.distributionId,
-      merkleRoot: distribution.merkleRoot,
-      mintDelta: distribution.mintDelta.toString(),
-      cumulativeTotal: distribution.cumulativeTotal.toString(),
-      leafCount: distribution.leaves.length,
-      tokenAddress: distribution.tokenAddress,
-      chainId: distribution.chainId,
-      distributorAddress,
+      distributionId: result.distributionId,
+      merkleRoot: result.merkleRoot,
+      mintDelta: result.mintDelta.toString(),
+      cumulativeTotal: result.cumulativeTotal.toString(),
+      leafCount: result.leafCount,
+      tokenAddress: effective.tokenAddress,
+      chainId,
+      distributorAddress: effective.distributorAddress,
     };
   }
 
@@ -576,6 +436,20 @@ export async function runFinalizeEpoch(
       );
     }
 
+    // A repair may add a missing signature, so it must satisfy the exact same
+    // pinned-approver and EIP-712 checks as the original finalization. The
+    // already-signed statement is the immutable message being authorized.
+    await verifyFinalizeAuthorization({
+      epoch,
+      input,
+      nodeId,
+      scopeId,
+      deploymentEnvironment,
+      finalAllocationSetHash: existing.finalAllocationSetHash,
+      poolTotalCredits: existing.poolTotalCredits,
+      chainId,
+    });
+
     // Repair: ensure this signer's signature exists via atomic method
     await attributionStore.finalizeEpochAtomic({
       epochId,
@@ -598,6 +472,13 @@ export async function runFinalizeEpoch(
         poolTotalCredits: existing.poolTotalCredits,
         statementLines: existing.statementLines,
       },
+      claimantLiabilities: existing.statementLines
+        .filter((line) => BigInt(line.credit_amount) > 0n)
+        .map((line) => ({
+          claimantKey: line.claimant_key,
+          amountAtomic: BigInt(line.credit_amount) * TOKEN_BASE_UNITS,
+          receiptIds: [...line.receipt_ids].sort(),
+        })),
       signature: {
         nodeId,
         signerWallet: input.signerAddress,
@@ -607,19 +488,12 @@ export async function runFinalizeEpoch(
       expectedFinalAllocationSetHash: existing.finalAllocationSetHash,
     });
 
-    // R3: re-build the cumulative manifest on repair too — heals a missing or
-    // stale cumulative root from an earlier finalize that predated this path.
+    // Repair also materializes any missing liabilities and retries reconciliation.
     let repairCumulative: FinalizeEpochOutput["cumulativeDistribution"] = null;
     try {
-      repairCumulative = await buildAndPersistCumulativeDistribution({
-        epochId,
-        statementId: existing.id,
-        finalAllocationSetHash: existing.finalAllocationSetHash,
-        statementLines: existing.statementLines.map((line) => ({
-          claimant_key: line.claimant_key,
-          credit_amount: line.credit_amount,
-          receipt_ids: [...line.receipt_ids],
-        })),
+      repairCumulative = await reconcileSettlementAfterFinalize(epochId, {
+        kind: "epoch_finalize",
+        epochId: epochId.toString(),
       });
     } catch (err) {
       logger.error(
@@ -655,30 +529,7 @@ export async function runFinalizeEpoch(
     );
   }
 
-  // 3. Verify signer is in pinned approvers (APPROVERS_PINNED_AT_REVIEW)
-  if (!epoch.approvers || epoch.approvers.length === 0) {
-    throw new FinalizeEpochError(
-      "no_approvers",
-      `finalizeEpoch: epoch ${input.epochId} has no pinned approvers (APPROVERS_PINNED_AT_REVIEW violated)`
-    );
-  }
-  const signerLower = input.signerAddress.toLowerCase();
-  const approversLower = epoch.approvers.map((a) => a.toLowerCase());
-  if (!approversLower.includes(signerLower)) {
-    throw new FinalizeEpochError(
-      "signer_not_approver",
-      `finalizeEpoch: signer ${input.signerAddress} not in approvers`
-    );
-  }
-  // Self-consistent integrity check: recompute hash from pinned list
-  const pinnedApproverSetHash = await computeApproverSetHash(epoch.approvers);
-  if (epoch.approverSetHash !== pinnedApproverSetHash) {
-    throw new Error(
-      `finalizeEpoch: approver set hash integrity failure — stored hash ${epoch.approverSetHash} does not match recomputed ${pinnedApproverSetHash}`
-    );
-  }
-
-  // 4. Load pool components → pool_total = SUM(amount_credits)
+  // 3. Load pool components → pool_total = SUM(amount_credits)
   const poolComponents =
     await attributionStore.getPoolComponentsForEpoch(epochId);
   if (poolComponents.length === 0) {
@@ -702,7 +553,7 @@ export async function runFinalizeEpoch(
     0n
   );
 
-  // 5. Load locked claimants + receipt weights + overrides → explode to claimant allocations
+  // 4. Load locked claimants + receipt weights + overrides → explode to claimant allocations
   const lockedClaimants = await attributionStore.loadLockedClaimants(epochId);
   if (lockedClaimants.length === 0) {
     throw new FinalizeEpochError(
@@ -749,44 +600,30 @@ export async function runFinalizeEpoch(
     overrides
   );
 
-  // 6. Compute statement lines from final allocations
+  // 5. Compute statement lines from final allocations
   const statementLines = computeAttributionStatementLines(
     finalClaimantAllocations,
     poolTotal
   );
 
-  // 7. Compute allocation set hash (deterministic)
+  // 6. Compute allocation set hash (deterministic)
   const finalAllocationSetHash = await computeFinalClaimantAllocationSetHash(
     finalClaimantAllocations
   );
 
-  // 8. Build EIP-712 typed data and verify signature
-  const typedData = buildEIP712TypedData({
+  // 7. Verify the pinned signer and EIP-712 authorization.
+  await verifyFinalizeAuthorization({
+    epoch,
+    input,
     nodeId,
     scopeId,
-    epochId: input.epochId,
     deploymentEnvironment,
     finalAllocationSetHash,
-    poolTotalCredits: poolTotal.toString(),
+    poolTotalCredits: poolTotal,
     chainId,
   });
 
-  const isValid = await verifyTypedData({
-    address: input.signerAddress as `0x${string}`,
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: input.signature as `0x${string}`,
-  });
-  if (!isValid) {
-    throw new FinalizeEpochError(
-      "signature_invalid",
-      `finalizeEpoch: signature verification failed for signer ${input.signerAddress}`
-    );
-  }
-
-  // 9. Atomic finalize — epoch transition + statement + signature in one transaction
+  // 8. Atomic finalize — epoch transition + statement + signature in one transaction
   const { epoch: finalizedEpoch, statement } =
     await attributionStore.finalizeEpochAtomic({
       epochId,
@@ -814,6 +651,13 @@ export async function runFinalizeEpoch(
         reviewOverrides:
           reviewOverrideSnapshots.length > 0 ? reviewOverrideSnapshots : null,
       },
+      claimantLiabilities: statementLines
+        .filter((line) => line.creditAmount > 0n)
+        .map((line) => ({
+          claimantKey: line.claimantKey,
+          amountAtomic: line.creditAmount * TOKEN_BASE_UNITS,
+          receiptIds: [...line.receiptIds].sort(),
+        })),
       signature: {
         nodeId,
         signerWallet: input.signerAddress,
@@ -835,21 +679,14 @@ export async function runFinalizeEpoch(
     "Epoch finalized"
   );
 
-  // R3: the SAME finalize signature drives the cumulative root + mint delta.
-  // Built/persisted after the atomic off-chain finalize so a build failure
-  // never undoes the signed statement; the off-chain ledger is authoritative.
+  // Reconciliation runs after the atomic seal. A resolver/build failure cannot undo
+  // the signed statement or its durable liabilities; normal retries can heal it.
   let cumulativeDistribution: FinalizeEpochOutput["cumulativeDistribution"] =
     null;
   try {
-    cumulativeDistribution = await buildAndPersistCumulativeDistribution({
-      epochId,
-      statementId: statement.id,
-      finalAllocationSetHash,
-      statementLines: statementLines.map((line) => ({
-        claimant_key: line.claimantKey,
-        credit_amount: line.creditAmount.toString(),
-        receipt_ids: [...line.receiptIds],
-      })),
+    cumulativeDistribution = await reconcileSettlementAfterFinalize(epochId, {
+      kind: "epoch_finalize",
+      epochId: epochId.toString(),
     });
   } catch (err) {
     logger.error(
