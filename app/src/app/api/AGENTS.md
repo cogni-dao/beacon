@@ -45,6 +45,8 @@ HTTP API endpoints using Next.js App Router. Contract-validated entry points tha
   - `/api/v1/chat/completions` [POST] - OpenAI-compatible chat completions (streaming + non-streaming, `cogni_status` extension); see [completions spec](../../../docs/spec/completions-api.md)
   - `/api/v1/ai/chat` [POST] - streaming chat with server-authoritative thread persistence
   - `/api/v1/activity` [GET]
+  - `/api/v1/identity/bindings/import/start` [POST] - mint a session-owned nonce and return the pinned operator broker URL
+  - `/api/v1/identity/bindings/import` [POST] - verify and consume an operator identity attestation into this node's binding ledger
   - `/api/v1/public/attribution/epochs` [GET] - closed epochs list (public, no auth)
   - `/api/v1/public/attribution/epochs/[id]/user-projections` [GET] - closed epoch user projections (public)
   - `/api/v1/public/attribution/epochs/[id]/claimants` [GET] - closed epoch claimant attribution (public)
@@ -55,11 +57,6 @@ HTTP API endpoints using Next.js App Router. Contract-validated entry points tha
   - `/api/v1/attribution/epochs/[id]/user-projections` [GET, PATCH=410] - read per-user unsigned projections; edits are deprecated
   - `/api/v1/attribution/epochs/[id]/review-subject-overrides` [GET, PATCH, DELETE] - review-time subject overrides (SIWE + approver)
   - `/api/v1/attribution/epochs/[id]/pool-components` [POST] - record pool component (SIWE + approver)
-  - `/api/v1/connections/[provider]/connect` [GET] - initiate platform OAuth (PKCE state in signed cookie), 302 to provider; see [platform-connections spec](../../../../docs/spec/platform-connections.md)
-  - `/api/v1/connections/[provider]/callback` [GET] - OAuth callback: verify state, exchange code, encrypt + store connection
-  - `/api/v1/connections/[provider]/disconnect` [POST] - soft-delete (revoke) active connection
-  - `/api/v1/connections/[provider]/status` [GET] - `{ connected, accounts[] }` from non-secret columns (never decrypts)
-  - `/api/v1/growth/campaigns/[campaignId]/publish-approved` [POST] - session-authenticated POST-stage trigger for one caller-owned, already-approved Moltbook post
   - `/api/v1/users/me` [GET, PATCH] - current profile
   - `/api/v1/users/me/ownership` [GET] - current ownership summary derived from linked identities
   - `/api/v1/work/items` [GET] - list work items with optional filters (SIWE auth)

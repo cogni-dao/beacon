@@ -451,9 +451,8 @@ describe("LiteLlmAdapter", () => {
 
       await expect(adapter.completionStream(errorTestParams)).rejects.toThrow();
 
-      // beacon's litellm adapter logs all HTTP errors at warn (it has no bug.5056
-      // operator-fault escalation to error) → assert warn, not error.
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
+      // status 500 is operator-fault (bug.5056) → logged at error, not warn
+      expect(mockLoggerError).toHaveBeenCalledWith(
         expect.objectContaining({
           responseExcerpt: "[unreadable]",
         }),

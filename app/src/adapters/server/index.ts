@@ -68,19 +68,6 @@ export {
   DrizzleThreadPersistenceAdapter,
   MAX_THREAD_MESSAGES,
 } from "./ai/thread-persistence.adapter";
-// Social broadcast adapter (X API v2) — env-gated off; growth-loop v0
-export {
-  DEFAULT_MOLTBOOK_API_BASE_URL,
-  MoltbookSocialAdapter,
-  type MoltbookSocialConfig,
-  MoltbookVerificationRequiredError,
-} from "./social/moltbook.adapter";
-export {
-  XSocialAdapter,
-  type XSocialConfig,
-} from "./social/x.adapter";
-// Fake sandbox poster — exercises the posting pipeline with no external send.
-export { SandboxPoster } from "./social/sandbox.poster";
 export { DrizzleAiTelemetryAdapter } from "./ai-telemetry/drizzle.adapter";
 export {
   type CreateTraceWithIOParams,

@@ -65,54 +65,6 @@ export type {
   ScheduleInfo,
   ScheduleUpdateParams,
 } from "./schedule";
-// Broadcast capability (per beacon-growth-loop spec — persists `posts` only)
-export {
-  BROADCAST_KINDS,
-  BroadcastInputSchema,
-  BroadcastResultSchema,
-  BroadcastVariantResultSchema,
-  BroadcastVariantSchema,
-  FUNNEL_LAYERS,
-} from "./broadcast";
-export type {
-  BroadcastCapability,
-  BroadcastInput,
-  BroadcastResult,
-  BroadcastVariant,
-  BroadcastVariantResult,
-} from "./broadcast";
-// Social broadcast + metrics capability (per beacon-growth-loop spec)
-export {
-  DEFAULT_MOLTBOOK_SUBMOLT,
-  deriveMoltbookPayloadFromDraft,
-  deriveMoltbookPayloadFromText,
-  MOLTBOOK_MAX_CONTENT_LENGTH,
-  MOLTBOOK_MAX_TITLE_LENGTH,
-  MOLTBOOK_SUBMOLT_OPTIONS,
-  MoltbookPostPayloadSchema,
-  PostContentInputSchema,
-  PostContentResultSchema,
-  PostMetricSnapshotSchema,
-  SOCIAL_CHANNELS,
-  X_API_VERSION,
-  X_MAX_TEXT_LENGTH,
-  XAccountMetricsSchema,
-  XAccountProfileSchema,
-  XRecentPostSchema,
-} from "./social-x";
-export type {
-  MoltbookPostPayload,
-  PostContentInput,
-  PostContentResult,
-  PostMetricSnapshot,
-  ReadAccountMetricsOptions,
-  SocialChannel,
-  SocialXCapability,
-  XAccountMetrics,
-  XAccountProfile,
-  XInsightsCapability,
-  XRecentPost,
-} from "./social-x";
 // Export capability interfaces (defined here, NOT in ai-core)
 export type {
   AuthCapability,
