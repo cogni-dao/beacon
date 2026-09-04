@@ -96,7 +96,7 @@ type PersistedFinding = {
   createdAt: Date;
 };
 
-type NextPostPriority = {
+type ActivityPriority = {
   rank: number;
   score: number;
   funnelLayer: "tofu" | "mofu" | "bofu";
@@ -197,6 +197,17 @@ function stringFromMeta(
     : null;
 }
 
+function firstStringFromMeta(
+  metadata: JsonObject | null | undefined,
+  keys: readonly string[]
+): string | null {
+  for (const key of keys) {
+    const value = stringFromMeta(metadata, key);
+    if (value) return value;
+  }
+  return null;
+}
+
 function numberFromMeta(
   metadata: JsonObject | null | undefined,
   key: string
@@ -287,7 +298,7 @@ function baseFindingScore(kind: string): number {
   }
 }
 
-function scoreFindingForNextPost(finding: PersistedFinding): number {
+function scoreFindingForActivity(finding: PersistedFinding): number {
   const sourceRefs = sourceRefsForFinding(finding);
   const confidence = metadataConfidence(finding);
   const sourceBoost = sourceRefs.length > 0 ? 0.12 : 0;
@@ -309,7 +320,108 @@ function scoreFindingForNextPost(finding: PersistedFinding): number {
   );
 }
 
-function buildPostPriorities(findings: PersistedFinding[]): NextPostPriority[] {
+function inferActivityType(
+  finding: PersistedFinding,
+  action: string | null
+): string {
+  const explicit = firstStringFromMeta(finding.metadata, [
+    "activityType",
+    "recommendedActivityType",
+  ]);
+  if (explicit) return explicit;
+
+  const text = `${action ?? ""} ${finding.content}`.toLowerCase();
+  if (text.includes("reddit") || text.includes("subreddit")) {
+    return text.includes("post") ? "reddit_post" : "audience_research";
+  }
+  if (text.includes("blog") || text.includes("essay")) {
+    return text.includes("publish") ? "blog_publish" : "blog_outline";
+  }
+  if (text.includes("moltbook") || text.includes("submolt")) {
+    return "moltbook_post";
+  }
+  if (finding.kind === "pain_point" || finding.kind === "insight") {
+    return "audience_research";
+  }
+  return "moltbook_post";
+}
+
+function inferTargetSurface(
+  finding: PersistedFinding,
+  sourceRefs: readonly string[]
+): string {
+  const explicit = firstStringFromMeta(finding.metadata, [
+    "targetSurface",
+    "platform",
+    "surface",
+  ]);
+  if (explicit) return explicit;
+
+  const refText = sourceRefs.join(" ").toLowerCase();
+  const content = finding.content.toLowerCase();
+  if (refText.includes("moltbook") || content.includes("moltbook")) {
+    return "moltbook";
+  }
+  if (refText.includes("reddit") || content.includes("reddit")) return "reddit";
+  if (content.includes("blog") || content.includes("essay")) return "blog";
+  if (content.includes("submolt")) return "moltbook/submolt";
+  return "beacon-growth";
+}
+
+function capabilityForActivity(
+  activityType: string,
+  targetSurface: string
+): {
+  capabilityStatus: "executable" | "manual" | "platform_gap";
+  suggestedToolOrRoute: string;
+  blockedBy?: string;
+} {
+  const normalized = `${activityType} ${targetSurface}`.toLowerCase();
+  if (
+    normalized.includes("moltbook") ||
+    activityType === "moltbook_post" ||
+    activityType === "content_post"
+  ) {
+    return {
+      capabilityStatus: "executable",
+      suggestedToolOrRoute:
+        "POST /api/v1/growth/campaigns/{campaignId}/generate",
+    };
+  }
+  if (
+    activityType === "audience_research" ||
+    activityType === "source_research"
+  ) {
+    return {
+      capabilityStatus: "executable",
+      suggestedToolOrRoute:
+        "core__knowledge_search, core__web_search, growth research",
+    };
+  }
+  if (normalized.includes("reddit") || normalized.includes("blog")) {
+    return {
+      capabilityStatus: "platform_gap",
+      suggestedToolOrRoute: "file work story/task for platform support",
+      blockedBy: "platform_gap",
+    };
+  }
+  return {
+    capabilityStatus: "manual",
+    suggestedToolOrRoute: "operator review",
+  };
+}
+
+function boundedPercent(
+  value: number | null,
+  fallback: number
+): number {
+  const n = value ?? fallback;
+  return Math.round(Math.max(0, Math.min(100, n)));
+}
+
+function buildActivityPriorities(
+  findings: PersistedFinding[]
+): ActivityPriority[] {
   const actionable = findings
     .filter(
       (f) =>
@@ -318,7 +430,7 @@ function buildPostPriorities(findings: PersistedFinding[]): NextPostPriority[] {
         f.kind === "pain_point"
     )
     .map((finding) => {
-      const score = scoreFindingForNextPost(finding);
+      const score = scoreFindingForActivity(finding);
       const sourceRefs = sourceRefsForFinding(finding);
       const funnelLayer = inferFunnelLayer(finding);
       const topic = stringFromMeta(finding.metadata, "topic");
@@ -327,6 +439,31 @@ function buildPostPriorities(findings: PersistedFinding[]): NextPostPriority[] {
         (finding.kind === "angle" ? truncateText(finding.content, 90) : null);
       const kpiMetric = extractKpiMetric(finding.metadata);
       const confidence = metadataConfidence(finding);
+      const action =
+        stringFromMeta(finding.metadata, "nextAction") ??
+        stringFromMeta(finding.metadata, "recommendedNextAction");
+      const activityType = inferActivityType(finding, action);
+      const targetSurface = inferTargetSurface(finding, sourceRefs);
+      const capability = capabilityForActivity(activityType, targetSurface);
+      const expectedImpact = boundedPercent(
+        numberFromMeta(finding.metadata, "expectedImpact") ??
+          numberFromMeta(finding.metadata, "impact"),
+        score * 100
+      );
+      const ease = boundedPercent(
+        numberFromMeta(finding.metadata, "ease"),
+        capability.capabilityStatus === "executable"
+          ? 72
+          : capability.capabilityStatus === "manual"
+            ? 45
+            : 20
+      );
+      const difficulty = boundedPercent(
+        numberFromMeta(finding.metadata, "difficulty"),
+        100 - ease
+      );
+      const blockedBy =
+        stringFromMeta(finding.metadata, "blockedBy") ?? capability.blockedBy;
       return {
         finding,
         priority: {
@@ -352,7 +489,19 @@ function buildPostPriorities(findings: PersistedFinding[]): NextPostPriority[] {
           metadata: {
             findingId: finding.id,
             findingKind: finding.kind,
+            activityType,
+            targetSurface,
+            expectedImpact,
+            ease,
+            difficulty,
+            sourceRefs,
             evidenceBasis: sourceRefs,
+            capabilityStatus: capability.capabilityStatus,
+            suggestedToolOrRoute: capability.suggestedToolOrRoute,
+            acceptanceCriteria:
+              stringFromMeta(finding.metadata, "acceptanceCriteria") ??
+              `Activity is useful if it advances ${kpiMetric} with cited evidence.`,
+            ...(blockedBy ? { blockedBy } : {}),
             confidenceBasis: "deterministic_v0_source_kind_confidence_scorer",
             ...(finding.metadata?.kpiHypothesis
               ? { kpiHypothesis: finding.metadata.kpiHypothesis }
@@ -382,7 +531,7 @@ function strongestNextAction(findings: PersistedFinding[]): string | null {
 
 function buildCurrentState(params: {
   findings: PersistedFinding[];
-  priorities: NextPostPriority[];
+  priorities: ActivityPriority[];
 }): {
   summary: string;
   nextAction: string;
@@ -400,25 +549,26 @@ function buildCurrentState(params: {
     strongestNextAction(findings) ??
     (topPriority
       ? [
-          `Generate the rank ${topPriority.rank}`,
-          `${topPriority.funnelLayer.toUpperCase()} post`,
+          `Work the rank ${topPriority.rank}`,
+          "activity priority",
           `and keep it tied to ${topPriority.kpiMetric}.`,
         ].join(" ")
-      : "Refresh intelligence with more evidence before generating posts.");
+      : "Refresh intelligence with more evidence before acting.");
   const summary = topPriority
-    ? `Best next post: ${truncateText(topPriority.premise, 180)}`
+    ? `Top activity: ${truncateText(topPriority.premise, 180)}`
     : topFinding
       ? truncateText(topFinding.content, 180)
       : "No actionable campaign thinking yet.";
   const confidence =
     topPriority?.score ??
-    (topFinding ? scoreFindingForNextPost(topFinding) : 0.3);
+    (topFinding ? scoreFindingForActivity(topFinding) : 0.3);
   return {
     summary,
     nextAction,
     confidence,
     metadata: {
       sourceRefs: [...refs].slice(0, 12),
+      activityPriorityCount: priorities.length,
       nextPostCount: priorities.length,
       kpiMetric: topPriority?.kpiMetric ?? "qualified_engagement_rate",
       kpiRationale: [
@@ -905,7 +1055,7 @@ export const POST = wrapRouteHandlerWithLogging<{
             createdAt: findings.createdAt,
           });
 
-        const prioritiesToPersist = buildPostPriorities(
+        const prioritiesToPersist = buildActivityPriorities(
           persisted.map((f) => ({
             ...f,
             metadata: toJsonObject(f.metadata),
@@ -956,6 +1106,7 @@ export const POST = wrapRouteHandlerWithLogging<{
         });
         const stateMetadata = {
           ...current.metadata,
+          activityPriorityIds: priorities.map((p) => p.id),
           nextPostPriorityIds: priorities.map((p) => p.id),
         };
         const states = await tx

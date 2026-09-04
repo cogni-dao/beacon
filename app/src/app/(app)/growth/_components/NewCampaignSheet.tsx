@@ -35,7 +35,45 @@ import {
 } from "@/components";
 
 import { createCampaign } from "../_api/mutateCampaign";
+import {
+  AUDIENCE_PRESETS,
+  GOAL_PRESETS,
+  type StrategyPreset,
+  VOICE_PRESETS,
+} from "./campaignStrategyPresets";
 import { deriveCampaignId, slugify } from "./slug";
+
+function PresetGroup({
+  label,
+  presets,
+  onSelect,
+}: {
+  label: string;
+  presets: readonly StrategyPreset[];
+  onSelect: (preset: StrategyPreset) => void;
+}): ReactElement {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {presets.map((preset) => (
+          <Button
+            key={preset.id}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 px-2.5 text-xs"
+            onClick={() => onSelect(preset)}
+          >
+            {preset.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** One labelled multi-line DEFINE field with grounded helper copy. */
 function DefineField({
@@ -182,6 +220,24 @@ export function NewCampaignSheet(): ReactElement {
               required
             />
           </div>
+
+          <PresetGroup
+            label="Goal presets"
+            presets={GOAL_PRESETS}
+            onSelect={(preset) => setObjective(preset.value)}
+          />
+
+          <PresetGroup
+            label="Audience presets"
+            presets={AUDIENCE_PRESETS}
+            onSelect={(preset) => setIcp(preset.value)}
+          />
+
+          <PresetGroup
+            label="Voice presets"
+            presets={VOICE_PRESETS}
+            onSelect={(preset) => setVoice(preset.value)}
+          />
 
           <DefineField
             id="campaign-topic"

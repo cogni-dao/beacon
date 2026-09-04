@@ -38,6 +38,13 @@ export interface CreateCampaignResponse {
   status: CampaignStatus;
 }
 
+export interface CampaignStrategyInput {
+  coreTopic: string;
+  voice: string;
+  icp: string;
+  objective: string;
+}
+
 async function readError(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   return body.error || `HTTP ${response.status}` || fallback;
@@ -75,6 +82,25 @@ export async function setCampaignStatus(
   );
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update status"));
+  }
+}
+
+export async function updateCampaignStrategy(
+  campaignId: string,
+  input: CampaignStrategyInput
+): Promise<void> {
+  const response = await fetch(
+    `/api/v1/growth/campaigns/${encodeURIComponent(campaignId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify(input),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update strategy"));
   }
 }
 
