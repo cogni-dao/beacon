@@ -140,6 +140,12 @@ export type {
   TemplateQueryResult,
   TemplateSummary,
 } from "./metrics-query.port";
+export type {
+	AttestedGithubBindingEvidence,
+	GithubBindingOwner,
+	IdentityBindingRepositoryPort,
+	IdentityBindingTransactionPort,
+} from "./identity-binding.port";
 export type { ModelCatalogPort } from "./model-catalog.port";
 export type {
   ModelOption,
@@ -152,10 +158,7 @@ export type {
   VerificationResult,
   VerificationStatus,
 } from "./onchain-verifier.port";
-export type {
-  OperatorWalletPort,
-  TransferIntent,
-} from "./operator-wallet.port";
+export type { OperatorWalletPort } from "./operator-wallet.port";
 export {
   type CreatePaymentAttemptParams,
   isPaymentAttemptNotFoundPortError,
@@ -171,11 +174,6 @@ export {
   type PaymentErrorCode,
   TxHashAlreadyBoundPortError,
 } from "./payment-attempt.port";
-export type {
-  ProviderFundingContext,
-  ProviderFundingOutcome,
-  ProviderFundingPort,
-} from "./provider-funding.port";
 export type {
   ProxyBillingEntry,
   SandboxErrorCode,
