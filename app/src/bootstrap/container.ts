@@ -28,8 +28,16 @@ import type { AttributionStore } from "@cogni/attribution-ledger";
 import {
   createDefaultRegistries,
   type DefaultRegistries,
+	type FinalizeEpochInput,
+	type FinalizeEpochOutput,
+	type FinalizeLogger,
+	type RunFinalizeEpochDeps,
+	runFinalizeEpoch,
 } from "@cogni/attribution-pipeline-plugins";
-import { DrizzleAttributionAdapter } from "@cogni/db-client";
+import {
+	DrizzleAttributionAdapter,
+	DrizzleClaimantWalletResolver,
+} from "@cogni/db-client";
 import type { FinancialLedgerPort } from "@cogni/financial-ledger";
 import { createTigerBeetleAdapter } from "@cogni/financial-ledger/adapters";
 import type { UserId } from "@cogni/ids";
@@ -120,7 +128,6 @@ import {
 } from "@/adapters/server/ai/providers";
 import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";
 import { ServiceDrizzlePaymentAttemptRepository } from "@/adapters/server/payments/drizzle-payment-attempt.adapter";
-import { OpenRouterFundingAdapter } from "@/adapters/server/treasury/openrouter-funding.adapter";
 import { SplitTreasurySettlementAdapter } from "@/adapters/server/treasury/split-treasury-settlement.adapter";
 import {
   FakeMetricsAdapter,
@@ -159,7 +166,6 @@ import type {
   OperatorWalletPort,
   PaymentAttemptServiceRepository,
   PaymentAttemptUserRepository,
-  ProviderFundingPort,
   RunStreamPort,
   SandboxPosterPort,
   ServiceAccountService,
@@ -176,11 +182,14 @@ import type {
 } from "@/ports/server";
 import {
   getDaoTreasuryAddress,
+	getEmissionsHolderAddress,
   getLedgerConfig,
   getNodeId,
+	getNodeTokenomicsConfig,
   getOperatorWalletConfig,
   getPaymentConfig,
   getScopeId,
+	getStewardWalletConfig,
 } from "@/shared/config";
 import { serverEnv } from "@/shared/env/server-env";
 import { makeLogger } from "@/shared/observability";
@@ -289,8 +298,6 @@ export interface Container {
   operatorWallet: OperatorWalletPort | undefined;
   /** Treasury settlement — undefined when operator wallet not configured */
   treasurySettlement: TreasurySettlementPort | undefined;
-  /** Provider funding — undefined when OPENROUTER_API_KEY not set */
-  providerFunding: ProviderFundingPort | undefined;
   /** Connection broker — undefined when CONNECTIONS_ENCRYPTION_KEY not set */
   connectionBroker: ConnectionBrokerPort | undefined;
   /** Model catalog — aggregates all providers for model listing */
@@ -445,6 +452,54 @@ function getCollectRegistries(): DefaultRegistries {
   return _collectRegistries;
 }
 
+/**
+ * Assemble deps for IN-PROCESS epoch finalization (story.5007 — finalize-in-process).
+ * The node runs `runFinalizeEpoch` synchronously in its own finalize route on its OWN
+ * service DB + repo-spec, retiring the Temporal FinalizeEpochWorkflow round-trip (no
+ * ledger-tasks queue, no cross-scope theft). All adapter/registry wiring lives here —
+ * the route boundary forbids adapter imports.
+ *
+ * - `attributionStore` = service DB (BYPASSRLS) scoped adapter.
+ * - `walletResolver` built only when a token is configured; else the R3 fold no-ops.
+ * - `distributionConfigClient` = null. A node finalizes only its OWN epochs, so the
+ *   baked tokenomics from its OWN repo-spec are already authoritative (no per-node
+ *   gateway — that is an operator-only concept). The bug.5020 execute-guard still
+ *   fires on the baked emissions-holder / non-production runtime.
+ */
+function buildFinalizeEpochDeps(logger: FinalizeLogger): RunFinalizeEpochDeps {
+	const serviceDb = getServiceDb();
+	const tokenomics = getNodeTokenomicsConfig();
+	return {
+		attributionStore: new DrizzleAttributionAdapter(serviceDb, getScopeId()),
+		registries: getCollectRegistries(),
+		nodeId: getNodeId(),
+		scopeId: getScopeId(),
+		chainId: tokenomics.chainId,
+		tokenAddress: tokenomics.tokenAddress,
+		distributorAddress: tokenomics.distributorAddress,
+		emissionsHolderAddress: getEmissionsHolderAddress(),
+		walletResolver: tokenomics.tokenAddress
+			? new DrizzleClaimantWalletResolver(serviceDb)
+			: null,
+		distributionConfigClient: null,
+		deploymentEnvironment: serverEnv().DEPLOY_ENVIRONMENT,
+		logger,
+	};
+}
+
+/**
+ * Run epoch finalization IN-PROCESS (story.5007). Thin composition-root wrapper the
+ * finalize route calls instead of dispatching a Temporal FinalizeEpochWorkflow — keeps
+ * the route free of adapter/package wiring (route boundary). Idempotent: a re-POST
+ * repairs; the fold FREEZE (bug.5022) preserves a published manifest.
+ */
+export async function finalizeEpochInProcess(
+	input: FinalizeEpochInput,
+	logger: FinalizeLogger,
+): Promise<FinalizeEpochOutput> {
+	return runFinalizeEpoch(buildFinalizeEpochDeps(logger), input);
+}
+
 function createContainer(): Container {
   const env = serverEnv();
   const nodeId = getNodeId();
@@ -458,7 +513,7 @@ function createContainer(): Container {
       logLevel: env.PINO_LOG_LEVEL,
       pretty: env.NODE_ENV === "development",
     },
-    "container initialized"
+		"container initialized",
   );
 
   // Initialize PostHog product analytics (required — env validated at boot)
@@ -508,7 +563,7 @@ function createContainer(): Container {
           // Return stub that throws on use - allows app to start without metrics config
           const notConfiguredError = new Error(
             "MetricsQueryPort not configured. Set PROMETHEUS_QUERY_URL (or PROMETHEUS_REMOTE_WRITE_URL " +
-              "ending in /api/prom/push) + PROMETHEUS_READ_USERNAME + PROMETHEUS_READ_PASSWORD."
+							"ending in /api/prom/push) + PROMETHEUS_READ_USERNAME + PROMETHEUS_READ_PASSWORD.",
           );
           return {
             queryRange: async () => {
@@ -540,13 +595,13 @@ function createContainer(): Container {
       const adapter = createTigerBeetleAdapter(env.TIGERBEETLE_ADDRESS);
       log.info(
         { address: env.TIGERBEETLE_ADDRESS },
-        "TigerBeetle financial ledger connected"
+				"TigerBeetle financial ledger connected",
       );
       return adapter;
     } catch (err) {
       log.warn(
         { err },
-        "TigerBeetle client failed to initialize — financial ledger disabled"
+				"TigerBeetle client failed to initialize — financial ledger disabled",
       );
       return undefined;
     }
@@ -556,7 +611,7 @@ function createContainer(): Container {
   // Testing strategy: unit tests mock the port, integration tests use real DB
   const serviceAccountService = new ServiceDrizzleAccountService(
     getServiceDb(),
-    financialLedger
+		financialLedger,
   );
   // TreasuryReadPort: always uses ViemTreasuryAdapter (no test fake needed - mocked at port level in tests)
   const treasuryReadPort = new ViemTreasuryAdapter(evmOnchainClient);
@@ -585,7 +640,7 @@ function createContainer(): Container {
   if (!env.TEMPORAL_ADDRESS || !env.TEMPORAL_NAMESPACE) {
     throw new Error(
       "TEMPORAL_ADDRESS and TEMPORAL_NAMESPACE are required. " +
-        "Start Temporal with: pnpm dev:infra"
+				"Start Temporal with: pnpm dev:infra",
     );
   }
   // Per QUEUE_PER_NODE_ISOLATION: Schedules submit to this node's per-node
@@ -606,29 +661,29 @@ function createContainer(): Container {
   // User-facing scheduling (appDb, RLS enforced)
   const executionGrantPort = new DrizzleExecutionGrantUserAdapter(
     db,
-    log.child({ component: "DrizzleExecutionGrantUserAdapter" })
+		log.child({ component: "DrizzleExecutionGrantUserAdapter" }),
   );
   const scheduleManager = new DrizzleScheduleUserAdapter(
     db,
     scheduleControl,
     executionGrantPort,
-    log.child({ component: "DrizzleScheduleUserAdapter" })
+		log.child({ component: "DrizzleScheduleUserAdapter" }),
   );
 
   // Worker scheduling (serviceDb, BYPASSRLS)
   const executionGrantWorkerPort = new DrizzleExecutionGrantWorkerAdapter(
     serviceDb,
-    log.child({ component: "DrizzleExecutionGrantWorkerAdapter" })
+		log.child({ component: "DrizzleExecutionGrantWorkerAdapter" }),
   );
   const graphRunRepository = new DrizzleGraphRunAdapter(
     serviceDb,
-    log.child({ component: "DrizzleGraphRunAdapter" })
+		log.child({ component: "DrizzleGraphRunAdapter" }),
   );
 
   // Execution request port (not user-scoped — exempt from RLS)
   const executionRequestPort = new DrizzleExecutionRequestAdapter(
     db,
-    log.child({ component: "DrizzleExecutionRequestAdapter" })
+		log.child({ component: "DrizzleExecutionRequestAdapter" }),
   );
 
   // MetricsCapability for AI tools (requires PROMETHEUS_URL)
@@ -651,7 +706,7 @@ function createContainer(): Container {
 
   // WorkItemCapability for AI tools (delegates to markdown adapter ports)
   const workItemAdapter = new MarkdownWorkItemAdapter(
-    env.COGNI_REPO_ROOT ?? "/nonexistent"
+		env.COGNI_REPO_ROOT ?? "/nonexistent",
   );
   const workItemCapability = createWorkItemCapability({
     workItemQuery: workItemAdapter,
@@ -665,7 +720,7 @@ function createContainer(): Container {
       const accountService = new UserDrizzleAccountService(
         db,
         userId,
-        financialLedger
+				financialLedger,
       );
       const account = await accountService.getOrCreateBillingAccountForUser({
         userId: userId as string,
@@ -718,7 +773,7 @@ function createContainer(): Container {
             onSuccess: () => log.info({ remote: remoteUrl }, "dolthub_push_ok"),
             onFailure: (err) =>
               log.warn({ err, remote: remoteUrl }, "dolthub_push_failed"),
-          }
+					},
         )
       : undefined;
     knowledgeContributionService = createContributionService({
@@ -735,7 +790,7 @@ function createContainer(): Container {
     });
     log.info(
       { dolthubMirror: Boolean(env.DOLTHUB_REMOTE_URL) },
-      "Knowledge store + EDO capability configured (Doltgres)"
+			"Knowledge store + EDO capability configured (Doltgres)",
     );
   } else {
     const notConfigured = () => {
@@ -801,7 +856,7 @@ function createContainer(): Container {
         }
         if (!operatorWalletConfig) {
           log.warn(
-            "PRIVY_APP_ID set but operator_wallet missing from repo-spec — skipping operator wallet"
+						"PRIVY_APP_ID set but operator_wallet missing from repo-spec — skipping operator wallet",
           );
           return undefined;
         }
@@ -815,16 +870,19 @@ function createContainer(): Container {
         const paymentConfig = getPaymentConfig();
         if (!paymentConfig) {
           log.warn(
-            "PRIVY_APP_ID set but payments_in missing from repo-spec — run `pnpm node:activate-payments`"
+						"PRIVY_APP_ID set but payments_in missing from repo-spec — run `pnpm node:activate-payments`",
           );
           return undefined;
         }
         if (!env.EVM_RPC_URL) {
           log.warn(
-            "PRIVY_APP_ID set but EVM_RPC_URL missing — operator wallet requires RPC for tx confirmation"
+						"PRIVY_APP_ID set but EVM_RPC_URL missing — operator wallet requires RPC for tx confirmation",
           );
           return undefined;
         }
+				// Steward wallet is optional — when payments_out is absent the adapter
+				// fails closed on withdrawToSteward but inbound/distribute still work.
+				const stewardWalletConfig = getStewardWalletConfig();
         return new PrivyOperatorWalletAdapter({
           appId: env.PRIVY_APP_ID,
           appSecret: env.PRIVY_APP_SECRET,
@@ -836,32 +894,16 @@ function createContainer(): Container {
           revenueSharePpm: numberToPpm(env.SYSTEM_TENANT_REVENUE_SHARE),
           maxTopUpUsd: env.OPERATOR_MAX_TOPUP_USD,
           rpcUrl: env.EVM_RPC_URL,
+					...(stewardWalletConfig
+						? { stewardAddress: stewardWalletConfig.address }
+						: {}),
         });
       })();
 
-  // ProviderFunding: optional — only when OPENROUTER_API_KEY is configured + operator wallet available
-  // Per MARGIN_PRESERVED: fail fast if pricing constants don't preserve positive margin
-  const providerFunding: ProviderFundingPort | undefined = (() => {
-    if (!env.OPENROUTER_API_KEY || !operatorWallet) return undefined;
-
-    // MARGIN_PRESERVED: markup × (1 - fee) must be > 1 + revenueShare
-    const effectiveMarkup =
-      env.USER_PRICE_MARKUP_FACTOR * (1 - env.OPENROUTER_CRYPTO_FEE);
-    if (effectiveMarkup <= 1 + env.SYSTEM_TENANT_REVENUE_SHARE) {
-      throw new Error(
-        `MARGIN_PRESERVED violation: markup(${env.USER_PRICE_MARKUP_FACTOR}) × (1 - fee(${env.OPENROUTER_CRYPTO_FEE})) ` +
-          `must be > 1 + revenueShare(${env.SYSTEM_TENANT_REVENUE_SHARE}). ` +
-          "DAO would lose money on every purchase."
-      );
-    }
-
-    return new OpenRouterFundingAdapter(
-      getServiceDb(),
-      operatorWallet,
-      { apiKey: env.OPENROUTER_API_KEY },
-      log.child({ component: "OpenRouterFundingAdapter" })
-    );
-  })();
+	// ProviderFunding (OpenRouter/Coinbase top-up) was retired — OpenRouter 410'd
+	// programmatic crypto top-up. Outbound vendor funding now flows through the
+	// operator wallet's withdrawToSteward + a manual human checkout. The post-credit
+	// chain here is now just inbound credit + Split distribute (treasurySettlement below).
 
   // Connection broker — BYO-AI credential resolution
   // Undefined when CONNECTIONS_ENCRYPTION_KEY not set
@@ -967,7 +1009,7 @@ function createContainer(): Container {
       new DrizzleThreadPersistenceAdapter(db, userActor(userId)),
     governanceStatus: new DrizzleGovernanceStatusAdapter(
       db,
-      userActor(toUserId(COGNI_SYSTEM_PRINCIPAL_USER_ID))
+			userActor(toUserId(COGNI_SYSTEM_PRINCIPAL_USER_ID)),
     ),
     attributionStore: new DrizzleAttributionAdapter(serviceDb, getScopeId()),
     workItemQuery: workItemAdapter,
@@ -989,7 +1031,6 @@ function createContainer(): Container {
     treasurySettlement: operatorWallet
       ? new SplitTreasurySettlementAdapter(operatorWallet, USDC_TOKEN_ADDRESS)
       : undefined,
-    providerFunding,
     connectionBroker,
     // Multi-provider model ports
     ...(() => {
@@ -1000,7 +1041,7 @@ function createContainer(): Container {
       const codexProvider = new CodexModelProvider(codexMcpConfig);
       const openAiCompatibleProvider = new OpenAiCompatibleModelProvider(
         connectionBroker,
-        resolveAppDb
+				resolveAppDb,
       );
       const providers = [
         platformProvider,
