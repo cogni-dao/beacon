@@ -3,18 +3,21 @@
 
 /**
  * Module: `@app/(app)/growth/[campaignId]/view`
- * Purpose: Read-only campaign detail — the brief/goal, a minimal control panel
- *   (status + read-only pause/resume + cadence), and the classified content queue
- *   GROUPED BY funnel layer (TOFU/MOFU/BOFU), each section showing its independent
- *   per-layer KPI and the posts + latest cached metrics that scored it.
- * Scope: Pure presentation. Receives a `CampaignDetail`; no fetching.
+ * Purpose: Campaign detail — the brief/goal, a minimal control panel (status + delete
+ *   + cadence), and the pipeline BOARD: a Kanban whose columns are the growth loop
+ *   (Opportunities → Drafts → Ready → Posted, + Rejected), with per-layer KPI as a
+ *   header strip and the loop's AI-triggers (capture/research/generate) attached to
+ *   the columns they advance. Replaces the old funnel-grouped list + detached actions.
+ * Scope: Pure presentation. Receives a `CampaignDetail`; no fetching (the board owns
+ *   the client mutations).
  * Invariants:
- *   - READ_ONLY_KPI: renders the facade-computed KPI — never recomputes.
- *   - PER_LAYER_KPI: each funnel layer is scored independently (never one blended bar).
+ *   - READ_ONLY_KPI / PER_LAYER_KPI: the board renders the facade-computed per-layer
+ *     KPI — never recomputes, never blends.
  *   - STATUS_TOGGLE_REAL: the draft↔active toggle + delete are WIRED (PATCH/DELETE);
  *     status only persists the field — schedule pause/resume is the heartbeat PR.
  * Side-effects: none
- * Links: ./page.tsx, ../_components/CampaignStatus.tsx, ../_components/CampaignControls.tsx
+ * Links: ./page.tsx, ../_components/CampaignBoard.tsx, ../_components/CampaignStatus.tsx,
+ *   ../_components/CampaignControls.tsx
  * @internal
  */
 
@@ -25,10 +28,8 @@ import type { ReactElement } from "react";
 import { Card, CardContent } from "@/components";
 import type { CampaignDetail } from "@/app/_facades/growth/campaigns.server";
 
-import { CampaignActions } from "../_components/CampaignActions";
+import { CampaignBoard } from "../_components/CampaignBoard";
 import { CampaignControls } from "../_components/CampaignControls";
-import { CampaignFunnel } from "../_components/CampaignFunnel";
-import { CampaignResearchEvidence } from "../_components/CampaignResearchEvidence";
 import {
   campaignStatusInfo,
   CampaignStatusBadge,
@@ -53,7 +54,7 @@ export function CampaignDetailView({
   const cadenceLabel = campaign.status === "active" ? "1/day" : "paused";
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-5 md:p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-5 md:p-6">
       <Link
         href="/growth"
         className="inline-flex w-fit items-center gap-1.5 text-muted-foreground text-sm transition-colors hover:text-foreground"
@@ -74,7 +75,8 @@ export function CampaignDetailView({
 
       {/* Control panel — status toggle + delete are WIRED (PATCH/DELETE). The
           toggle only persists `status`; status→Temporal schedule pause/resume
-          (and trigger toggles) are the heartbeat PR. */}
+          (and trigger toggles) are the heartbeat PR. The loop's per-stage triggers
+          (capture/research/generate) now live on the board columns below. */}
       <Card>
         <CardContent className="flex flex-col gap-3 pt-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -90,38 +92,21 @@ export function CampaignDetailView({
           </div>
           {/* Honesty: "Activate" only persists status today — it does NOT auto-run
               the loop. The autonomous driver (heartbeat → research/generate/post on
-              active campaigns) is a later PR. Until then, advance the loop manually
-              with the actions below. */}
+              active campaigns) is a later PR. Until then, advance the loop from the
+              board's column triggers. */}
           <p className="text-muted-foreground text-xs">
             Activating marks intent only &mdash; it does not auto-run yet (autonomous
-            heartbeat is a later PR). Advance the loop manually here:
+            heartbeat is a later PR). Advance the loop from the board below.
           </p>
-          <CampaignActions campaignId={campaign.campaignId} />
-        </CardContent>
-      </Card>
-
-      {/* Brief */}
-      <Card>
-        <CardContent className="pt-6">
-          <h2 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Brief
-          </h2>
           <p className="whitespace-pre-wrap text-muted-foreground text-sm leading-relaxed">
             {campaign.brief}
           </p>
         </CardContent>
       </Card>
 
-      <CampaignResearchEvidence
-        findings={campaign.findings}
-        currentThinking={campaign.currentThinking}
-        nextPostPriorities={campaign.nextPostPriorities}
-      />
-
-      {/* Queue grouped by funnel layer, each with its own independent KPI, plus a
-          status filter so the operator can blast through review (approve/reject/
-          edit/refine each draft). */}
-      <CampaignFunnel campaign={campaign} />
+      {/* The pipeline board: columns = the loop stages, per-layer KPI strip on top,
+          capture/research/generate triggers on the columns they advance. */}
+      <CampaignBoard campaign={campaign} />
     </div>
   );
 }
