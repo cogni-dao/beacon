@@ -227,6 +227,10 @@ interface CampaignRecord {
 	title: string;
 	status: CampaignStatus;
 	brief: string | null;
+	coreTopic: string | null;
+	voice: string | null;
+	icp: string | null;
+	objective: string | null;
 	targetRate: number | null;
 	evaluateAt: string | null;
 	createdAt: string;
@@ -244,6 +248,10 @@ async function loadCampaignRecords(userId: string): Promise<CampaignRecord[]> {
 				title: campaigns.title,
 				status: campaigns.status,
 				brief: campaigns.brief,
+				coreTopic: campaigns.coreTopic,
+				voice: campaigns.voice,
+				icp: campaigns.icp,
+				objective: campaigns.objective,
 				targetRate: campaigns.targetRate,
 				evaluateAt: campaigns.evaluateAt,
 				createdAt: campaigns.createdAt,
@@ -257,6 +265,10 @@ async function loadCampaignRecords(userId: string): Promise<CampaignRecord[]> {
 		title: r.title,
 		status: asCampaignStatus(r.status),
 		brief: r.brief ?? null,
+		coreTopic: r.coreTopic ?? null,
+		voice: r.voice ?? null,
+		icp: r.icp ?? null,
+		objective: r.objective ?? null,
 		targetRate: r.targetRate ?? null,
 		evaluateAt: r.evaluateAt ? r.evaluateAt.toISOString() : null,
 		createdAt: r.createdAt.toISOString(),
@@ -349,7 +361,7 @@ export interface CampaignCurrentThinking {
 	updatedAt: string;
 }
 
-/** Ranked next-post recommendation for the campaign's Act step. */
+/** Ranked research-backed activity recommendation for the campaign's Act step. */
 export interface CampaignPostPriority {
 	id: string;
 	rank: number;
@@ -369,6 +381,10 @@ export interface CampaignPostPriority {
 export interface CampaignDetail extends CampaignLensRow {
 	/** The campaign brief / goal (owned `campaigns.brief`); "" when unset. */
 	brief: string;
+	coreTopic: string;
+	voice: string;
+	icp: string;
+	objective: string;
 	moltbookConnection: {
 		handle: string | null;
 		displayLabel: string | null;
@@ -377,7 +393,7 @@ export interface CampaignDetail extends CampaignLensRow {
 	findings: CampaignFinding[];
 	/** Latest campaign intelligence summary for agents/operators. */
 	currentThinking: CampaignCurrentThinking | null;
-	/** Ranked queue of next posts the agent should generate/refine first. */
+	/** Ranked queue of activities the agent should prioritize first. */
 	nextPostPriorities: CampaignPostPriority[];
 	posts: CampaignPost[];
 }
@@ -397,6 +413,10 @@ async function loadCampaignRecord(
 				title: campaigns.title,
 				status: campaigns.status,
 				brief: campaigns.brief,
+				coreTopic: campaigns.coreTopic,
+				voice: campaigns.voice,
+				icp: campaigns.icp,
+				objective: campaigns.objective,
 				targetRate: campaigns.targetRate,
 				evaluateAt: campaigns.evaluateAt,
 				createdAt: campaigns.createdAt,
@@ -412,6 +432,10 @@ async function loadCampaignRecord(
 		title: r.title,
 		status: asCampaignStatus(r.status),
 		brief: r.brief ?? null,
+		coreTopic: r.coreTopic ?? null,
+		voice: r.voice ?? null,
+		icp: r.icp ?? null,
+		objective: r.objective ?? null,
 		targetRate: r.targetRate ?? null,
 		evaluateAt: r.evaluateAt ? r.evaluateAt.toISOString() : null,
 		createdAt: r.createdAt.toISOString(),
@@ -704,6 +728,10 @@ export async function getGrowthCampaign(
 		postedBroadcasts: loaded.postedBroadcasts,
 		layers,
 		brief: rec.brief ?? "",
+		coreTopic: rec.coreTopic ?? "",
+		voice: rec.voice ?? "",
+		icp: rec.icp ?? "",
+		objective: rec.objective ?? "",
 		moltbookConnection,
 		findings,
 		currentThinking,
