@@ -29,23 +29,10 @@ import { AUTORESEARCH_TOOL_IDS } from "./graphs/autoresearch/tools";
 import { BRAIN_GRAPH_NAME, createBrainGraph } from "./graphs/brain/graph";
 import { BRAIN_TOOL_IDS } from "./graphs/brain/tools";
 import { BROWSER_GRAPH_NAME, createBrowserGraph } from "./graphs/browser/graph";
-import { CONTENT_GRAPH_NAME, createContentGraph } from "./graphs/content/graph";
-import { CONTENT_TOOL_IDS } from "./graphs/content/tools";
 import {
   createFrontendTesterGraph,
   FRONTEND_TESTER_GRAPH_NAME,
 } from "./graphs/frontend-tester/graph";
-import {
-  createGrowthChatGraph,
-  GROWTH_CHAT_GRAPH_NAME,
-} from "./graphs/growth-chat/graph";
-import { GROWTH_CHAT_SYSTEM_PROMPT } from "./graphs/growth-chat/prompts";
-import { GROWTH_CHAT_TOOL_IDS } from "./graphs/growth-chat/tools";
-import {
-  createGrowthGenerateGraph,
-  GROWTH_GENERATE_GRAPH_NAME,
-} from "./graphs/growth-generate/graph";
-import { GROWTH_GENERATE_TOOL_IDS } from "./graphs/growth-generate/tools";
 import {
   createOperatorGraph,
   GIT_REVIEWER_GRAPH_NAME,
@@ -59,11 +46,6 @@ import {
   GIT_REVIEWER_TOOL_IDS,
   OPERATING_REVIEW_TOOL_IDS,
 } from "./graphs/operator/tools";
-import {
-  createDefaultGraph,
-  DEFAULT_GRAPH_NAME,
-  DEFAULT_TOOL_IDS,
-} from "./graphs/default/graph";
 import { createPoetGraph, POET_GRAPH_NAME } from "./graphs/poet/graph";
 import { POET_TOOL_IDS } from "./graphs/poet/tools";
 import {
@@ -161,24 +143,6 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
    * Poet graph - poetic AI assistant.
    * Uses createReactAgent with tool-calling loop.
    */
-  /**
-   * Default graph — the NEUTRAL completion the chatCompletion facade falls back
-   * to (`langgraph:default`) when a caller specifies no graph. No persona, no
-   * tools: runs the caller's messages verbatim. Required by growth generate/
-   * research (they supply their own prompts + do a plain completion).
-   */
-  [DEFAULT_GRAPH_NAME]: {
-    displayName: "Default",
-    description:
-      "Neutral completion — runs the caller's messages with no persona or tools",
-    toolIds: DEFAULT_TOOL_IDS as readonly string[],
-    graphFactory: createDefaultGraph,
-  },
-
-  /**
-   * Poet graph - poetic AI assistant.
-   * Uses createReactAgent with tool-calling loop.
-   */
   [POET_GRAPH_NAME]: {
     displayName: "Poet",
     description: "Poetic AI assistant with structured verse responses",
@@ -206,52 +170,6 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
     description: "Deep research agent with web search and report generation",
     toolIds: RESEARCH_TOOL_IDS,
     graphFactory: createResearchGraph,
-  },
-
-  /**
-   * Content graph — 4-node inner content loop for the beacon growth loop:
-   * ideate → draft → critique/revise → adapt-per-platform. Emits one staged
-   * variant per enabled channel; the broadcast tool posts them.
-   */
-  [CONTENT_GRAPH_NAME]: {
-    displayName: "Content",
-    description:
-      "Growth content loop — ideate, draft, self-critique, and adapt one staged variant per enabled channel",
-    toolIds: CONTENT_TOOL_IDS,
-    graphFactory: createContentGraph,
-  },
-
-  /**
-   * Growth-generate graph — the GENERATE activity of the beacon growth loop, as a
-   * dashboard-visible, schedulable catalog graph. Wraps the pure `runGrowthGenerate`
-   * (one LLM call per funnel layer) to POPULATE THE FUNNEL across TOFU/MOFU/BOFU.
-   * Per docs/guides/node-temporal.md: AI work is a graph, run on cron by the shared
-   * worker. graphId is `langgraph:growth-generate` (a stable shared seam).
-   */
-  [GROWTH_GENERATE_GRAPH_NAME]: {
-    displayName: "Growth Generate",
-    description:
-      "Growth-loop GENERATE activity — populates the funnel (TOFU/MOFU/BOFU) with grounded draft posts; volume derived from funnel targets",
-    toolIds: GROWTH_GENERATE_TOOL_IDS as readonly string[],
-    graphFactory: createGrowthGenerateGraph,
-  },
-
-  /**
-   * Growth-chat graph — a watchable marketing-strategist ReAct agent for the
-   * campaign detail page. Recall-only knowledge tools (knowledge_search /
-   * knowledge_read): it grounds every recommendation in the seeded campaign
-   * playbook (beacon-brand-voice / beacon-campaigns / beacon-post-performance)
-   * recalled live from Doltgres, then critiques funnel·voice·hooks·cadence·metric.
-   * graphId is `langgraph:growth-chat`; the CampaignChatPanel watches it so the
-   * live tool-feed shows real knowledge_search/knowledge_read calls.
-   */
-  [GROWTH_CHAT_GRAPH_NAME]: {
-    displayName: "Growth Chat",
-    description:
-      "Marketing strategist — recalls the seeded campaign playbook and critiques funnel, voice, hooks, cadence, and metric",
-    toolIds: GROWTH_CHAT_TOOL_IDS as readonly string[],
-    graphFactory: createGrowthChatGraph,
-    systemPrompt: GROWTH_CHAT_SYSTEM_PROMPT,
   },
 
   /**
@@ -351,13 +269,9 @@ export const LANGGRAPH_GRAPH_IDS = {
   "autoresearch-syntropy-loop": `${LANGGRAPH_PROVIDER_ID}:${AUTORESEARCH_SYNTROPY_LOOP_GRAPH_NAME}`,
   "autoresearch-registry-swarm": `${LANGGRAPH_PROVIDER_ID}:${AUTORESEARCH_REGISTRY_SWARM_GRAPH_NAME}`,
   brain: `${LANGGRAPH_PROVIDER_ID}:${BRAIN_GRAPH_NAME}`,
-  default: `${LANGGRAPH_PROVIDER_ID}:${DEFAULT_GRAPH_NAME}`,
   poet: `${LANGGRAPH_PROVIDER_ID}:${POET_GRAPH_NAME}`,
   ponderer: `${LANGGRAPH_PROVIDER_ID}:${PONDERER_GRAPH_NAME}`,
   research: `${LANGGRAPH_PROVIDER_ID}:${RESEARCH_GRAPH_NAME}`,
-  content: `${LANGGRAPH_PROVIDER_ID}:${CONTENT_GRAPH_NAME}`,
-  "growth-generate": `${LANGGRAPH_PROVIDER_ID}:${GROWTH_GENERATE_GRAPH_NAME}`,
-  "growth-chat": `${LANGGRAPH_PROVIDER_ID}:${GROWTH_CHAT_GRAPH_NAME}`,
   "pr-review": `${LANGGRAPH_PROVIDER_ID}:${PR_REVIEW_GRAPH_NAME}`,
   browser: `${LANGGRAPH_PROVIDER_ID}:${BROWSER_GRAPH_NAME}`,
   "frontend-tester": `${LANGGRAPH_PROVIDER_ID}:${FRONTEND_TESTER_GRAPH_NAME}`,

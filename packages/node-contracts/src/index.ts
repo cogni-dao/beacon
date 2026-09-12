@@ -21,11 +21,11 @@ export * from "./ai.agents.v1.contract";
 // with ai.completions.v1.contract (TS2308). The completions ChatMessage
 // (OpenAI-compatible format) is the one used by consumers.
 export {
-	AssistantUiInputSchema,
-	aiChatOperation,
-	type ChatInput,
-	ChatMessageSchema,
-	type ChatOutput,
+  AssistantUiInputSchema,
+  aiChatOperation,
+  type ChatInput,
+  ChatMessageSchema,
+  type ChatOutput,
 } from "./ai.chat.v1.contract";
 export * from "./ai.completions.v1.contract";
 export * from "./ai.models.v1.contract";

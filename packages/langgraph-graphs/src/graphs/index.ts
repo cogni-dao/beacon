@@ -30,12 +30,6 @@ export {
   createFrontendTesterGraph,
   FRONTEND_TESTER_GRAPH_NAME,
 } from "./frontend-tester/graph";
-// Default graph (neutral completion — facade fallback, no persona/tools)
-export {
-  createDefaultGraph,
-  DEFAULT_GRAPH_NAME,
-  DEFAULT_TOOL_IDS,
-} from "./default/graph";
 // Poet graph (poetic AI assistant)
 export { createPoetGraph, POET_GRAPH_NAME } from "./poet/graph";
 // Ponderer graph (philosophical thinker)
@@ -45,74 +39,6 @@ export { createPrReviewGraph, PR_REVIEW_GRAPH_NAME } from "./pr-review/graph";
 export { buildReviewUserMessage } from "./pr-review/prompts";
 // Research graph (deep research with web search)
 export { createResearchGraph, RESEARCH_GRAPH_NAME } from "./research/graph";
-// Growth-research workflow (beacon growth loop RESEARCH activity — pure, on-demand;
-// NOT a catalog graph: invoked directly by the research route, no Temporal).
-export {
-  RESEARCH_FINDING_KINDS,
-  RESEARCH_PROMPT,
-  type ResearchFindingKind,
-} from "./growth-research/prompts";
-export {
-  type CampaignStrategy,
-  type ConnectedAccountSnapshot,
-  type CompleteFn,
-  type ExistingResearchFinding,
-  type JsonObject,
-  type JsonPrimitive,
-  type JsonValue,
-  type OwnedSocialPostSnapshot,
-  parseFindings,
-  type ParseFindingsOptions,
-  type PostedDraftMetricSnapshot,
-  type RecallPlaybookFn,
-  type ResearchFunnelTargets,
-  type ResearchFinding,
-  runGrowthResearch,
-  type RunGrowthResearchInput,
-  type TenantSocialContext,
-} from "./growth-research/workflow";
-// Growth-generate (beacon growth loop GENERATE activity). The pure `runGrowthGenerate`
-// workflow stays the SHARED core (the generate route still calls it directly); the
-// catalog graph below wraps it so the activity is dashboard-visible + schedulable on a
-// cron via GraphRunWorkflow (graphId `langgraph:growth-generate`). See docs/guides/node-temporal.md.
-export {
-  FUNNEL_LAYER_GUIDANCE,
-  FUNNEL_LAYERS,
-  type FunnelLayer,
-  GENERATE_PROMPT,
-} from "./growth-generate/prompts";
-export {
-  type DraftPost,
-  type FunnelTargets,
-  type GenerateFinding,
-  parseDraftPosts,
-  refineSingleDraft,
-  type RefineSingleDraftInput,
-  resolveLayerCount,
-  runGrowthGenerate,
-  type RunGrowthGenerateInput,
-  type SingleDraftToRefine,
-} from "./growth-generate/workflow";
-// Growth-generate catalog graph (the GENERATE activity made schedulable/dashboard-visible).
-export {
-  createGrowthGenerateGraph,
-  GROWTH_GENERATE_GRAPH_NAME,
-} from "./growth-generate/graph";
-export {
-  type GrowthGenerateConfig,
-  type GrowthGenerateState,
-  GrowthGenerateStateAnnotation,
-} from "./growth-generate/state";
-export { GROWTH_GENERATE_TOOL_IDS } from "./growth-generate/tools";
-// Growth-chat catalog graph — the watchable marketing-strategist ReAct agent for the
-// campaign detail page. Recall-only knowledge tools; grounds advice in the seeded
-// campaign playbook recalled live from Doltgres (graphId `langgraph:growth-chat`).
-export {
-  createGrowthChatGraph,
-  GROWTH_CHAT_GRAPH_NAME,
-} from "./growth-chat/graph";
-export { GROWTH_CHAT_SYSTEM_PROMPT } from "./growth-chat/prompts";
-export { GROWTH_CHAT_TOOL_IDS } from "./growth-chat/tools";
 // Shared graph types
 export type {
   CreateReactAgentGraphOptions,
