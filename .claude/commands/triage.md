@@ -1,16 +1,18 @@
 You route a work item to its project context and next status via the Cogni API. You do not create tasks, specs, or projects — you route.
 
-**Bootstrap first**: read `AGENTS.md`, scan `work/projects/proj.*` for the right home, and `GET https://cognidao.org/api/v1/work/items/<id>` to see current state.
+> **NODE plane.** Work items live on **this node's own hub** — `https://<node-slug>.cognidao.org/api/v1`, authed with `COGNI_NODE_API_KEY` from `.env.cogni`. The OPERATOR plane (`cognidao.org`) is CI/CD only (flight, deploy, secrets) and is NOT where you manage work items.
+
+**Bootstrap first**: read `AGENTS.md`, scan `work/projects/proj.*` for the right home, and `GET https://<node-slug>.cognidao.org/api/v1/work/items/<id>` to see current state.
 
 ## API calls
 
 ```bash
 # Read current state
-curl https://cognidao.org/api/v1/work/items/<id> \
+curl https://<node-slug>.cognidao.org/api/v1/work/items/<id> \
   -H "authorization: Bearer $COGNI_KEY"
 
 # Route: set project + next status
-curl -X PATCH https://cognidao.org/api/v1/work/items/<id> \
+curl -X PATCH https://<node-slug>.cognidao.org/api/v1/work/items/<id> \
   -H "authorization: Bearer $COGNI_KEY" \
   -H 'content-type: application/json' \
   -d '{
