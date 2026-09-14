@@ -700,7 +700,7 @@ export class DrizzleAttributionAdapter implements AttributionStore {
       if (current.status === "finalized") {
         // A signed/finalized snapshot is immutable; never repair it in place.
         return toEpoch(current);
-        }
+      }
       if (current.status !== "open" && current.status !== "review") {
         throw new EpochNotOpenError(params.epochId.toString());
       }

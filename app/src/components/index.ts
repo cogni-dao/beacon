@@ -122,7 +122,6 @@ export {
   EthereumIcon,
   GitHubIcon,
   GoogleIcon,
-  XIcon,
 } from "./kit/data-display/ProviderIcons";
 export { TerminalFrame } from "./kit/data-display/TerminalFrame";
 export { Alert, AlertDescription, AlertTitle } from "./kit/feedback/Alert";
