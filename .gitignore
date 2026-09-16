@@ -14,4 +14,3 @@ next-env.d.ts
 .DS_Store
 .turbo
 .context
-.playwright-cli/
