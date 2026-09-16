@@ -56,6 +56,7 @@ HTTP API endpoints using Next.js App Router. Contract-validated entry points tha
   - `/api/v1/attribution/epochs/[id]/claimants` [GET] - claimant-aware finalized attribution (SIWE auth)
   - `/api/v1/attribution/epochs/[id]/user-projections` [GET, PATCH=410] - read per-user unsigned projections; edits are deprecated
   - `/api/v1/attribution/epochs/[id]/review-subject-overrides` [GET, PATCH, DELETE] - review-time subject overrides (SIWE + approver)
+  - `/api/v1/attribution/settlement-lifecycle` [GET] - settlement and chain-proven publication lifecycle (SIWE auth)
   - `/api/v1/attribution/epochs/[id]/pool-components` [POST] - record pool component (SIWE + approver)
   - `/api/v1/connections/[provider]/connect` [GET] - initiate platform OAuth (PKCE state in signed cookie), 302 to provider; see [platform-connections spec](../../../../docs/spec/platform-connections.md)
   - `/api/v1/connections/[provider]/callback` [GET] - OAuth callback: verify state, exchange code, encrypt + store connection
