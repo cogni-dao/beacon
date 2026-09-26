@@ -19,11 +19,10 @@ import {
   CreditCard,
   Github,
   LayoutDashboard,
-  RadioTower,
   Shield,
-  TrendingUp,
   Vote,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -46,7 +45,6 @@ import { ChatThreadsSidebarGroup } from "@/features/ai/chat/components/ChatThrea
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/work", label: "Work", icon: Briefcase },
-  { href: "/growth", label: "Growth", icon: TrendingUp },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/gov", label: "Gov", icon: Vote },
   { href: "/credits", label: "Credits", icon: CreditCard },
@@ -92,16 +90,18 @@ export function AppSidebar(): ReactElement {
       <SidebarHeader className="h-16 shrink-0 justify-center">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="cogni/beacon">
+            <SidebarMenuButton size="lg" asChild tooltip="Cogni">
               <Link href="/chat">
                 <div className="flex aspect-square size-8 items-center justify-center">
-                  <RadioTower
-                    className="size-6 text-primary"
-                    aria-hidden="true"
+                  <Image
+                    src="/TransparentBrainOnly.png"
+                    alt="Cogni"
+                    width={24}
+                    height={24}
                   />
                 </div>
                 <span className="truncate font-bold text-gradient-accent">
-                  cogni/beacon
+                  Cogni
                 </span>
               </Link>
             </SidebarMenuButton>
