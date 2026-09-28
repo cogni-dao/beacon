@@ -15,6 +15,7 @@ export * from "./ai";
 export * from "./ai-threads";
 export * from "./attribution";
 export * from "./auth";
+export * from "./beacon-growth";
 export * from "./billing";
 export * from "./connections";
 export * from "./identity";
@@ -22,3 +23,4 @@ export * from "./identity";
 export * from "./profile";
 export * from "./refs";
 export * from "./scheduling";
+
