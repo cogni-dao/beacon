@@ -313,13 +313,13 @@ export class LiteLlmAdapter implements LlmService {
       const isOperatorFault = response.status === 402 || response.status >= 500;
       // Operator log: includes private root cause for debugging (never sent to clients)
       const httpErrorLog = {
-          statusCode: response.status,
-          kind,
-          requestId,
-          traceId,
-          model,
-          provider: extractProviderFromModel(model),
-          responseExcerpt,
+        statusCode: response.status,
+        kind,
+        requestId,
+        traceId,
+        model,
+        provider: extractProviderFromModel(model),
+        responseExcerpt,
       };
       if (isOperatorFault) {
         logger.error(httpErrorLog, "adapter.litellm.stream_http_error");

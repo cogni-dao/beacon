@@ -118,11 +118,7 @@ describe("beacon-growth RLS account isolation", () => {
       await seedDb.insert(users).values({
         id: acct.userId,
         name: `Account ${tag.toUpperCase()}`,
-        walletAddress:
-          `0x${tag.repeat(40)}${randomUUID().replace(/-/g, "").slice(0, 8)}`.slice(
-            0,
-            42
-          ),
+        walletAddress: `0x${randomUUID().replace(/-/g, "")}${tag.repeat(8)}`,
       });
       await seedDb.insert(billingAccounts).values({
         id: acct.accountId,

@@ -92,11 +92,7 @@ describe("RLS Tenant Isolation", () => {
     await seedDb.insert(users).values({
       id: tenantA.userId,
       name: "Tenant A",
-      walletAddress:
-        `0x${"a".repeat(40)}${randomUUID().replace(/-/g, "").slice(0, 8)}`.slice(
-          0,
-          42
-        ),
+      walletAddress: `0x${randomUUID().replace(/-/g, "")}${"a".repeat(8)}`,
     });
     await seedDb.insert(billingAccounts).values({
       id: tenantA.billingAccountId,
@@ -112,11 +108,7 @@ describe("RLS Tenant Isolation", () => {
     await seedDb.insert(users).values({
       id: tenantB.userId,
       name: "Tenant B",
-      walletAddress:
-        `0x${"b".repeat(40)}${randomUUID().replace(/-/g, "").slice(0, 8)}`.slice(
-          0,
-          42
-        ),
+      walletAddress: `0x${randomUUID().replace(/-/g, "")}${"b".repeat(8)}`,
     });
     await seedDb.insert(billingAccounts).values({
       id: tenantB.billingAccountId,
