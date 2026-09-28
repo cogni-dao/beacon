@@ -152,4 +152,3 @@ export const connections = pgTable(
       .where(sql`${table.revokedAt} IS NULL`),
   ]
 ).enableRLS();
-
