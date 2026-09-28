@@ -1,6 +1,6 @@
 {
-  "id": "1bd2b88f-8071-4cb2-8f5c-53a0d8774b7c",
-  "prevId": "7452cab8-6ae2-41c6-83d3-509f1252babf",
+  "id": "bdec0b39-dc52-4320-9761-45ca8e2a8914",
+  "prevId": "3040e3c7-e5ea-426f-bc7c-4d7f5c2542ee",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -365,6 +365,884 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claimant_liabilities": {
+      "name": "claimant_liabilities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_epoch_id": {
+          "name": "source_epoch_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statement_id": {
+          "name": "statement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimant_key": {
+          "name": "claimant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_atomic": {
+          "name": "amount_atomic",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_ids_json": {
+          "name": "receipt_ids_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "settled_revision_id": {
+          "name": "settled_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claimant_liabilities_source_claimant_unique": {
+          "name": "claimant_liabilities_source_claimant_unique",
+          "columns": [
+            {
+              "expression": "source_epoch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claimant_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claimant_liabilities_pending_stream_idx": {
+          "name": "claimant_liabilities_pending_stream_idx",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"claimant_liabilities\".\"settled_revision_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claimant_liabilities_source_epoch_id_epochs_id_fk": {
+          "name": "claimant_liabilities_source_epoch_id_epochs_id_fk",
+          "tableFrom": "claimant_liabilities",
+          "tableTo": "epochs",
+          "columnsFrom": [
+            "source_epoch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claimant_liabilities_statement_id_epoch_statements_id_fk": {
+          "name": "claimant_liabilities_statement_id_epoch_statements_id_fk",
+          "tableFrom": "claimant_liabilities",
+          "tableTo": "epoch_statements",
+          "columnsFrom": [
+            "statement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claimant_liabilities_settled_revision_id_distribution_settlement_revisions_id_fk": {
+          "name": "claimant_liabilities_settled_revision_id_distribution_settlement_revisions_id_fk",
+          "tableFrom": "claimant_liabilities",
+          "tableTo": "distribution_settlement_revisions",
+          "columnsFrom": [
+            "settled_revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "claimant_liabilities_amount_positive": {
+          "name": "claimant_liabilities_amount_positive",
+          "value": "\"claimant_liabilities\".\"amount_atomic\" > 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.distribution_settlement_leaves": {
+      "name": "distribution_settlement_leaves",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "revision_id": {
+          "name": "revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leaf_index": {
+          "name": "leaf_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimant_key": {
+          "name": "claimant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_lower": {
+          "name": "account_lower",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cumulative_amount": {
+          "name": "cumulative_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delta_amount": {
+          "name": "delta_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_ids_json": {
+          "name": "receipt_ids_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leaf_hash": {
+          "name": "leaf_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_json": {
+          "name": "proof_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "distribution_settlement_leaves_revision_index_unique": {
+          "name": "distribution_settlement_leaves_revision_index_unique",
+          "columns": [
+            {
+              "expression": "revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "leaf_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "distribution_settlement_leaves_revision_account_unique": {
+          "name": "distribution_settlement_leaves_revision_account_unique",
+          "columns": [
+            {
+              "expression": "revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_lower",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "distribution_settlement_leaves_revision_id_distribution_settlement_revisions_id_fk": {
+          "name": "distribution_settlement_leaves_revision_id_distribution_settlement_revisions_id_fk",
+          "tableFrom": "distribution_settlement_leaves",
+          "tableTo": "distribution_settlement_revisions",
+          "columnsFrom": [
+            "revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "distribution_settlement_leaves_amounts_nonnegative": {
+          "name": "distribution_settlement_leaves_amounts_nonnegative",
+          "value": "\"distribution_settlement_leaves\".\"cumulative_amount\" >= 0 AND \"distribution_settlement_leaves\".\"delta_amount\" >= 0 AND \"distribution_settlement_leaves\".\"delta_amount\" <= \"distribution_settlement_leaves\".\"cumulative_amount\""
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.distribution_settlement_revisions": {
+      "name": "distribution_settlement_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_revision_id": {
+          "name": "previous_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "previous_merkle_root": {
+          "name": "previous_merkle_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "distribution_id": {
+          "name": "distribution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statement_hash": {
+          "name": "statement_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merkle_root": {
+          "name": "merkle_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chain_id": {
+          "name": "chain_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_address": {
+          "name": "token_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distributor_address": {
+          "name": "distributor_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mint_delta": {
+          "name": "mint_delta",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cumulative_total": {
+          "name": "cumulative_total",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_kind": {
+          "name": "trigger_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_ref": {
+          "name": "trigger_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "distribution_settlement_revisions_stream_sequence_unique": {
+          "name": "distribution_settlement_revisions_stream_sequence_unique",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "distribution_settlement_revisions_previous_unique": {
+          "name": "distribution_settlement_revisions_previous_unique",
+          "columns": [
+            {
+              "expression": "previous_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "distribution_settlement_revisions_genesis_unique": {
+          "name": "distribution_settlement_revisions_genesis_unique",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"distribution_settlement_revisions\".\"previous_revision_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "distribution_settlement_revisions_root_unique": {
+          "name": "distribution_settlement_revisions_root_unique",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "merkle_root",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "distribution_settlement_revisions_previous_revision_id_distribution_settlement_revisions_id_fk": {
+          "name": "distribution_settlement_revisions_previous_revision_id_distribution_settlement_revisions_id_fk",
+          "tableFrom": "distribution_settlement_revisions",
+          "tableTo": "distribution_settlement_revisions",
+          "columnsFrom": [
+            "previous_revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "distribution_settlement_revisions_sequence_positive": {
+          "name": "distribution_settlement_revisions_sequence_positive",
+          "value": "\"distribution_settlement_revisions\".\"sequence\" > 0"
+        },
+        "distribution_settlement_revisions_amounts_nonnegative": {
+          "name": "distribution_settlement_revisions_amounts_nonnegative",
+          "value": "\"distribution_settlement_revisions\".\"mint_delta\" >= 0 AND \"distribution_settlement_revisions\".\"cumulative_total\" >= 0"
+        },
+        "distribution_settlement_revisions_chain_shape": {
+          "name": "distribution_settlement_revisions_chain_shape",
+          "value": "(\"distribution_settlement_revisions\".\"previous_revision_id\" IS NULL AND \"distribution_settlement_revisions\".\"previous_merkle_root\" IS NULL AND \"distribution_settlement_revisions\".\"sequence\" = 1) OR (\"distribution_settlement_revisions\".\"previous_revision_id\" IS NOT NULL AND \"distribution_settlement_revisions\".\"previous_merkle_root\" IS NOT NULL AND \"distribution_settlement_revisions\".\"sequence\" > 1)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.epoch_distribution_leaves": {
+      "name": "epoch_distribution_leaves",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manifest_id": {
+          "name": "manifest_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "epoch_id": {
+          "name": "epoch_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leaf_index": {
+          "name": "leaf_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimant_key": {
+          "name": "claimant_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_lower": {
+          "name": "account_lower",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leaf_hash": {
+          "name": "leaf_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_json": {
+          "name": "proof_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "epoch_distribution_leaves_manifest_index_unique": {
+          "name": "epoch_distribution_leaves_manifest_index_unique",
+          "columns": [
+            {
+              "expression": "manifest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "leaf_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "epoch_distribution_leaves_manifest_account_unique": {
+          "name": "epoch_distribution_leaves_manifest_account_unique",
+          "columns": [
+            {
+              "expression": "manifest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_lower",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "epoch_distribution_leaves_epoch_idx": {
+          "name": "epoch_distribution_leaves_epoch_idx",
+          "columns": [
+            {
+              "expression": "epoch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "epoch_distribution_leaves_manifest_id_epoch_distribution_manifests_id_fk": {
+          "name": "epoch_distribution_leaves_manifest_id_epoch_distribution_manifests_id_fk",
+          "tableFrom": "epoch_distribution_leaves",
+          "tableTo": "epoch_distribution_manifests",
+          "columnsFrom": [
+            "manifest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "epoch_distribution_leaves_epoch_id_epochs_id_fk": {
+          "name": "epoch_distribution_leaves_epoch_id_epochs_id_fk",
+          "tableFrom": "epoch_distribution_leaves",
+          "tableTo": "epochs",
+          "columnsFrom": [
+            "epoch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.epoch_distribution_manifests": {
+      "name": "epoch_distribution_manifests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "epoch_id": {
+          "name": "epoch_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distribution_id": {
+          "name": "distribution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statement_hash": {
+          "name": "statement_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merkle_root": {
+          "name": "merkle_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chain_id": {
+          "name": "chain_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_address": {
+          "name": "token_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distribution_amount": {
+          "name": "distribution_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_allocated": {
+          "name": "total_allocated",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distributor_address": {
+          "name": "distributor_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "epoch_distribution_manifests_node_scope_epoch_unique": {
+          "name": "epoch_distribution_manifests_node_scope_epoch_unique",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "epoch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "epoch_distribution_manifests_epoch_idx": {
+          "name": "epoch_distribution_manifests_epoch_idx",
+          "columns": [
+            {
+              "expression": "epoch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "epoch_distribution_manifests_epoch_id_epochs_id_fk": {
+          "name": "epoch_distribution_manifests_epoch_id_epochs_id_fk",
+          "tableFrom": "epoch_distribution_manifests",
+          "tableTo": "epochs",
+          "columnsFrom": [
+            "epoch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2021,474 +2899,6 @@
       "checkConstraints": {},
       "isRLSEnabled": true
     },
-    "public.broadcasts": {
-      "name": "broadcasts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "idea_key": {
-          "name": "idea_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "angle": {
-          "name": "angle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "funnel_layer": {
-          "name": "funnel_layer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'tofu'"
-        },
-        "topic": {
-          "name": "topic",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'text'"
-        },
-        "bundle_id": {
-          "name": "bundle_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seq": {
-          "name": "seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'drafted'"
-        },
-        "external_post_id": {
-          "name": "external_post_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_at": {
-          "name": "posted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "broadcasts_campaign_idx": {
-          "name": "broadcasts_campaign_idx",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "broadcasts_idea_key_idx": {
-          "name": "broadcasts_idea_key_idx",
-          "columns": [
-            {
-              "expression": "idea_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "broadcasts_funnel_layer_idx": {
-          "name": "broadcasts_funnel_layer_idx",
-          "columns": [
-            {
-              "expression": "funnel_layer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "broadcasts_account_idx": {
-          "name": "broadcasts_account_idx",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "broadcasts_account_id_billing_accounts_id_fk": {
-          "name": "broadcasts_account_id_billing_accounts_id_fk",
-          "tableFrom": "broadcasts",
-          "tableTo": "billing_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "tenant_isolation": {
-          "name": "tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
-          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
-        }
-      },
-      "checkConstraints": {
-        "broadcasts_status_check": {
-          "name": "broadcasts_status_check",
-          "value": "\"broadcasts\".\"status\" IN ('drafted', 'approved', 'posted', 'failed')"
-        },
-        "broadcasts_funnel_layer_check": {
-          "name": "broadcasts_funnel_layer_check",
-          "value": "\"broadcasts\".\"funnel_layer\" IN ('tofu', 'mofu', 'bofu')"
-        },
-        "broadcasts_kind_check": {
-          "name": "broadcasts_kind_check",
-          "value": "\"broadcasts\".\"kind\" IN ('text', 'thread', 'image', 'video')"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.channel_accounts": {
-      "name": "channel_accounts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "handle": {
-          "name": "handle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credential_ref": {
-          "name": "credential_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "channel_accounts_account_idx": {
-          "name": "channel_accounts_account_idx",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "channel_accounts_account_id_billing_accounts_id_fk": {
-          "name": "channel_accounts_account_id_billing_accounts_id_fk",
-          "tableFrom": "channel_accounts",
-          "tableTo": "billing_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "tenant_isolation": {
-          "name": "tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
-          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
-        }
-      },
-      "checkConstraints": {
-        "channel_accounts_channel_check": {
-          "name": "channel_accounts_channel_check",
-          "value": "\"channel_accounts\".\"channel\" IN ('x', 'moltbook')"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.post_metrics": {
-      "name": "post_metrics",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "broadcast_id": {
-          "name": "broadcast_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "captured_at": {
-          "name": "captured_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "impressions": {
-          "name": "impressions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "likes": {
-          "name": "likes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reposts": {
-          "name": "reposts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "replies": {
-          "name": "replies",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "followers_at_capture": {
-          "name": "followers_at_capture",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "post_metrics_broadcast_captured_idx": {
-          "name": "post_metrics_broadcast_captured_idx",
-          "columns": [
-            {
-              "expression": "broadcast_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "captured_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "post_metrics_account_idx": {
-          "name": "post_metrics_account_idx",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "post_metrics_account_id_billing_accounts_id_fk": {
-          "name": "post_metrics_account_id_billing_accounts_id_fk",
-          "tableFrom": "post_metrics",
-          "tableTo": "billing_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "post_metrics_broadcast_id_broadcasts_id_fk": {
-          "name": "post_metrics_broadcast_id_broadcasts_id_fk",
-          "tableFrom": "post_metrics",
-          "tableTo": "broadcasts",
-          "columnsFrom": [
-            "broadcast_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "tenant_isolation": {
-          "name": "tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))",
-          "withCheck": "\"account_id\" IN (SELECT \"id\" FROM \"billing_accounts\" WHERE \"owner_user_id\" = current_setting('app.current_user_id', true))"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
     "public.billing_accounts": {
       "name": "billing_accounts",
       "schema": "",
@@ -3835,6 +4245,74 @@
           "value": "\"identity_events\".\"event_type\" IN ('bind', 'revoke', 'merge')"
         }
       },
+      "isRLSEnabled": true
+    },
+    "public.identity_signin_challenges": {
+      "name": "identity_signin_challenges",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "nonce_hash": {
+          "name": "nonce_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_signin_challenges_expires_at_idx": {
+          "name": "identity_signin_challenges_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "identity_signin_challenges_nonce_hash_unique": {
+          "name": "identity_signin_challenges_nonce_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "nonce_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.link_transactions": {

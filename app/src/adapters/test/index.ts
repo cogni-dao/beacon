@@ -26,9 +26,6 @@ export {
   resetTestOnChainVerifier,
 } from "./payments/fake-onchain-verifier.adapter";
 export { FakeRepoAdapter } from "./repo/fake-repo.adapter";
-// Social broadcast fakes (X + Moltbook) — deterministic, monotonic-rising metrics
-export { FakeMoltbookAdapter } from "./social/moltbook.fake";
-export { FakeXSocialAdapter } from "./social/x.fake";
 export {
   FakeOperatorWalletAdapter,
   getTestOperatorWallet,

@@ -20,35 +20,6 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const ALGORITHM = "aes-256-gcm";
 const NONCE_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
-const KEY_LENGTH = 32;
-
-/**
- * Decode a configured AES-256 key into a validated 32-byte Buffer.
- *
- * Accepts either form, since key material reaches the node two ways:
- * - **64-char hex** — the dev/local convention (`openssl rand -hex 32`).
- * - **base64 / base64url of 32 bytes** — what the substrate's `secret-materialize`
- *   mints (a 44-char value), so substrate-provisioned envs work without reformatting.
- *
- * Hex is checked first (a 64-hex string is unambiguously hex). Throws if the
- * decoded key is not exactly 32 bytes — callers fail closed rather than encrypt
- * with a malformed key.
- *
- * @public
- */
-export function decodeAeadKey(raw: string): Buffer {
-  const s = raw.trim();
-  const key =
-    /^[0-9a-fA-F]{64}$/.test(s)
-      ? Buffer.from(s, "hex")
-      : Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-  if (key.length !== KEY_LENGTH) {
-    throw new Error(
-      `Invalid AEAD key: expected 32 bytes (64 hex chars or base64 of 32 bytes), got ${key.length}`
-    );
-  }
-  return key;
-}
 
 export interface AeadAAD {
   readonly billing_account_id: string;

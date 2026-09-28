@@ -14,7 +14,6 @@
  * @public
  */
 
-import { broadcastPostBoundTool } from "./tools/broadcast-post";
 import { edoDecideBoundTool } from "./tools/edo-decide";
 import { edoHypothesizeBoundTool } from "./tools/edo-hypothesize";
 import { edoRecordOutcomeBoundTool } from "./tools/edo-record-outcome";
@@ -107,7 +106,6 @@ export function createToolCatalog(
  * `nodes/<node>/packages/ai-tools/` package instead — never here.
  */
 export const CORE_TOOL_BUNDLE: readonly CatalogBoundTool[] = [
-  broadcastPostBoundTool as CatalogBoundTool,
   edoDecideBoundTool as CatalogBoundTool,
   edoHypothesizeBoundTool as CatalogBoundTool,
   edoRecordOutcomeBoundTool as CatalogBoundTool,

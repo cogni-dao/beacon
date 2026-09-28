@@ -33,67 +33,6 @@ export {
   POET_GRAPH_NAME,
 } from "./graphs/index";
 
-// Re-export the growth-research workflow (beacon growth loop RESEARCH activity).
-export {
-  type CampaignStrategy,
-  type ConnectedAccountSnapshot,
-  type CompleteFn,
-  type ExistingResearchFinding,
-  type JsonObject,
-  type JsonPrimitive,
-  type JsonValue,
-  type OwnedSocialPostSnapshot,
-  parseFindings,
-  type ParseFindingsOptions,
-  type PostedDraftMetricSnapshot,
-  type RecallPlaybookFn,
-  type ResearchFunnelTargets,
-  RESEARCH_FINDING_KINDS,
-  type ResearchFinding,
-  type ResearchFindingKind,
-  runGrowthResearch,
-  type RunGrowthResearchInput,
-  type TenantSocialContext,
-} from "./graphs/index";
-
-// Re-export the growth-generate workflow (beacon growth loop GENERATE activity).
-export {
-  type DraftPost,
-  FUNNEL_LAYER_GUIDANCE,
-  FUNNEL_LAYERS,
-  type FunnelLayer,
-  type FunnelTargets,
-  GENERATE_PROMPT,
-  type GenerateFinding,
-  parseDraftPosts,
-  refineSingleDraft,
-  type RefineSingleDraftInput,
-  resolveLayerCount,
-  runGrowthGenerate,
-  type RunGrowthGenerateInput,
-  type SingleDraftToRefine,
-} from "./graphs/index";
-
-// Re-export the growth-generate CATALOG GRAPH (the GENERATE activity made
-// dashboard-visible + schedulable; graphId `langgraph:growth-generate`).
-export {
-  createGrowthGenerateGraph,
-  type GrowthGenerateConfig,
-  GROWTH_GENERATE_GRAPH_NAME,
-  type GrowthGenerateState,
-  GrowthGenerateStateAnnotation,
-  GROWTH_GENERATE_TOOL_IDS,
-} from "./graphs/index";
-
-// Re-export the growth-chat CATALOG GRAPH (the watchable marketing-strategist
-// ReAct agent for the campaign page; graphId `langgraph:growth-chat`).
-export {
-  createGrowthChatGraph,
-  GROWTH_CHAT_GRAPH_NAME,
-  GROWTH_CHAT_SYSTEM_PROMPT,
-  GROWTH_CHAT_TOOL_IDS,
-} from "./graphs/index";
-
 // Re-export inproc runner (all LangChain logic contained in package)
 export { createInProcGraphRunner } from "./inproc/runner";
 
