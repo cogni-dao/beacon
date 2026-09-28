@@ -66,7 +66,7 @@ function makeAcct(tag: string): Acct {
     accountId: randomUUID(),
     sessionUser: {
       id: userId,
-      walletAddress: `0x${tag.repeat(40)}`.slice(0, 42),
+      walletAddress: `0x${randomUUID().replace(/-/g, "")}${tag.repeat(8)}`,
       displayName: null,
       avatarColor: null,
     },
