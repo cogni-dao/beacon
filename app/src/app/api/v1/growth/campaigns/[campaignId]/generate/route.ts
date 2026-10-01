@@ -109,6 +109,25 @@ type PriorityContext = {
   kpiMetric: string;
 };
 
+/** Max chars of a capture seed we forward into the prompt (defensive size guard). */
+const SEED_MAX_CHARS = 1200;
+
+/**
+ * Read the optional `{ seed }` capture note from the request body. Fail-open: a
+ * missing/empty/non-JSON body yields `null` (the plain Generate path). Trimmed and
+ * length-capped so a runaway voice transcript can't blow the prompt budget.
+ */
+async function parseSeed(request: Request): Promise<string | null> {
+  try {
+    const body = (await request.json()) as { seed?: unknown };
+    if (typeof body?.seed !== "string") return null;
+    const trimmed = body.seed.trim();
+    return trimmed.length > 0 ? trimmed.slice(0, SEED_MAX_CHARS) : null;
+  } catch {
+    return null;
+  }
+}
+
 function priorityToFinding(priority: PriorityContext): GenerateFinding {
   const topic = priority.topic ? ` topic=${priority.topic};` : "";
   const angle = priority.angle ? ` angle=${priority.angle};` : "";
@@ -134,7 +153,7 @@ export const POST = wrapRouteHandlerWithLogging<{
     routeId: "growth.campaigns.generate",
     auth: { mode: "required", getSessionUser },
   },
-  async (ctx, _request, sessionUser, context) => {
+  async (ctx, request, sessionUser, context) => {
     const startedAt = Date.now();
     const logComplete = (fields: Record<string, unknown>) =>
       logEvent(ctx.log, EVENT_NAMES.GROWTH_CAMPAIGN_GENERATE_COMPLETE, {
@@ -168,6 +187,12 @@ export const POST = wrapRouteHandlerWithLogging<{
     }
     const { campaignId } = await context.params;
     const slug = decodeURIComponent(campaignId);
+
+    // OPTIONAL_SEED: the board's capture affordance (a typed idea or a transcribed
+    // voice note) posts `{ seed }`. It is not persisted — it steers THIS generate
+    // pass as the top-ranked finding so the drafts reflect the owner's latest intent.
+    // The body is optional; a bodyless POST (the plain "Generate" button) still works.
+    const seed = await parseSeed(request);
 
     const db = resolveAppDb();
     const actorId = userActor(sessionUser.id as UserId);
@@ -256,7 +281,13 @@ export const POST = wrapRouteHandlerWithLogging<{
     };
     const funnelTargets = asFunnelTargets(campaignRow.funnelTargets);
     const priorityFindings = priorityRows.map(priorityToFinding);
+    // SEED_LEADS: when the owner captured a note, it leads the context so this pass
+    // is steered by their latest intent, ahead of ranked priorities and raw research.
+    const seedFinding: GenerateFinding[] = seed
+      ? [{ kind: "insight", content: `Owner's captured intent for this batch: ${seed}` }]
+      : [];
     const generateFindings: GenerateFinding[] = [
+      ...seedFinding,
       ...priorityFindings,
       ...findingRows.map((f) => ({ kind: f.kind, content: f.content })),
     ].slice(0, FINDINGS_CONTEXT_LIMIT);
@@ -381,6 +412,7 @@ export const POST = wrapRouteHandlerWithLogging<{
       campaignId: slug,
       findingsCount: generateFindings.length,
       priorityCount: priorityRows.length,
+      seedApplied: seed !== null,
       postsCount: persisted.length,
     });
 
