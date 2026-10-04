@@ -41,6 +41,7 @@ import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { getSessionUser } from "@/app/_lib/auth/session";
@@ -61,8 +62,31 @@ const DOMAIN_POST_PERFORMANCE = "beacon-post-performance";
 const DOMAIN_BRAND_VOICE = "beacon-brand-voice";
 const METRIC_ENGAGEMENT_PREFIX = "metric:engagement:";
 const CAMPAIGN_HYPOTHESIS_CONFIDENCE = 30;
-/** Slug-safe campaign id charset. */
-const CAMPAIGN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * Slugify a title into the readable part of a campaign handle (lowercase,
+ * dash-joined, ≤56 chars). Punctuation-only titles fall back to "campaign".
+ */
+function slugifyTitle(title: string): string {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 56);
+  return base || "campaign";
+}
+
+/**
+ * The campaign's PUBLIC HANDLE: `<title-slug>-<shortid>` (e.g.
+ * `cogni-owns-its-ai-3f9a2c`). Readable AND collision-free, so two campaigns can
+ * share a title and the URL never shows a raw UUID (the Notion/Stripe pattern).
+ * Internal PK stays the UUID `campaigns.id`; this is only the public handle, and
+ * the server owns it — a client-supplied campaignId is ignored.
+ */
+function makeCampaignHandle(title: string): string {
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 6);
+  return `${slugifyTitle(title)}-${suffix}`;
+}
 
 // ---------------------------------------------------------------------------
 // Wire contracts (Zod boundaries)
@@ -74,10 +98,12 @@ const DEFAULT_TARGET_RATE = 0.02;
 const DEFAULT_EVALUATE_DAYS = 30;
 
 const CreateCampaignInputSchema = z.object({
-  /** Slug — auto-derived from the title in the UI; never shown to the user. */
-  campaignId: z
-    .string()
-    .regex(CAMPAIGN_ID_RE, "campaignId must be a lowercase slug (a-z0-9-)"),
+  /**
+   * IGNORED for identity — kept optional only for backward compatibility. The
+   * server derives the public handle from the title (slug + short id), so titles
+   * can collide freely and the URL never shows a raw UUID.
+   */
+  campaignId: z.string().optional(),
   title: z.string().min(1).max(200),
   // --- DEFINE: the campaign's durable DNA, injected into every AI prompt ---
   /** Core subject the campaign orbits. */
@@ -277,8 +303,11 @@ export const POST = wrapRouteHandlerWithLogging(
     // Self-heal the knowledge domains so a fresh env doesn't 500 on hypothesize.
     await ensureGrowthKnowledgeDomains(ctx, container);
 
-    const hypothesisId = `campaign:${input.campaignId}`;
-    const resolutionStrategy = `${METRIC_ENGAGEMENT_PREFIX}${input.campaignId}`;
+    // Identity = a stable, readable, collision-free handle from the title
+    // (slug + short id). Titles may repeat; handles never do. Server owns it.
+    const campaignId = makeCampaignHandle(input.title);
+    const hypothesisId = `campaign:${campaignId}`;
+    const resolutionStrategy = `${METRIC_ENGAGEMENT_PREFIX}${campaignId}`;
 
     // EDO/KPI mechanics are DEFAULTED — the user never sets them.
     const targetRate = input.targetRate ?? DEFAULT_TARGET_RATE;
@@ -341,7 +370,7 @@ export const POST = wrapRouteHandlerWithLogging(
       await withTenantScope(db, actorId, async (tx) => {
         await tx.insert(campaigns).values({
           accountId: account.id,
-          campaignId: input.campaignId,
+          campaignId,
           title: input.title,
           brief,
           // DEFINE DNA — what the AI reads on every research/generate run.
@@ -358,7 +387,7 @@ export const POST = wrapRouteHandlerWithLogging(
       ctx.log.info(
         {
           route: "growth.campaigns.create",
-          campaignId: input.campaignId,
+          campaignId,
           hypothesisId,
           resolutionStrategy,
         },
@@ -367,7 +396,7 @@ export const POST = wrapRouteHandlerWithLogging(
 
       return NextResponse.json(
         {
-          campaignId: input.campaignId,
+          campaignId,
           hypothesisId: hypothesis.id,
           resolutionStrategy,
           status: "draft",
@@ -378,8 +407,10 @@ export const POST = wrapRouteHandlerWithLogging(
       );
     } catch (e) {
       if (e instanceof Error && /duplicate key/i.test(e.message)) {
+        // The handle is a slug + random short id, so a collision here is
+        // astronomically rare and never the user's fault — ask for a retry.
         return NextResponse.json(
-          { error: `campaign '${input.campaignId}' already exists` },
+          { error: "campaign handle collision, please retry" },
           { status: 409 }
         );
       }
