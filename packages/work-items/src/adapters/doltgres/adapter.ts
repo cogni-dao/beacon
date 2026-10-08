@@ -38,6 +38,16 @@ const CLAIM_TTL_SECONDS = 300;
 const COMMIT_TAG = "work-items";
 const GLOBAL_LOCK_KEY = 5_001_001;
 const OP_BRANCH_PREFIX = "work-item-op/";
+
+/**
+ * What a locked scope owes when it meets an operation branch it cannot prove.
+ *
+ * - `required` — fail closed. A write must never build on unproven evidence.
+ * - `best_effort` — keep the evidence, re-prove `main`, and serve from it anyway.
+ *   For reads, which are answered from committed `main` and cannot observe an
+ *   operation branch (bug.5358).
+ */
+type BranchReconciliation = "required" | "best_effort";
 const MERGE_RETRIES = 3;
 const LOCK_WAIT_MS = 2_000;
 const LOCK_RETRY_MS = 50;
@@ -706,7 +716,8 @@ export class DoltgresWorkItemAdapter
 
   private async withGlobalLock<T>(
     operation: string,
-    fn: (conn: WorkItemConnection) => Promise<T>
+    fn: (conn: WorkItemConnection) => Promise<T>,
+    reconciliation: BranchReconciliation = "required"
   ): Promise<T> {
     const context = { operationId: randomUUID(), operation };
     const leaveQueue = await this.enterOperationQueue(context);
@@ -769,7 +780,7 @@ export class DoltgresWorkItemAdapter
       });
       const conn = this.instrumentConnection(operationPool, rawConn, context);
       locked = await this.acquireGlobalLock(conn, context);
-      await this.reconcileUnderLock(conn);
+      await this.reconcileUnderLock(conn, reconciliation);
       return await fn(conn);
     } catch (error) {
       this.logStage("error", context, "operation", "error", {
@@ -839,11 +850,18 @@ export class DoltgresWorkItemAdapter
     throw new WorkItemsBusyError();
   }
 
-  private async reconcileUnderLock(conn: WorkItemConnection): Promise<void> {
+  private async makeMainSafe(conn: WorkItemConnection): Promise<void> {
     const checkoutRows = await conn.unsafe("SELECT dolt_checkout('main')");
     assertDoltStatus(checkoutRows, "dolt_checkout");
     await this.abortOwnedMergeIfPresent(conn);
     await this.assertMainClean(conn);
+  }
+
+  private async reconcileUnderLock(
+    conn: WorkItemConnection,
+    reconciliation: BranchReconciliation = "required"
+  ): Promise<void> {
+    await this.makeMainSafe(conn);
 
     let branchRows: ReadonlyArray<Record<string, unknown>>;
     try {
@@ -857,20 +875,34 @@ export class DoltgresWorkItemAdapter
       const branch = String(row.name ?? "");
       if (!branch.startsWith(OP_BRANCH_PREFIX)) continue;
 
+      // bug.5358: a read is answered from committed `main`, which an unprovable
+      // evidence branch cannot corrupt. Failing the read closed here let ONE
+      // residual branch return 503 for every read and write on the node,
+      // permanently — nothing deletes preserved evidence, and this sweep
+      // re-walks `dolt.branches` on each request, so a restart does not clear
+      // it. Keep the evidence, re-prove `main`, and serve the read; writes still
+      // fail closed on the same branch.
       let branchCommit: string;
       let reachable: boolean;
       try {
         branchCommit = doltScalar([row], "hash");
         reachable = await this.branchCommitIsOnMain(conn, branchCommit);
       } catch {
-        throw new WorkItemsBusyError(
-          `Work-item branch ${branch} requires reconciliation proof; retry shortly`
-        );
+        if (reconciliation === "required") {
+          throw new WorkItemsBusyError(
+            `Work-item branch ${branch} requires reconciliation proof; retry shortly`
+          );
+        }
+        await this.makeMainSafe(conn);
+        continue;
       }
       if (!reachable) {
-        throw new WorkItemsBusyError(
-          `Work-item branch ${branch} is not reachable from main; preserving evidence`
-        );
+        if (reconciliation === "required") {
+          throw new WorkItemsBusyError(
+            `Work-item branch ${branch} is not reachable from main; preserving evidence`
+          );
+        }
+        continue;
       }
 
       const deleteRows = await conn.unsafe(
@@ -1102,7 +1134,7 @@ export class DoltgresWorkItemAdapter
   private async readOnCleanMain<T>(
     fn: (conn: WorkItemConnection) => Promise<T>
   ): Promise<T> {
-    return this.withGlobalLock("read work items", fn);
+    return this.withGlobalLock("read work items", fn, "best_effort");
   }
 
   private async getWith(conn: WorkItemConnection, id: WorkItemId) {
