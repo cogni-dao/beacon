@@ -109,14 +109,54 @@ describe("DoltgresWorkItemAdapter restart reconciliation", () => {
     ).toBe(true);
   });
 
-  it("preserves an operation branch whose tip is not reachable from main", async () => {
+  it("fails a write closed when a branch tip is not reachable from main", async () => {
+    const { adapter, state } = makeReconciliationHarness({
+      mergeBase: "main-commit",
+    });
+
+    await expect(
+      adapter.patch(
+        { id: toWorkItemId("task.missing"), set: { title: "blocked" } },
+        "principal-1"
+      )
+    ).rejects.toBeInstanceOf(WorkItemsBusyError);
+
+    expect(state.branch).toBe("work-item-op/restart-evidence");
+    expect(
+      state.queries.some((query) => query.startsWith("SELECT dolt_branch('-D'"))
+    ).toBe(false);
+  });
+
+  it("fails a write closed when the reachability proof errors", async () => {
+    const { adapter, state } = makeReconciliationHarness({
+      mergeBase: "operation-commit",
+      proofError: new Error("proof query failed"),
+    });
+
+    await expect(
+      adapter.patch(
+        { id: toWorkItemId("task.missing"), set: { title: "blocked" } },
+        "principal-1"
+      )
+    ).rejects.toBeInstanceOf(WorkItemsBusyError);
+
+    expect(state.branch).toBe("work-item-op/restart-evidence");
+    expect(
+      state.queries.some((query) => query.startsWith("SELECT dolt_branch('-D'"))
+    ).toBe(false);
+  });
+
+  it("serves a read past an unreachable branch, keeping the evidence", async () => {
+    // bug.5358: ONE unprovable branch used to return 503 for every read and
+    // write on the node, permanently — a restart did not clear it because the
+    // sweep re-walks dolt.branches on each request.
     const { adapter, state } = makeReconciliationHarness({
       mergeBase: "main-commit",
     });
 
     await expect(
       adapter.get(toWorkItemId("task.missing"))
-    ).rejects.toBeInstanceOf(WorkItemsBusyError);
+    ).resolves.toBeNull();
 
     expect(state.branch).toBe("work-item-op/restart-evidence");
     expect(
@@ -124,10 +164,10 @@ describe("DoltgresWorkItemAdapter restart reconciliation", () => {
     ).toBe(false);
     expect(
       state.queries.some((query) => query.includes("FROM work_items"))
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("preserves evidence and fails busy when the reachability proof errors", async () => {
+  it("serves a read when the reachability proof errors", async () => {
     const { adapter, state } = makeReconciliationHarness({
       mergeBase: "operation-commit",
       proofError: new Error("proof query failed"),
@@ -135,15 +175,28 @@ describe("DoltgresWorkItemAdapter restart reconciliation", () => {
 
     await expect(
       adapter.get(toWorkItemId("task.missing"))
-    ).rejects.toBeInstanceOf(WorkItemsBusyError);
+    ).resolves.toBeNull();
 
     expect(state.branch).toBe("work-item-op/restart-evidence");
     expect(
-      state.queries.some((query) => query.startsWith("SELECT dolt_branch('-D'"))
-    ).toBe(false);
+      state.queries.some((query) => query.includes("FROM work_items"))
+    ).toBe(true);
+  });
+
+  it("serves a read when the branch tip is missing", async () => {
+    const { adapter, state } = makeReconciliationHarness({
+      mergeBase: "operation-commit",
+      omitBranchCommit: true,
+    });
+
+    await expect(
+      adapter.get(toWorkItemId("task.missing"))
+    ).resolves.toBeNull();
+
+    expect(state.branch).toBe("work-item-op/restart-evidence");
     expect(
       state.queries.some((query) => query.includes("FROM work_items"))
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("preserves evidence and fails busy when the branch lookup errors", async () => {
@@ -165,14 +218,17 @@ describe("DoltgresWorkItemAdapter restart reconciliation", () => {
     ).toBe(false);
   });
 
-  it("preserves evidence and fails busy when the branch tip is missing", async () => {
+  it("fails a write closed when the branch tip is missing", async () => {
     const { adapter, state } = makeReconciliationHarness({
       mergeBase: "operation-commit",
       omitBranchCommit: true,
     });
 
     await expect(
-      adapter.get(toWorkItemId("task.missing"))
+      adapter.patch(
+        { id: toWorkItemId("task.missing"), set: { title: "blocked" } },
+        "principal-1"
+      )
     ).rejects.toBeInstanceOf(WorkItemsBusyError);
 
     expect(state.branch).toBe("work-item-op/restart-evidence");
@@ -181,9 +237,6 @@ describe("DoltgresWorkItemAdapter restart reconciliation", () => {
     ).toBe(false);
     expect(
       state.queries.some((query) => query.startsWith("SELECT dolt_branch('-D'"))
-    ).toBe(false);
-    expect(
-      state.queries.some((query) => query.includes("FROM work_items"))
     ).toBe(false);
   });
 });
