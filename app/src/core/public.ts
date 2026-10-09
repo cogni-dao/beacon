@@ -15,4 +15,16 @@
 export * from "@cogni/node-core";
 
 // Node-specific core domain goes below this line.
-// Example: export { ReservationModel } from "./reservations/model";
+
+// Beacon growth loop — the pure, independent engagement VERIFIER. Beacon-owned:
+// it used to live in the vendored `@cogni/knowledge-store` copy, which is now a
+// published node-template tarball that must not carry per-node logic.
+export {
+  computeEngagementKpi,
+  type EngagementBasis,
+  type EngagementKpiResult,
+  type EngagementTarget,
+  EngagementTargetSchema,
+  type PostMetricSnapshot,
+  PostMetricSnapshotSchema,
+} from "./growth/engagement-kpi";

@@ -37,7 +37,7 @@ import {
 	computeEngagementKpi,
 	type EngagementBasis,
 	type PostMetricSnapshot,
-} from "@cogni/knowledge-store";
+} from "@/core/growth/engagement-kpi";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { resolveAppDb } from "@/bootstrap/container";

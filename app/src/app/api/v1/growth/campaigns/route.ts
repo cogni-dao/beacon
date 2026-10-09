@@ -36,7 +36,7 @@ import {
   computeEngagementKpi,
   type EngagementBasis,
   type PostMetricSnapshot,
-} from "@cogni/knowledge-store";
+} from "@/core/growth/engagement-kpi";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import { and, desc, eq, inArray } from "drizzle-orm";
