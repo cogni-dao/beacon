@@ -57,7 +57,10 @@ describe("Beacon product wiring", () => {
 
   it("keeps Beacon secrets, knowledge domains, and review mission declared", () => {
     const secrets = readRepoFile(".cogni/secrets-catalog.yaml");
-    const domains = readRepoFile("packages/knowledge-base/src/seeds/domains.ts");
+    // Node-owned: the beacon domains moved out of the shared (now published +
+    // vendored-no-more) `@cogni/knowledge-base` package into this node's own
+    // Doltgres schema package.
+    const domains = readRepoFile("packages/doltgres-schema/src/domains.ts");
     const goalRule = readRepoFile(".cogni/rules/repo-goal-alignment.yaml");
 
     for (const secret of [

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2025 Cogni-DAO
 
 /**
- * Module: `@cogni/knowledge-store/tests/engagement-loop`
+ * Module: `@tests/unit/core/growth/engagement-loop`
  * Purpose: Integration test for the `metric:engagement` resolver path — the
  *   growth-loop VERIFIER. Mirrors `edo-loop.test.ts` but drives the
  *   `metric:`-strategy bridge: file a campaign hypothesis with
@@ -29,12 +29,13 @@ import { describe, expect, it } from "vitest";
 import {
   FakeEdoResolverAdapter,
   FakeKnowledgeStoreAdapter,
-} from "../src/adapters/fake/index.js";
+} from "@cogni/knowledge-store/adapters/fake";
+import { createEdoCapability } from "@cogni/knowledge-store";
+
 import {
   computeEngagementKpi,
   type PostMetricSnapshot,
-} from "../src/domain/engagement-kpi.js";
-import { createEdoCapability } from "../src/edo-capability.js";
+} from "@/core/growth/engagement-kpi";
 
 const DOMAIN_CAMPAIGNS = "beacon-campaigns";
 const DOMAIN_POST_PERFORMANCE = "beacon-post-performance";

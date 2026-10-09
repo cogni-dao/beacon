@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2025 Cogni-DAO
 
 /**
- * Module: `@cogni/knowledge-store/domain/engagement-kpi`
+ * Module: `@core/growth/engagement-kpi`
  * Purpose: Pure, independent VERIFIER — `computeEngagementKpi(snapshots, target)`
  *   scores a campaign's cached engagement against a target and emits a
  *   validates/invalidates edge. No LLM, no API, no DB; the hypothesis row's own
@@ -24,12 +24,15 @@
  *     is a failed hypothesis (score 0, invalidates).
  * Side-effects: none (pure)
  * Links: docs/spec/beacon-growth-loop-v0.md §5, .context/specs/pr3-verifier.md
+ * Note: beacon-owned node-specific domain. Lives here (not in the shared
+ *   `@cogni/knowledge-store` package) because that package is now consumed as a
+ *   published node-template tarball and must not carry per-node logic.
  * @public
  */
 
 import { z } from "zod";
 
-import type { ResolutionEdge } from "../port/edo-resolver.port.js";
+import type { ResolutionEdge } from "@cogni/knowledge-store";
 
 /**
  * One cached engagement snapshot for a single broadcast at a single capture

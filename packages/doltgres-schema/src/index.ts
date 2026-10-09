@@ -11,5 +11,6 @@
  * @public
  */
 
+export * from "./domains";
 export * from "./knowledge";
 export * from "./work-items";

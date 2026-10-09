@@ -15,6 +15,13 @@
       "when": 1790993827905,
       "tag": "0001_sour_union_jack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791510446190,
+      "tag": "0002_slippery_colossus",
+      "breakpoints": true
     }
   ]
 }

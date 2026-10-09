@@ -33,7 +33,7 @@ import {
   type EngagementBasis,
   type EngagementTarget,
   type PostMetricSnapshot,
-} from "@cogni/knowledge-store";
+} from "@/core/growth/engagement-kpi";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2025 Cogni-DAO
 
 /**
- * Module: `@cogni/knowledge-store/tests/engagement-kpi`
+ * Module: `@tests/unit/core/growth/engagement-kpi`
  * Purpose: Unit tests for the pure VERIFIER `computeEngagementKpi`.
  * Scope: Tests only. Exercises score independence (no hypothesis confidence
  *   leaks in), impression vs follower fallback, normalization vs target,
@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeEngagementKpi,
   type PostMetricSnapshot,
-} from "../src/domain/engagement-kpi.js";
+} from "@/core/growth/engagement-kpi";
 
 function snap(partial: Partial<PostMetricSnapshot>): PostMetricSnapshot {
   return {

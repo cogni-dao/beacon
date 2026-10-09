@@ -16,5 +16,5 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../knowledge-base" }]
+  "references": [{ "path": "../ai-tools" }]
 }
