@@ -1238,7 +1238,7 @@ packages:
 
   '@cogni-dao/knowledge-store@https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.3.0/cogni-dao-knowledge-store-0.3.0.tgz':
     resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.3.0/cogni-dao-knowledge-store-0.3.0.tgz}
-    version: 0.1.1
+    version: 0.3.0
     peerDependencies:
       '@cogni/ai-tools': '*'
 
