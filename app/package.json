@@ -33,6 +33,7 @@
     "@cogni/graph-execution-host": "workspace:*",
     "@cogni/ids": "workspace:*",
     "@cogni/ingestion-core": "workspace:*",
+    "@cogni/knowledge-base-ui": "https://github.com/cogni-dao/node-template/releases/download/knowledge-base-ui-v0.1.0/cogni-dao-knowledge-base-ui-0.1.0.tgz",
     "@cogni/knowledge-store": "https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.3.0/cogni-dao-knowledge-store-0.3.0.tgz",
     "@cogni/langgraph-graphs": "workspace:*",
     "@cogni/node-app": "workspace:*",
@@ -124,8 +125,7 @@
     "viem": "2.39.3",
     "wagmi": "2.19.5",
     "zod": "^4.1.12",
-    "zustand": "^5.0.9",
-    "react-markdown": "^10.1.0"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^11.8.1",
