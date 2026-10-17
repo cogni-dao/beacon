@@ -92,20 +92,31 @@ async function runActivity(
   campaignId: string,
   activity: "research" | "generate",
   resultKey: "findings" | "posts",
-  fallback: string
+  fallback: string,
+  body?: Record<string, unknown>
 ): Promise<number> {
   const response = await fetch(
     `/api/v1/growth/campaigns/${encodeURIComponent(campaignId)}/${activity}`,
-    { method: "POST", credentials: "same-origin", cache: "no-store" }
+    {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      ...(body
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        : {}),
+    }
   );
   if (!response.ok) {
     throw new Error(await readError(response, fallback));
   }
-  const body = (await response.json().catch(() => ({}))) as {
+  const parsed = (await response.json().catch(() => ({}))) as {
     findings?: unknown[];
     posts?: unknown[];
   };
-  return body[resultKey]?.length ?? 0;
+  return parsed[resultKey]?.length ?? 0;
 }
 
 /** Run the RESEARCH activity; returns how many findings it produced. */
@@ -113,9 +124,23 @@ export async function runResearch(campaignId: string): Promise<number> {
   return runActivity(campaignId, "research", "findings", "Research failed");
 }
 
-/** Run the GENERATE activity; returns how many post drafts it produced. */
-export async function generatePosts(campaignId: string): Promise<number> {
-  return runActivity(campaignId, "generate", "posts", "Generate failed");
+/**
+ * Run the GENERATE activity; returns how many post drafts it produced. An optional
+ * `seed` (a typed idea or a transcribed voice note captured on the board) steers the
+ * pass as the top-ranked intent; omit it for a plain generate off existing strategy.
+ */
+export async function generatePosts(
+  campaignId: string,
+  seed?: string
+): Promise<number> {
+  const trimmed = seed?.trim();
+  return runActivity(
+    campaignId,
+    "generate",
+    "posts",
+    "Generate failed",
+    trimmed ? { seed: trimmed } : undefined
+  );
 }
 
 // ---------------------------------------------------------------------------

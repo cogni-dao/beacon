@@ -3,8 +3,9 @@
 
 /**
  * Module: `@app/(app)/growth/_components/DraftCard`
- * Purpose: The REVIEW + REFINE surface for ONE generated draft, rendered inside a
- *   funnel lane. Shows a clear state badge (generated/approved/rejected/refining/…),
+ * Purpose: The REVIEW + REFINE surface for ONE generated draft — the expanded body of
+ *   a board card (`board/BoardCard`). Shows a clear state badge (generated/approved/
+ *   rejected/refining/…),
  *   the AI `score` + `revision`, the post text, and the four per-draft human actions:
  *   Approve, Reject, Edit (inline edit + save), Refine (regenerate THIS draft —
  *   optionally with a feedback note — into a NEW revision via the gated facade).
@@ -20,7 +21,7 @@
  *     through the `chatCompletion` facade (BILLABLE_AI_THROUGH_EXECUTOR) — this
  *     component never touches an LLM directly.
  * Side-effects: IO (PATCH .../posts/:postId via the mutate wrappers; router refresh).
- * Links: ./FunnelLayerSection.tsx, ../_api/mutateCampaign.ts,
+ * Links: ./board/BoardCard.tsx, ../_api/mutateCampaign.ts,
  *   app/src/app/api/v1/growth/campaigns/[campaignId]/posts/[postId]/route.ts
  * @internal
  */
