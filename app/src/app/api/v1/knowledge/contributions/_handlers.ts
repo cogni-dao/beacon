@@ -23,7 +23,11 @@ import {
   ContributionStateError,
   DomainNotRegisteredError,
   EmptyKnowledgePatchError,
+  KnowledgeBusyError,
   KnowledgeGateError,
+  KnowledgeWriteConflictError,
+  KnowledgeWriteOutcomeUnknownError,
+  KnowledgeWriteScopeRequiredError,
   type PrincipalAuthSource,
   sessionUserToPrincipal,
 } from "@cogni/knowledge-store";
@@ -59,6 +63,45 @@ function authSource(request: Request): PrincipalAuthSource {
 }
 
 function mapError(e: unknown): NextResponse {
+  if (e instanceof KnowledgeWriteOutcomeUnknownError)
+    return NextResponse.json(
+      {
+        error: e.message,
+        errorCode: e.code,
+        retryable: false,
+        operationId: e.operationId,
+        branch: e.branch,
+        commitHash: e.commitHash ?? null,
+      },
+      { status: 409 }
+    );
+  if (e instanceof KnowledgeWriteScopeRequiredError)
+    return NextResponse.json(
+      {
+        error: e.message,
+        errorCode: "knowledge_write_scope_required",
+        retryable: false,
+      },
+      { status: 500 }
+    );
+  if (e instanceof KnowledgeWriteConflictError)
+    return NextResponse.json(
+      {
+        error: e.message,
+        errorCode: e.receipt.code,
+        retryable: false,
+        entryId: e.entryId,
+      },
+      { status: 409 }
+    );
+  // Admission control refused, reserved, or lock-contended: nothing was
+  // applied, so this is retryable capacity pressure, never a client conflict.
+  // 409 here would tell an agent its write was rejected on the merits.
+  if (e instanceof KnowledgeBusyError)
+    return NextResponse.json(
+      { error: e.message, retryable: true },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
   if (e instanceof ContributionForbiddenError)
     return NextResponse.json({ error: e.message }, { status: 403 });
   if (e instanceof ContributionNotFoundError)

@@ -25,6 +25,7 @@ export const tsupConfig = defineConfig({
     "src/identity.ts",
     "src/attribution.ts",
     "src/profile.ts",
+    "src/work-item-leases.ts",
     "src/beacon-growth.ts",
   ],
   format: ["esm"],

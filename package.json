@@ -33,6 +33,11 @@
       "@assistant-ui/react-markdown": "0.12.3"
     }
   },
+  "dependencies": {
+    "@cogni-dao/doltgres-admission": "https://github.com/cogni-dao/node-template/releases/download/doltgres-admission-v0.1.0/cogni-dao-doltgres-admission-0.1.0.tgz",
+    "drizzle-orm": "^0.44.7",
+    "postgres": "^3.4.5"
+  },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "@types/node": "^22",
