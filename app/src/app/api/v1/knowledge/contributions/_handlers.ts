@@ -32,7 +32,6 @@ import {
   KnowledgeWriteOutcomeUnknownError,
   KnowledgeWriteScopeRequiredError,
   HypothesisMissingEvaluateAtError,
-  KnowledgeGateError,
   NodeAdminRequiredError,
   type PrincipalAuthSource,
   sessionUserToPrincipal,
