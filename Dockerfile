@@ -133,6 +133,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/config/mcp.servers.json ./app/con
 ARG BUILD_SHA
 ENV APP_BUILD_SHA=$BUILD_SHA
 
+# Static artifact identity for the operator's candidate bundle verification.
+RUN if [ -n "$BUILD_SHA" ]; then \
+      mkdir -p ./app/public/__cogni-build && \
+      printf '%s' "$BUILD_SHA" > "./app/public/__cogni-build/${BUILD_SHA}.txt" && \
+      chown -R nextjs:nodejs ./app/public/__cogni-build; \
+    fi
+
 USER nextjs
 
 EXPOSE 3200
