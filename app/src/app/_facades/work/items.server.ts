@@ -12,16 +12,15 @@
  * @internal
  */
 
-import type { WorkItemLease } from "@cogni/work-items";
 import type {
   WorkItemsCreateInput as ContractCreateInput,
-  WorkItemCoordinationOutput,
   WorkItemsPatchInput as ContractPatchInput,
+  WorkItemCoordinationOutput,
   WorkItemDto,
   WorkItemsListInput,
   WorkItemsListOutput,
 } from "@cogni/node-contracts";
-import type { WorkItem, WorkItemId } from "@cogni/work-items";
+import type { WorkItem, WorkItemId, WorkItemLease } from "@cogni/work-items";
 import {
   toWorkItemId,
   WorkItemWriteOutcomeUnknownError,
@@ -109,6 +108,21 @@ export class WorkItemLeaseConflictError extends Error {
     super(`Work item is claimed by another principal or lease: ${id}`);
     this.name = "WorkItemLeaseConflictError";
   }
+}
+
+/** Recognize the published port conflict without importing its runtime adapter. */
+export function isWorkItemRevisionConflictError(
+  error: unknown
+): error is Error & { currentRevision: number } {
+  if (typeof error !== "object" || error === null) return false;
+  const conflict = error as Record<string, unknown>;
+  return (
+    conflict.name === "WorkItemRevisionConflictError" &&
+    typeof conflict.message === "string" &&
+    typeof conflict.currentRevision === "number" &&
+    Number.isSafeInteger(conflict.currentRevision) &&
+    conflict.currentRevision >= 0
+  );
 }
 
 export class WorkItemsBackendNotReadyError extends Error {
@@ -348,6 +362,9 @@ export async function patchWorkItem(
       {
         id: toWorkItemId(input.id),
         set: dropUndefined(input.set),
+        ...(input.expectedRevision !== undefined && {
+          expectedRevision: input.expectedRevision,
+        }),
       },
       sessionUser.id
     );

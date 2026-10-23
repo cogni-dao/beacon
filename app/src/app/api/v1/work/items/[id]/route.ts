@@ -20,12 +20,13 @@ import { NextResponse } from "next/server";
 
 import {
   getWorkItem,
+  isWorkItemRevisionConflictError,
+  NodeAdminRequiredError,
   patchWorkItem,
   WorkItemForbiddenError,
   WorkItemNotFoundError,
   WorkItemsBackendNotReadyError,
   WorkItemWriteOutcomeUnknownError,
-  NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
@@ -130,6 +131,12 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
+      }
+      if (isWorkItemRevisionConflictError(e)) {
+        return NextResponse.json(
+          { error: "revision_conflict", currentRevision: e.currentRevision },
+          { status: 409 }
+        );
       }
       if (e instanceof WorkItemWriteOutcomeUnknownError) {
         return NextResponse.json(
