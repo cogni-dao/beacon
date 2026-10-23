@@ -24,6 +24,8 @@
  * @internal
  */
 
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -73,50 +75,55 @@ async function fileFindingAndRule(
     snapshotCount: number;
   }
 ): Promise<void> {
-  const findingId = `finding:perf:${args.campaignId}`;
-  if (!(await store.knowledgeExists(findingId))) {
-    await store.addKnowledge({
-      id: findingId,
-      domain: DOMAIN_POST_PERFORMANCE,
-      title: `Campaign ${args.campaignId} engagement ${args.score}/100 (${args.edge})`,
-      content: `Independent KPI for campaign '${args.campaignId}': ${args.score}/100, rate ${args.observedRate.toFixed(4)} (${args.basis}) over ${args.snapshotCount} snapshot(s).`,
-      entryType: "finding",
-      sourceType: "analysis_signal",
-      sourceRef: `broadcast:campaign:${args.campaignId}`,
-      tags: ["growth-loop", "engagement", args.basis],
-      confidencePct: null,
-    });
-    await store.addCitation({
-      citingId: findingId,
-      citedId: args.hypothesisId,
-      citationType: "evidence_for",
-      context: `engagement KPI ${args.score}/100 (${args.edge})`,
-    });
-  }
-  if (args.edge === "validates") {
-    const ruleId = `rule:brand-voice:${args.campaignId}`;
-    if (!(await store.knowledgeExists(ruleId))) {
-      await store.addKnowledge({
-        id: ruleId,
-        domain: DOMAIN_BRAND_VOICE,
-        title: `Winning angle — campaign ${args.campaignId}`,
-        content: `Validated angle for '${args.campaignId}'.`,
-        entryType: "rule",
-        sourceType: "derived",
-        sourceRef: `campaign:${args.campaignId}`,
-        tags: ["growth-loop", "brand-voice", "validated"],
-        confidencePct: null,
-      });
+  await store.withWrite(
+    {
+      operationId: randomUUID(),
+      message: `growth: file ${DOMAIN_POST_PERFORMANCE} finding for ${args.campaignId} (${args.edge})`,
+    },
+    async (write) => {
+      const findingId = `finding:perf:${args.campaignId}`;
+      if (!(await write.knowledgeExists(findingId))) {
+        await write.addKnowledge({
+          id: findingId,
+          domain: DOMAIN_POST_PERFORMANCE,
+          title: `Campaign ${args.campaignId} engagement ${args.score}/100 (${args.edge})`,
+          content: `Independent KPI for campaign '${args.campaignId}': ${args.score}/100, rate ${args.observedRate.toFixed(4)} (${args.basis}) over ${args.snapshotCount} snapshot(s).`,
+          entryType: "finding",
+          sourceType: "analysis_signal",
+          sourceRef: `broadcast:campaign:${args.campaignId}`,
+          tags: ["growth-loop", "engagement", args.basis],
+          confidencePct: null,
+        });
+        await write.addCitation({
+          citingId: findingId,
+          citedId: args.hypothesisId,
+          citationType: "evidence_for",
+          context: `engagement KPI ${args.score}/100 (${args.edge})`,
+        });
+      }
+      if (args.edge === "validates") {
+        const ruleId = `rule:brand-voice:${args.campaignId}`;
+        if (!(await write.knowledgeExists(ruleId))) {
+          await write.addKnowledge({
+            id: ruleId,
+            domain: DOMAIN_BRAND_VOICE,
+            title: `Winning angle — campaign ${args.campaignId}`,
+            content: `Validated angle for '${args.campaignId}'.`,
+            entryType: "rule",
+            sourceType: "derived",
+            sourceRef: `campaign:${args.campaignId}`,
+            tags: ["growth-loop", "brand-voice", "validated"],
+            confidencePct: null,
+          });
+        }
+        await write.addCitation({
+          citingId: ruleId,
+          citedId: args.hypothesisId,
+          citationType: "supports",
+          context: `distilled brand-voice rule from validated campaign ${args.campaignId}`,
+        });
+      }
     }
-    await store.addCitation({
-      citingId: ruleId,
-      citedId: args.hypothesisId,
-      citationType: "supports",
-      context: `distilled brand-voice rule from validated campaign ${args.campaignId}`,
-    });
-  }
-  await store.commit(
-    `growth: file ${DOMAIN_POST_PERFORMANCE} finding for ${args.campaignId} (${args.edge})`
   );
 }
 

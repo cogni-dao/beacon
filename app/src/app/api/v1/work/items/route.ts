@@ -22,6 +22,7 @@ import {
   InvalidCursorError,
   listWorkItems,
   WorkItemsBackendNotReadyError,
+  WorkItemWriteOutcomeUnknownError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
@@ -127,6 +128,17 @@ export const POST = wrapRouteHandlerWithLogging(
         status: 201,
       });
     } catch (e) {
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json(
+          {
+            error: e.code,
+            retryable: false,
+            lookup: e.receipt.lookup,
+            message: e.message,
+          },
+          { status: 409 }
+        );
+      }
       if (e instanceof NodeAdminRequiredError) {
         return NextResponse.json(
           { error: e.message, errorCode: e.errorCode, action: e.action },

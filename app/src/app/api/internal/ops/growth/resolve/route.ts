@@ -17,6 +17,13 @@
  * @internal
  */
 
+import {
+  KnowledgeBusyError,
+  KnowledgeWriteConflictError,
+  KnowledgeWriteOutcomeUnknownError,
+  KnowledgeWriteScopeRequiredError,
+} from "@cogni/knowledge-store";
+
 import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse } from "next/server";
@@ -25,6 +32,47 @@ import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { runResolveEngagementCampaignsJob } from "@/bootstrap/jobs/resolveEngagementCampaigns.job";
 import { serverEnv } from "@/shared/env";
 import { EVENT_NAMES, logEvent } from "@/shared/observability";
+
+/** Preserve terminal write receipts; only pre-admission busy is retryable. */
+function knowledgeWriteErrorResponse(error: unknown): NextResponse | undefined {
+  if (error instanceof KnowledgeWriteOutcomeUnknownError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: error.code,
+        retryable: false,
+        operationId: error.operationId,
+        branch: error.branch,
+        commitHash: error.commitHash ?? null,
+      },
+      { status: 409 },
+    );
+  if (error instanceof KnowledgeWriteScopeRequiredError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: "knowledge_write_scope_required",
+        retryable: false,
+      },
+      { status: 500 },
+    );
+  if (error instanceof KnowledgeWriteConflictError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: error.receipt.code,
+        retryable: false,
+        entryId: error.entryId,
+      },
+      { status: 409 },
+    );
+  if (error instanceof KnowledgeBusyError)
+    return NextResponse.json(
+      { error: error.message, retryable: true },
+      { status: 503, headers: { "Retry-After": "2" } },
+    );
+  return undefined;
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,16 +139,18 @@ export const POST = wrapRouteHandlerWithLogging(
       return NextResponse.json(summary, { status: 200 });
     } catch (error) {
       const durationMs = Math.round(performance.now() - start);
+      const response = knowledgeWriteErrorResponse(error);
 
       logEvent(ctx.log, EVENT_NAMES.GROWTH_RESOLVE_COMPLETE, {
         reqId: ctx.reqId,
         routeId: ctx.routeId,
-        status: 500,
+        status: response?.status ?? 500,
         durationMs,
         outcome: "error",
         errorCode: "resolve_failed",
       });
 
+      if (response) return response;
       throw error;
     }
   }

@@ -23,3 +23,4 @@ export * from "./identity";
 export * from "./profile";
 export * from "./refs";
 export * from "./scheduling";
+export * from "./work-item-leases";

@@ -33,6 +33,13 @@
  */
 
 import {
+  KnowledgeBusyError,
+  KnowledgeWriteConflictError,
+  KnowledgeWriteOutcomeUnknownError,
+  KnowledgeWriteScopeRequiredError,
+} from "@cogni/knowledge-store";
+
+import {
   computeEngagementKpi,
   type EngagementBasis,
   type PostMetricSnapshot,
@@ -48,6 +55,47 @@ import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 import type { RequestContext } from "@/shared/observability";
+
+/** Preserve terminal write receipts; only pre-admission busy is retryable. */
+function knowledgeWriteErrorResponse(error: unknown): NextResponse | undefined {
+  if (error instanceof KnowledgeWriteOutcomeUnknownError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: error.code,
+        retryable: false,
+        operationId: error.operationId,
+        branch: error.branch,
+        commitHash: error.commitHash ?? null,
+      },
+      { status: 409 },
+    );
+  if (error instanceof KnowledgeWriteScopeRequiredError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: "knowledge_write_scope_required",
+        retryable: false,
+      },
+      { status: 500 },
+    );
+  if (error instanceof KnowledgeWriteConflictError)
+    return NextResponse.json(
+      {
+        error: error.message,
+        errorCode: error.receipt.code,
+        retryable: false,
+        entryId: error.entryId,
+      },
+      { status: 409 },
+    );
+  if (error instanceof KnowledgeBusyError)
+    return NextResponse.json(
+      { error: error.message, retryable: true },
+      { status: 503, headers: { "Retry-After": "2" } },
+    );
+  return undefined;
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -275,7 +323,13 @@ export const POST = wrapRouteHandlerWithLogging(
     const edo = container.edoCapability;
 
     // Self-heal the knowledge domains so a fresh env doesn't 500 on hypothesize.
-    await ensureGrowthKnowledgeDomains(ctx, container);
+    try {
+      await ensureGrowthKnowledgeDomains(ctx, container);
+    } catch (error) {
+      const response = knowledgeWriteErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
 
     const hypothesisId = `campaign:${input.campaignId}`;
     const resolutionStrategy = `${METRIC_ENGAGEMENT_PREFIX}${input.campaignId}`;
@@ -377,6 +431,8 @@ export const POST = wrapRouteHandlerWithLogging(
         { status: 201 }
       );
     } catch (e) {
+      const response = knowledgeWriteErrorResponse(e);
+      if (response) return response;
       if (e instanceof Error && /duplicate key/i.test(e.message)) {
         return NextResponse.json(
           { error: `campaign '${input.campaignId}' already exists` },
