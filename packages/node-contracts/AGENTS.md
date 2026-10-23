@@ -69,3 +69,5 @@ All require `Authorization: Bearer ${SCHEDULER_API_TOKEN}`.
 
 - Extracted from `apps/operator/src/contracts/` (task.0248 Phase 1)
 - `ChatMessage` exported from `ai.completions.v1.contract` (OpenAI-compatible format); chat contract's `ChatMessage` excluded from barrel to avoid TS2308
+
+Evaluation DTOs carry public work-items scores/rankScore; `work.items.scores.ts` delegates validation to the immutable package, with optional whole-score CAS on PATCH. Existing v1 lease contracts are unchanged.

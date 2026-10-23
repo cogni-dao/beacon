@@ -106,6 +106,8 @@ Bootstrap application runtime dependencies.
 - **Internal:** ports, adapters, shared, types
 - **External:** Node.js runtime
 
+Evaluation adoption: `evaluation-work-items.ts` composes published content/CAS with exact legacy v1 leases/DELETE. `ai/evaluation-baseline.ts` composes the six shared contracts while retaining node product tools. Trusted write identity resolves from ExecutionScope at invocation; P0/P1 stays human-only.
+
 ## Change Protocol
 
 - Update this file when **bootstrap interfaces** change

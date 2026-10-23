@@ -21,7 +21,7 @@ import type {
   WorkItemsListOutput,
 } from "@cogni/node-contracts";
 import type { WorkItem, WorkItemId } from "@cogni/work-items";
-import { toWorkItemId } from "@cogni/work-items";
+import { rankScore, toWorkItemId } from "@cogni/work-items";
 
 import {
   checkNodeAdmin,
@@ -123,6 +123,8 @@ function toDto(item: WorkItem): WorkItemDto {
     priority: item.priority,
     rank: item.rank,
     estimate: item.estimate,
+    scores: item.scores,
+    rankScore: rankScore(item.scores),
     summary: item.summary,
     outcome: item.outcome,
     projectId: item.projectId as string | undefined,
@@ -190,6 +192,7 @@ function rethrowBackendError(error: unknown): never {
   if (
     (error as Error)?.name === "DoltgresNotConfiguredError" ||
     (error as Error)?.name === "WorkItemsBusyError" ||
+    (error as Error)?.name === "WorkItemsCapacityError" ||
     (error as Error)?.name === "DoltMergeOutcomeUnknownError"
   ) {
     throw new WorkItemsBackendNotReadyError(message);
@@ -202,7 +205,18 @@ function rethrowBackendError(error: unknown): never {
     const id = (error as { id?: string }).id ?? "unknown";
     throw new WorkItemLeaseConflictError(id);
   }
+  if ((error as Error)?.name === "WorkItemRevisionConflictError") {
+    const conflict = error as Error & { id: string; expectedRevision: number; currentRevision: number };
+    throw new WorkItemRevisionConflictError(conflict.id, conflict.expectedRevision, conflict.currentRevision);
+  }
   throw error;
+}
+
+export class WorkItemRevisionConflictError extends Error {
+  constructor(readonly id: string, readonly expectedRevision: number, readonly currentRevision: number) {
+    super(`Work item ${id} is at revision ${currentRevision}, expected ${expectedRevision}; nothing written`);
+    this.name = "WorkItemRevisionConflictError";
+  }
 }
 
 export async function listWorkItems(
@@ -314,6 +328,7 @@ export async function createWorkItem(
         ...(input.priority !== undefined && { priority: input.priority }),
         ...(input.rank !== undefined && { rank: input.rank }),
         ...(input.estimate !== undefined && { estimate: input.estimate }),
+        ...(input.scores !== undefined && { scores: input.scores }),
       },
       sessionUser.id
     );
@@ -334,6 +349,7 @@ export async function patchWorkItem(
       {
         id: toWorkItemId(input.id),
         set: dropUndefined(input.set),
+        ...(input.expectedRevision !== undefined && { expectedRevision: input.expectedRevision }),
       },
       sessionUser.id
     );

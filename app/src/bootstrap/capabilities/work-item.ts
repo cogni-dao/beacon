@@ -13,11 +13,13 @@
  * @internal
  */
 
+import { isPrivilegedPriority } from "@cogni/knowledge-store";
 import type {
   WorkItemCapability,
   WorkItemInfo,
   WorkItemTransitionResult,
-} from "@cogni/ai-tools";
+} from "@cogni/shared-ai-tools";
+import { WorkItemPatchConflictError } from "@cogni/shared-ai-tools";
 import type {
   ActorKind,
   SubjectRef,
@@ -27,15 +29,16 @@ import type {
   WorkItemStatus,
   WorkItemType,
 } from "@cogni/work-items";
-import { toWorkItemId } from "@cogni/work-items";
-
-import { isPrivilegedPriority } from "@cogni/knowledge-store";
+import { rankScore, toWorkItemId } from "@cogni/work-items";
+import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
 /**
  * Dependencies for creating the work item capability.
  */
 export interface WorkItemCapabilityDeps {
   readonly workItemQuery: WorkItemQueryPort;
+  readonly liveStore?: () => EvaluationWorkItemsPort;
+  readonly getActorId?: () => string;
   readonly workItemCommand: WorkItemCommandPort;
   /**
    * QUERY_READS_THE_LIVE_BACKLOG: `query` lists through this when wired — the
@@ -58,6 +61,7 @@ function assigneeId(a: SubjectRef): string {
 }
 
 function toWorkItemInfo(item: WorkItem): WorkItemInfo {
+  const computedRank = rankScore(item.scores);
   return {
     id: item.id,
     type: item.type,
@@ -69,6 +73,10 @@ function toWorkItemInfo(item: WorkItem): WorkItemInfo {
     ...(item.actor !== "either" && { actor: item.actor }),
     ...(item.priority !== undefined && { priority: item.priority }),
     ...(item.rank !== undefined && { rank: item.rank }),
+    ...(item.estimate !== undefined && { estimate: item.estimate }),
+    revision: item.revision,
+    ...(item.scores !== undefined && { scores: item.scores }),
+    ...(computedRank !== undefined && { rankScore: computedRank }),
     ...(item.summary !== undefined && { summary: item.summary }),
     ...(item.projectId !== undefined && { projectId: item.projectId }),
     ...(item.branch !== undefined && { branch: item.branch }),
@@ -81,41 +89,71 @@ function toWorkItemInfo(item: WorkItem): WorkItemInfo {
  * Create a WorkItemCapability backed by hexagonal ports.
  */
 export function createWorkItemCapability(
-  deps: WorkItemCapabilityDeps
+  deps: WorkItemCapabilityDeps,
 ): WorkItemCapability {
   const { workItemQuery, workItemCommand } = deps;
 
+  const page: NonNullable<WorkItemCapability["queryPage"]> = async (params) => {
+    const result = await (
+      deps.liveStore?.() ??
+      deps.backlogReader ??
+      workItemQuery
+    ).list({
+      ...(params.statuses && {
+        statuses: params.statuses as readonly WorkItemStatus[],
+      }),
+      ...(params.types && { types: params.types as readonly WorkItemType[] }),
+      ...(params.text && { text: params.text }),
+      ...(params.actor && { actor: params.actor as ActorKind }),
+      ...(params.projectId && { projectId: toWorkItemId(params.projectId) }),
+      ...(params.limit && { limit: params.limit }),
+      ...(params.cursor && { cursor: params.cursor }),
+      ...(params.ids && { ids: params.ids.map(toWorkItemId) }),
+    });
+    return {
+      items: result.items.map(toWorkItemInfo),
+      ...(result.nextCursor && { nextCursor: result.nextCursor }),
+    };
+  };
+  const actor = () => {
+    const id = deps.getActorId?.();
+    if (!id)
+      throw new Error(
+        "Work item writes require an authenticated execution actor",
+      );
+    return id;
+  };
   return {
+    queryPage: page,
     async query(params): Promise<readonly WorkItemInfo[]> {
-      const result = await (deps.backlogReader ?? workItemQuery).list({
-        ...(params.statuses && {
-          statuses: params.statuses as readonly WorkItemStatus[],
-        }),
-        ...(params.types && {
-          types: params.types as readonly WorkItemType[],
-        }),
-        ...(params.text && { text: params.text }),
-        ...(params.actor && { actor: params.actor as ActorKind }),
-        ...(params.projectId && {
-          projectId: toWorkItemId(params.projectId),
-        }),
-        ...(params.limit && { limit: params.limit }),
-      });
-      return result.items.map(toWorkItemInfo);
+      return (await page(params)).items;
     },
 
     async transitionStatus(input): Promise<WorkItemTransitionResult> {
-      const current = await workItemQuery.get(toWorkItemId(input.id));
+      const current = await (deps.liveStore?.() ?? workItemQuery).get(
+        toWorkItemId(input.id),
+      );
       if (!current) {
         throw new Error(`Work item not found: ${input.id}`);
       }
 
-      const updated = await workItemCommand.transitionStatus({
-        id: toWorkItemId(input.id),
-        expectedRevision: String(current.revision),
-        toStatus: input.toStatus as WorkItemStatus,
-        ...(input.reason && { reason: input.reason }),
-      });
+      const updated = deps.liveStore
+        ? await deps
+            .liveStore()
+            .patch(
+              {
+                id: current.id,
+                expectedRevision: current.revision,
+                set: { status: input.toStatus as WorkItemStatus },
+              },
+              actor(),
+            )
+        : await workItemCommand.transitionStatus({
+            id: toWorkItemId(input.id),
+            expectedRevision: String(current.revision),
+            toStatus: input.toStatus as WorkItemStatus,
+            ...(input.reason && { reason: input.reason }),
+          });
 
       return {
         id: updated.id,
@@ -132,21 +170,53 @@ export function createWorkItemCapability(
       const priority = input.set.priority;
       if (priority != null && isPrivilegedPriority(priority)) {
         throw new Error(
-          `authz_denied: priority ${priority} requires node admin — propose it instead`
+          `authz_denied: priority ${priority} requires node admin — propose it instead`,
         );
       }
-      const current = await workItemQuery.get(toWorkItemId(input.id));
+      const current = await (deps.liveStore?.() ?? workItemQuery).get(
+        toWorkItemId(input.id),
+      );
       if (!current) {
         throw new Error(`Work item not found: ${input.id}`);
       }
 
-      const updated = await workItemCommand.patch({
-        id: toWorkItemId(input.id),
-        expectedRevision: String(current.revision),
-        set: input.set,
-      });
-
-      return toWorkItemInfo(updated);
+      try {
+        const updated = deps.liveStore
+          ? await deps
+              .liveStore()
+              .patch(
+                {
+                  id: current.id,
+                  ...(input.expectedRevision !== undefined && {
+                    expectedRevision: input.expectedRevision,
+                  }),
+                  set: input.set,
+                },
+                actor(),
+              )
+          : await workItemCommand.patch({
+              id: current.id,
+              expectedRevision: String(current.revision),
+              set: input.set,
+            });
+        return toWorkItemInfo(updated);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name === "WorkItemRevisionConflictError"
+        ) {
+          const conflict = error as Error & {
+            expectedRevision: number;
+            currentRevision: number;
+          };
+          throw new WorkItemPatchConflictError(
+            input.id,
+            conflict.expectedRevision,
+            conflict.currentRevision,
+          );
+        }
+        throw error;
+      }
     },
   };
 }

@@ -24,6 +24,7 @@ import {
   patchWorkItem,
   WorkItemForbiddenError,
   WorkItemNotFoundError,
+  WorkItemRevisionConflictError,
   WorkItemsBackendNotReadyError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
@@ -128,6 +129,9 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       if (e instanceof WorkItemNotFoundError) {
         return NextResponse.json({ error: e.message }, { status: 404 });
       }
+      if (e instanceof WorkItemRevisionConflictError) {
+        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
+      }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
       }
@@ -187,6 +191,9 @@ export const DELETE = wrapRouteHandlerWithLogging<{
         workItemsDeleteOperation.output.parse({ id, deleted: true })
       );
     } catch (e) {
+      if (e instanceof WorkItemRevisionConflictError) {
+        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
+      }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
       }

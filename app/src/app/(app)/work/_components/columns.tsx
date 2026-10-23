@@ -19,6 +19,7 @@
 
 "use client";
 
+import { scoreQueue } from "@cogni/knowledge-base-ui";
 import type { WorkItemDto } from "@cogni/node-contracts";
 import { HeaderFilter } from "@cogni/node-ui-kit/header-filter";
 
@@ -34,6 +35,16 @@ const formatStatus = (v: string) =>
 const formatProject = (v: string) => v.replace("proj.", "");
 
 export const columns = [
+  col.accessor("rankScore", {
+    header: ({ column }) => <button type="button" className="font-medium text-xs" onClick={() => column.toggleSorting()} aria-label="Sort by Rank">Rank</button>,
+    size: 130,
+    sortDescFirst: true,
+    sortUndefined: "last",
+    cell: ({ row }) => row.original.rankScore !== undefined
+      ? <span title={`${scoreQueue(row.original.scores)} queue`}>{row.original.rankScore.toFixed(2)}</span>
+      : <span className="text-muted-foreground">&mdash;</span>,
+    meta: { headerTitle: "Rank" },
+  }),
   col.accessor("priority", {
     header: ({ column }) => (
       <DataGridColumnHeader column={column} title="Pri" />

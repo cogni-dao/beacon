@@ -14,6 +14,7 @@
  */
 
 import { z } from "zod";
+import { WorkItemScoresSchema } from "./work.items.scores";
 
 const SubjectRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user"), userId: z.string() }),
@@ -37,6 +38,8 @@ export const WorkItemDtoSchema = z.object({
   priority: z.number().optional(),
   rank: z.number().optional(),
   estimate: z.number().optional(),
+  scores: WorkItemScoresSchema.optional(),
+  rankScore: z.number().optional(),
   summary: z.string().optional(),
   outcome: z.string().optional(),
   projectId: z.string().optional(),

@@ -4,7 +4,8 @@
 /**
  * Module: `@adapters/server/ai/langgraph/inproc.provider`
  * Purpose: LangGraph in-process graph provider for Next.js runtime.
- * Scope: Routes graph execution to package runner. Does NOT import @langchain/* directly — all LangChain in package.
+ * Scope: Routes graph execution to package runner. Does NOT import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
+import @langchain/* directly — all LangChain in package.
  * Invariants:
  *   - NO_LANGCHAIN_IN_SRC: No @langchain imports; delegates to package runner
  *   - GRAPH_ID_NAMESPACED: graphId format is "langgraph:${graphName}"
@@ -31,7 +32,6 @@ import {
   createInProcGraphRunner,
   type GraphResult,
   type InProcGraphRequest,
-  LANGGRAPH_CATALOG,
   type ToolExecFn,
 } from "@cogni/langgraph-graphs";
 import { trace } from "@opentelemetry/api";
