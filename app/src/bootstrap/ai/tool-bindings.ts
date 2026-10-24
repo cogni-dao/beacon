@@ -92,7 +92,7 @@ export interface ToolBindingDeps {
   readonly scheduleCapability: ScheduleCapability;
   readonly vcsCapability: VcsCapability;
   readonly workItemCapability: WorkItemCapability;
-  readonly nodePublicOrigin: string;
+  readonly nodePublicOrigin?: string | undefined;
 }
 
 /**
