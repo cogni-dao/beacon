@@ -46,23 +46,32 @@ async function responseErrorMessage(
 }
 
 export async function fetchWorkItems(): Promise<WorkItemsListOutput> {
-  const response = await fetch("/api/v1/work/items", {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: "Failed to fetch work items",
-    }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+  const items = new Map<string, WorkItemDto>();
+  const visited = new Set<string>();
+  let cursor: string | undefined;
+  // Fail explicitly rather than render a truncated global ranking.
+  for (let page = 0; page < 1000; page++) {
+    const query = new URLSearchParams({ limit: "500" });
+    if (cursor) query.set("cursor", cursor);
+    const response = await fetch(`/api/v1/work/items?${query}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(await responseErrorMessage(response, `HTTP ${response.status}`));
+    }
+    const result = await response.json() as WorkItemsListOutput;
+    for (const item of result.items) items.set(item.id, item);
+    const next = result.pageInfo?.endCursor ?? result.nextCursor;
+    const hasMore = result.pageInfo?.hasMore ?? Boolean(next);
+    if (!hasMore) return { items: [...items.values()], pageInfo: { endCursor: null, hasMore: false } };
+    if (!next || visited.has(next)) throw new Error("Work item pagination did not advance; complete ranking is unavailable");
+    visited.add(next);
+    cursor = next;
   }
-
-  return response.json();
+  throw new Error("Work item pagination exceeded its safety bound; complete ranking is unavailable");
 }
 
 export async function fetchWorkItem(id: string): Promise<WorkItemDto> {

@@ -22,6 +22,8 @@ import {
   InvalidCursorError,
   listWorkItems,
   WorkItemsBackendNotReadyError,
+  WorkItemWriteOutcomeUnknownError,
+  WorkItemScoresInvalidError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
@@ -72,6 +74,12 @@ export const GET = wrapRouteHandlerWithLogging(
     } catch (e) {
       if (e instanceof InvalidCursorError) {
         return NextResponse.json({ error: "invalid cursor" }, { status: 400 });
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
@@ -132,6 +140,12 @@ export const POST = wrapRouteHandlerWithLogging(
           { error: e.message, errorCode: e.errorCode, action: e.action },
           { status: e.status }
         );
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });

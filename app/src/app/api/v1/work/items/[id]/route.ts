@@ -26,6 +26,8 @@ import {
   WorkItemNotFoundError,
   WorkItemRevisionConflictError,
   WorkItemsBackendNotReadyError,
+  WorkItemWriteOutcomeUnknownError,
+  WorkItemScoresInvalidError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
@@ -50,6 +52,12 @@ export const GET = wrapRouteHandlerWithLogging<{
     try {
       item = await getWorkItem(id);
     } catch (e) {
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
+      }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
       }
@@ -141,6 +149,12 @@ export const PATCH = wrapRouteHandlerWithLogging<{
           { status: e.status }
         );
       }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
+      }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
       }
@@ -196,6 +210,12 @@ export const DELETE = wrapRouteHandlerWithLogging<{
       }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });

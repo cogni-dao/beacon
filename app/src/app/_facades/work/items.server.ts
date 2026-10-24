@@ -21,7 +21,8 @@ import type {
   WorkItemsListOutput,
 } from "@cogni/node-contracts";
 import type { WorkItem, WorkItemId } from "@cogni/work-items";
-import { rankScore, toWorkItemId } from "@cogni/work-items";
+import { rankScore, toWorkItemId, WorkItemWriteOutcomeUnknownError, WorkItemScoresInvalidError } from "@cogni/work-items";
+export { WorkItemWriteOutcomeUnknownError, WorkItemScoresInvalidError };
 
 import {
   checkNodeAdmin,
@@ -186,6 +187,15 @@ function dropUndefined<T extends Record<string, unknown>>(
 }
 
 function rethrowBackendError(error: unknown): never {
+  // Adapter/root entrypoints can bundle distinct constructors; normalize by identity fields.
+  if (error instanceof Error && error.name === "WorkItemWriteOutcomeUnknownError") {
+    const unknown = error as Error & { operationId: string; branch: string; commitHash?: string; itemId?: string };
+    throw new WorkItemWriteOutcomeUnknownError(unknown.operationId, unknown.branch, unknown.commitHash, unknown.itemId);
+  }
+  if (error instanceof Error && error.name === "WorkItemScoresInvalidError") {
+    const invalid = error as Error & { issues: ConstructorParameters<typeof WorkItemScoresInvalidError>[0] };
+    throw new WorkItemScoresInvalidError(invalid.issues);
+  }
   const message = (error as Error)?.message ?? "";
   const notFound = /^Work item not found: (.+)$/.exec(message);
   if (notFound?.[1]) throw new WorkItemNotFoundError(notFound[1]);

@@ -9,6 +9,12 @@ import {
   type WorkItemsContentPort,
 } from "@cogni/work-items";
 import { describe, expect, it, vi } from "vitest";
+import { WorkItemWriteOutcomeUnknownError as AdapterUnknownError, WorkItemScoresInvalidError as AdapterScoresError } from "@cogni/work-items/adapters/doltgres";
+import { patchWorkItem, WorkItemWriteOutcomeUnknownError, WorkItemScoresInvalidError } from "@/app/_facades/work/items.server";
+const backend = vi.hoisted(() => ({ patch: vi.fn() }));
+vi.mock("@/bootstrap/container", () => ({ getContainer: () => ({ doltgresWorkItems: backend }) }));
+
+import { fetchWorkItems } from "@/app/(app)/work/_api/fetchWorkItems";
 import { composeEvaluationWorkItems } from "@/bootstrap/evaluation-work-items";
 import { WorkItemScoresSchema } from "../../../../packages/node-contracts/src/work.items.scores";
 
@@ -152,5 +158,48 @@ describe("published content with v1 lease compatibility", () => {
     expect(WorkItemScoresSchema.safeParse({ goal: { v: 1.5 } }).success).toBe(
       false,
     );
+  });
+});
+
+
+describe("complete rank-view pagination", () => {
+  it("loads later higher-ranked items and unscored rows before client sorting", async () => {
+    const late = { ...item, id: toWorkItemId("task.0002"), rankScore: 20 };
+    const fetch = vi.spyOn(globalThis, "fetch");
+    fetch.mockResolvedValueOnce(Response.json({ items: [{ ...item, rankScore: 1 }], pageInfo: { hasMore: true, endCursor: "page-two" } }));
+    fetch.mockResolvedValueOnce(Response.json({ items: [late, { ...item, id: toWorkItemId("task.0003"), scores: undefined }], pageInfo: { hasMore: false, endCursor: null } }));
+    try {
+      const all = await fetchWorkItems();
+      expect(all.items.map(row => row.id)).toEqual(["task.0001", "task.0002", "task.0003"]);
+      expect(all.items[1]?.rankScore).toBe(20);
+      expect(String(fetch.mock.calls[1]?.[0])).toContain("cursor=page-two");
+      expect(all.pageInfo?.hasMore).toBe(false);
+    } finally { fetch.mockRestore(); }
+  });
+  it("rejects a repeated cursor rather than exposing a silently truncated ranking", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ items: [item], pageInfo: { hasMore: true, endCursor: "same" } }));
+    // Each request receives its own response body.
+    fetch.mockImplementation(async () => Response.json({ items: [item], pageInfo: { hasMore: true, endCursor: "same" } }));
+    try { await expect(fetchWorkItems()).rejects.toThrow("did not advance"); }
+    finally { fetch.mockRestore(); }
+  });
+});
+
+
+describe("cross-bundle HTTP error identity", () => {
+  it("preserves the nonretryable unknown-write receipt rather than converting it to busy", async () => {
+    const source = new AdapterUnknownError("operation-1", "work-item-op/operation-1", "commit-1", item.id);
+    backend.patch.mockRejectedValueOnce(source);
+    let caught: unknown;
+    try { await patchWorkItem({ id: item.id, set: { scores: item.scores } }, { id: "actor" }); }
+    catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(WorkItemWriteOutcomeUnknownError);
+    expect(caught).toMatchObject({ code: "work_item_write_outcome_unknown", retryable: false, receipt: source.receipt });
+  });
+  it("retains invalid-score issues in the facade identity used by the HTTP400 mapping", async () => {
+    const issues = [{ code: "invalid_value", path: ["goal", "v"], message: "integer required" }];
+    backend.patch.mockRejectedValueOnce(new AdapterScoresError(issues));
+    await expect(patchWorkItem({ id: item.id, set: { scores: item.scores } }, { id: "actor" }))
+      .rejects.toBeInstanceOf(WorkItemScoresInvalidError);
   });
 });
