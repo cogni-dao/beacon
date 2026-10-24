@@ -24,7 +24,10 @@ import {
   patchWorkItem,
   WorkItemForbiddenError,
   WorkItemNotFoundError,
+  WorkItemRevisionConflictError,
   WorkItemsBackendNotReadyError,
+  WorkItemWriteOutcomeUnknownError,
+  WorkItemScoresInvalidError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
@@ -49,6 +52,12 @@ export const GET = wrapRouteHandlerWithLogging<{
     try {
       item = await getWorkItem(id);
     } catch (e) {
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
+      }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
       }
@@ -128,6 +137,9 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       if (e instanceof WorkItemNotFoundError) {
         return NextResponse.json({ error: e.message }, { status: 404 });
       }
+      if (e instanceof WorkItemRevisionConflictError) {
+        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
+      }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
       }
@@ -136,6 +148,12 @@ export const PATCH = wrapRouteHandlerWithLogging<{
           { error: e.message, errorCode: e.errorCode, action: e.action },
           { status: e.status }
         );
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
@@ -187,8 +205,17 @@ export const DELETE = wrapRouteHandlerWithLogging<{
         workItemsDeleteOperation.output.parse({ id, deleted: true })
       );
     } catch (e) {
+      if (e instanceof WorkItemRevisionConflictError) {
+        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
+      }
       if (e instanceof WorkItemForbiddenError) {
         return NextResponse.json({ error: e.message }, { status: 403 });
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });

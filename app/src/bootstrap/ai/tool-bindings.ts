@@ -24,16 +24,13 @@ import type {
   ToolImplementation,
   VcsCapability,
   WebSearchCapability,
-  WorkItemCapability,
 } from "@cogni/ai-tools";
 import {
   BROADCAST_POST_NAME,
   createBroadcastPostImplementation,
-  createEdoDecideImplementation,
   createEdoHypothesizeImplementation,
   createEdoRecordOutcomeImplementation,
   createKnowledgeReadImplementation,
-  createKnowledgeSearchImplementation,
   createKnowledgeWriteImplementation,
   createMetricsQueryImplementation,
   createRepoListImplementation,
@@ -47,13 +44,10 @@ import {
   createVcsListPrsImplementation,
   createVcsMergePrImplementation,
   createWebSearchImplementation,
-  createWorkItemQueryImplementation,
-  createWorkItemTransitionImplementation,
   EDO_DECIDE_NAME,
   EDO_HYPOTHESIZE_NAME,
   EDO_RECORD_OUTCOME_NAME,
   GET_CURRENT_TIME_NAME,
-  getCurrentTimeImplementation,
   KNOWLEDGE_READ_NAME,
   KNOWLEDGE_SEARCH_NAME,
   KNOWLEDGE_WRITE_NAME,
@@ -73,6 +67,17 @@ import {
   WORK_ITEM_TRANSITION_NAME,
 } from "@cogni/ai-tools";
 
+import {
+  createEdoDecideImplementation,
+  createGoalListImplementation,
+  createKnowledgeSearchImplementation,
+  createWorkItemQueryImplementation,
+  createWorkItemTransitionImplementation,
+  GOAL_LIST_NAME,
+  getCurrentTimeImplementation,
+  type WorkItemCapability,
+} from "@cogni/shared-ai-tools";
+
 /**
  * Dependencies required to create tool bindings.
  * These are resolved from the container at bootstrap time.
@@ -87,6 +92,7 @@ export interface ToolBindingDeps {
   readonly scheduleCapability: ScheduleCapability;
   readonly vcsCapability: VcsCapability;
   readonly workItemCapability: WorkItemCapability;
+  readonly nodePublicOrigin?: string | undefined;
 }
 
 /**
@@ -114,6 +120,10 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
   // cast to the base type. This is safe because contractToRuntime validates
   // at runtime via Zod schemas.
   return {
+    [GOAL_LIST_NAME]: createGoalListImplementation({
+      knowledgeCapability: deps.knowledgeCapability,
+      nodePublicOrigin: deps.nodePublicOrigin,
+    }) as AnyToolImplementation,
     // Pure tools (no I/O dependencies)
     [GET_CURRENT_TIME_NAME]:
       getCurrentTimeImplementation as AnyToolImplementation,
@@ -126,6 +136,7 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
 
     // Knowledge tools (Doltgres-backed knowledge store)
     [KNOWLEDGE_SEARCH_NAME]: createKnowledgeSearchImplementation({
+      nodePublicOrigin: deps.nodePublicOrigin,
       knowledgeCapability: deps.knowledgeCapability,
     }) as AnyToolImplementation,
     [KNOWLEDGE_READ_NAME]: createKnowledgeReadImplementation({
@@ -197,6 +208,7 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
     }) as AnyToolImplementation,
 
     [WORK_ITEM_QUERY_NAME]: createWorkItemQueryImplementation({
+      nodePublicOrigin: deps.nodePublicOrigin,
       workItemCapability: deps.workItemCapability,
     }) as AnyToolImplementation,
 

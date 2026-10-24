@@ -12,6 +12,9 @@
  * @public
  */
 
+import { DoltgresWorkItemAdapter as LegacyWorkItemAdapter } from "@cogni/legacy-work-items/adapters/doltgres";
+import { composeEvaluationWorkItems } from "./evaluation-work-items";
+import { getExecutionScope } from "@/adapters/server";
 import type { ToolSourcePort } from "@cogni/ai-core";
 import type {
   BroadcastCapability,
@@ -23,7 +26,7 @@ import type {
   WebSearchCapability,
   XInsightsCapability,
 } from "@cogni/ai-tools";
-import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
+import { BEACON_CORE_TOOL_BUNDLE as CORE_TOOL_BUNDLE } from "./ai/evaluation-baseline";
 import type { AttributionStore } from "@cogni/attribution-ledger";
 import {
   createDefaultRegistries,
@@ -728,6 +731,12 @@ function createContainer(): Container {
   const workItemCapability = createWorkItemCapability({
     workItemQuery: workItemAdapter,
     workItemCommand: workItemAdapter,
+    liveStore: () => doltgresWorkItems,
+    getActorId: () => {
+      const actor = getExecutionScope().actorUserId;
+      if (!actor) throw new Error("Work item write requires authenticated actorUserId");
+      return actor;
+    },
     // QUERY_READS_THE_LIVE_BACKLOG: the AI query tool (and the prioritizer) reads
     // this node's Doltgres work items; `doltgresWorkItems` is assigned below and
     // read only at call time.
@@ -772,10 +781,22 @@ function createContainer(): Container {
     const workItemsClient = createWorkItemsClient();
     // Node stores start their allocator at 1; operator alone reserves the
     // imported legacy range below 5000.
-    doltgresWorkItems = new DoltgresWorkItemAdapter(workItemsClient, {
+    const content = new DoltgresWorkItemAdapter(workItemsClient, {
+      writerLockProtocol: "bridge",
       logger: log,
       recreateClient: createWorkItemsClient,
     });
+    // Independent bounded sessions; both published writers acquire legacy5001001.
+    const createLegacyClient = () => buildDoltgresClient({
+      connectionString: env.DOLTGRES_URL as string,
+      applicationName: `cogni_work_item_leases_${env.SERVICE_NAME ?? "app"}`,
+      max: 1,
+    });
+    const legacy = new LegacyWorkItemAdapter(createLegacyClient(), {
+      logger: log,
+      recreateClient: createLegacyClient,
+    });
+    doltgresWorkItems = composeEvaluationWorkItems(content, legacy);
     const knowledgePort = new DoltgresKnowledgeStoreAdapter({
       sql: doltClient,
     });
@@ -875,6 +896,7 @@ function createContainer(): Container {
     scheduleCapability,
     vcsCapability: stubVcsCapability,
     workItemCapability,
+    nodePublicOrigin: env.APP_BASE_URL,
   });
   const toolSource = createBoundToolSource([...CORE_TOOL_BUNDLE], toolBindings);
 

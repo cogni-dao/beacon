@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { WorkItemScoresSchema } from "./work.items.scores";
 
 import { WorkItemDtoSchema } from "./work.items.list.v1.contract";
 
@@ -61,6 +62,7 @@ export const workItemsCreateOperation = {
     priority: z.number().int().min(0).max(99).optional(),
     rank: z.number().int().optional(),
     estimate: z.number().int().optional(),
+    scores: WorkItemScoresSchema.optional(),
     labels: z.array(z.string()).optional(),
     specRefs: z.array(z.string()).optional(),
     assignees: z.array(SubjectRefSchema).optional(),

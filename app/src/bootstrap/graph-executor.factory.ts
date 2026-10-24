@@ -20,8 +20,9 @@
  * @public
  */
 
+import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
 import type { SourceSystem, ToolSourcePort } from "@cogni/ai-core";
-import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
+import { BEACON_CORE_TOOL_BUNDLE as CORE_TOOL_BUNDLE } from "./ai/evaluation-baseline";
 import type {
   ExecutionContext,
   GraphFinal,
@@ -38,7 +39,6 @@ import {
 } from "@cogni/graph-execution-host";
 import type { UserId } from "@cogni/ids";
 import {
-  LANGGRAPH_CATALOG,
   loadMcpTools,
   McpToolSource,
   parseMcpConfigFromEnv,

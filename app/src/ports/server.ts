@@ -66,7 +66,9 @@ export {
 // this port to its own knowledge_<slug> store.
 export type {
   WorkItemsCreateInput,
-  WorkItemsDoltgresPort,
   WorkItemsPatchInput,
   WorkItemsPatchSet,
 } from "@cogni/work-items/adapters/doltgres";
+
+// Node-owned v1 lease/DELETE compatibility while shared content advances.
+export type { EvaluationWorkItemsPort as WorkItemsDoltgresPort } from "./work-items";

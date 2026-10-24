@@ -18,6 +18,7 @@
  * @internal
  */
 
+import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
 import type { AiEvent, BoundToolRuntime, ToolSourcePort } from "@cogni/ai-core";
 import {
   createStaticToolSourceFromRecord,
@@ -31,7 +32,6 @@ import {
   createInProcGraphRunner,
   type GraphResult,
   type InProcGraphRequest,
-  LANGGRAPH_CATALOG,
   type ToolExecFn,
 } from "@cogni/langgraph-graphs";
 import { trace } from "@opentelemetry/api";

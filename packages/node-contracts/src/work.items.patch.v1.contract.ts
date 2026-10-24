@@ -16,6 +16,7 @@
  */
 
 import { z } from "zod";
+import { WorkItemScoresSchema } from "./work.items.scores";
 
 import { WorkItemDtoSchema } from "./work.items.list.v1.contract";
 
@@ -38,6 +39,7 @@ export const workItemsPatchOperation = {
     "Updates a subset of fields on a work item. Whitelisted fields only — id, created_at, updated_at are server-managed.",
   input: z.object({
     id: z.string(),
+    expectedRevision: z.number().int().nonnegative().optional(),
     set: z
       .strictObject({
         title: z.string().min(1).max(500).optional(),
@@ -47,6 +49,7 @@ export const workItemsPatchOperation = {
         priority: z.number().int().min(0).max(99).optional(),
         rank: z.number().int().optional(),
         estimate: z.number().int().optional(),
+        scores: WorkItemScoresSchema.nullable().optional(),
         labels: z.array(z.string()).optional(),
         specRefs: z.array(z.string()).optional(),
         branch: z.string().optional(),
