@@ -49,7 +49,7 @@ System setup installers were moved to `scripts/bootstrap/` and are out of scope 
 - **Exports:**
   - `verifySystemTenant(serviceAccountService)` - Startup healthcheck: fails fast if cogni_system billing account missing (per SYSTEM_TENANT_STARTUP_CHECK)
   - `runGovernanceSchedulesSyncJob()` - Job: advisory lock + governance schedule sync via container
-  - `getContainer()` - Singleton DI container with logger and config
+  - `getContainer()` - Singleton DI container with logger and config; `scheduleRunReader` uses shared scheduling on the existing app-role `db.$client`
   - `resetContainer()` - Reset singleton (tests only)
   - `Container` interface - Ports + logger + config (includes accountsForUser(userId), serviceAccountService, metricsQuery, metricsCapability, repoCapability, toolSource, threadPersistenceForUser(userId), modelCatalog, providerResolver; no usageService)
   - `ContainerConfig` interface - Runtime config (unhandledErrorPolicy, rateLimitBypass, DEPLOY_ENVIRONMENT)

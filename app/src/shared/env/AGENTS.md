@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Owners:** @derekg1729
-- **Last reviewed:** 2026-09-15
+- **Last reviewed:** 2026-10-26
 - **Status:** draft
 
 ## Purpose
@@ -69,6 +69,7 @@ Unified serverEnv() provides all vars:
 - DEPLOY_ENVIRONMENT - deployment env label for metrics and analytics filtering
 - DATABASE_URL (required, app_user role with RLS enforced)
 - DATABASE_SERVICE_URL (required, app_service role with BYPASSRLS)
+- DB_POOL_MAX (positive safe integer, default 1; per-process app-role pool)
 - LITELLM_BASE_URL (url, auto-detects: localhost:4000 for dev, litellm:4000 for production)
 - LITELLM_MASTER_KEY
 - PORT (default 3000)

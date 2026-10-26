@@ -137,6 +137,9 @@ importers:
       '@cogni/scheduler-core':
         specifier: workspace:*
         version: link:../packages/scheduler-core
+      '@cogni/scheduling':
+        specifier: https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz
+        version: '@cogni-dao/scheduling@https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz(postgres@3.4.9)'
       '@cogni/shared-ai-tools':
         specifier: https://github.com/cogni-dao/node-template/releases/download/ai-tools-v0.1.1/cogni-dao-ai-tools-0.1.1.tgz
         version: '@cogni-dao/ai-tools@https://github.com/cogni-dao/node-template/releases/download/ai-tools-v0.1.1/cogni-dao-ai-tools-0.1.1.tgz(@cogni/ai-core@packages+ai-core)'
@@ -1285,6 +1288,15 @@ packages:
     peerDependencies:
       '@cogni/ai-core': '*'
       '@cogni/ai-tools': '>=0.1.1'
+
+  '@cogni-dao/scheduling@https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz':
+    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz}
+    version: 0.1.0
+    peerDependencies:
+      postgres: ^3.4.5
+    peerDependenciesMeta:
+      postgres:
+        optional: true
 
   '@cogni-dao/work-items@https://github.com/cogni-dao/node-template/releases/download/work-items-v0.1.8/cogni-dao-work-items-0.1.8.tgz':
     resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/work-items-v0.1.8/cogni-dao-work-items-0.1.8.tgz}
@@ -9529,6 +9541,12 @@ snapshots:
       - vue
       - ws
       - zod-to-json-schema
+
+  '@cogni-dao/scheduling@https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz(postgres@3.4.9)':
+    dependencies:
+      zod: 4.4.3
+    optionalDependencies:
+      postgres: 3.4.9
 
   '@cogni-dao/work-items@https://github.com/cogni-dao/node-template/releases/download/work-items-v0.1.8/cogni-dao-work-items-0.1.8.tgz':
     dependencies:

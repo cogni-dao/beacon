@@ -96,6 +96,13 @@ export const serverSchema = z.object({
   DATABASE_URL: z.string().url(),
   // app_service role (BYPASSRLS) — used by auth, workers, bootstrap
   DATABASE_SERVICE_URL: z.string().url(),
+  // Per-process pools; shared-role budgets include every process and rollout overlap.
+  DB_POOL_MAX: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(1),
 
   // NextAuth secret (required for JWT signing)
   AUTH_SECRET: z.string().min(32),

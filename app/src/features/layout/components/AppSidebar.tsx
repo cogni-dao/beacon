@@ -16,6 +16,7 @@
 import {
   BookOpen,
   Briefcase,
+  CalendarClock,
   CreditCard,
   Github,
   LayoutDashboard,
@@ -46,6 +47,7 @@ import { ChatThreadsSidebarGroup } from "@/features/ai/chat/components/ChatThrea
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/work", label: "Work", icon: Briefcase },
+  { href: "/schedules", label: "Schedules", icon: CalendarClock },
   { href: "/growth", label: "Growth", icon: TrendingUp },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/gov", label: "Gov", icon: Vote },

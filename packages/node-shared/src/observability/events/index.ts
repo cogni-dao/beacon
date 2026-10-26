@@ -17,6 +17,9 @@
 // ============================================================================
 
 export const EVENT_NAMES = {
+  SCHEDULE_DETAIL_READ: "schedules.detail_read",
+  SCHEDULE_HISTORY_READ: "schedules.history_read",
+  AI_THREAD_READ: "ai.thread_read",
   // AI Domain - Server
   AI_COMPLETION: "ai.completion",
   AI_LLM_CALL: "ai.llm_call",

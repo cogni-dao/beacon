@@ -41,7 +41,7 @@ Database client factory and Drizzle adapter implementations for scheduling and l
 ## Public Surface
 
 - **Exports (root `@cogni/db-client`):**
-  - `createAppDbClient(url)` — client factory for `app_user` role (RLS enforced)
+  - `createAppDbClient(url, options?)` — client factory for `app_user` role (RLS enforced)
   - `withTenantScope(db, actorId, fn)` — transaction wrapper setting RLS context
   - `setTenantContext(tx, actorId)` — sets RLS context in existing transaction
   - `Database`, `LoggerLike` — Drizzle client type (includes `$client: Sql` for pool control) and logger interface
@@ -97,3 +97,7 @@ pnpm --filter @cogni/db-client build
 - `createServiceDbClient` is isolated in `./service` sub-path; root barrel does NOT re-export it
 - `Database` type is `ReturnType<typeof buildClient>` — preserves drizzle's `$client` accessor for `reserve()`, `begin()`, etc.
 - `Database` type lives in root only — not exported from `./service`
+
+Pool options inject a positive integer `max` and optional `applicationName`. Generic defaults remain 10; owning runtimes choose their aggregate role budgets.
+
+Last reviewed: 2026-10-26 (task.5356; app-role-only port of Red PR34; bug.5541).
