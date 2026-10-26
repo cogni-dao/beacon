@@ -70,7 +70,6 @@ Unified serverEnv() provides all vars:
 - DATABASE_URL (required, app_user role with RLS enforced)
 - DATABASE_SERVICE_URL (required, app_service role with BYPASSRLS)
 - DB_POOL_MAX (positive safe integer, default 1; per-process app-role pool)
-- DB_SERVICE_POOL_MAX (safe integer >=2, default 2; preserves reserved-connection progress)
 - LITELLM_BASE_URL (url, auto-detects: localhost:4000 for dev, litellm:4000 for production)
 - LITELLM_MASTER_KEY
 - PORT (default 3000)

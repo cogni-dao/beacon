@@ -103,13 +103,6 @@ export const serverSchema = z.object({
     .min(1)
     .max(Number.MAX_SAFE_INTEGER)
     .default(1),
-  // Governance sync reserves one connection while querying through the same pool.
-  DB_SERVICE_POOL_MAX: z.coerce
-    .number()
-    .int()
-    .min(2)
-    .max(Number.MAX_SAFE_INTEGER)
-    .default(2),
 
   // NextAuth secret (required for JWT signing)
   AUTH_SECRET: z.string().min(32),

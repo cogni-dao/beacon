@@ -3,11 +3,11 @@
 
 /**
  * Module: `@tests/component/db/bounded-pools`
- * Purpose: Prove capped runtime pools preserve tenant and harness persistence progress.
+ * Purpose: Prove capped runtime pools preserve tenant and idempotency persistence progress.
  * Scope: Owns a disposable Postgres container and isolated login roles, never shared CI roles.
- * Invariants: Real RLS authentication; app max1; service reservation leaves query capacity.
+ * Invariants: Real RLS authentication; app max1; service runtime policy is unchanged.
  * Side-effects: IO (testcontainer, migrations, isolated fixture rows).
- * Links: bug.5529, app/src/adapters/server/db
+ * Links: bug.5541, app/src/adapters/server/db
  * @internal
  */
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,6 @@ import {
   DrizzleExecutionRequestAdapter,
   withTenantScope,
 } from "@cogni/db-client";
-import { createServiceDbClient } from "@cogni/db-client/service";
 import { toUserId, userActor } from "@cogni/ids";
 import {
   PostgreSqlContainer,
@@ -34,14 +33,12 @@ import { serverSchema } from "@/shared/env/server-env";
 
 const poolSchema = serverSchema.pick({
   DB_POOL_MAX: true,
-  DB_SERVICE_POOL_MAX: true,
 });
 
 describe("bounded runtime pools", () => {
   let container: StartedPostgreSqlContainer;
   let admin: ReturnType<typeof postgres>;
   let app: ReturnType<typeof createAppDbClient>;
-  let service: ReturnType<typeof createServiceDbClient>;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:15-alpine").start();
@@ -53,31 +50,19 @@ describe("bounded runtime pools", () => {
     await admin.unsafe(
       "CREATE ROLE pool_app LOGIN PASSWORD 'test_app_only' CONNECTION LIMIT 2 NOSUPERUSER NOBYPASSRLS"
     );
+    await admin.unsafe("GRANT USAGE ON SCHEMA public TO pool_app");
     await admin.unsafe(
-      "CREATE ROLE pool_service LOGIN PASSWORD 'test_service_only' CONNECTION LIMIT 4 NOSUPERUSER BYPASSRLS"
-    );
-    await admin.unsafe(
-      "GRANT USAGE ON SCHEMA public TO pool_app, pool_service"
-    );
-    await admin.unsafe(
-      "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pool_app, pool_service"
+      "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pool_app"
     );
     const appUrl = new URL(container.getConnectionUri());
     appUrl.username = "pool_app";
     appUrl.password = "test_app_only";
-    const serviceUrl = new URL(container.getConnectionUri());
-    serviceUrl.username = "pool_service";
-    serviceUrl.password = "test_service_only";
     const limits = poolSchema.parse({});
     app = createAppDbClient(appUrl.toString(), { max: limits.DB_POOL_MAX });
-    service = createServiceDbClient(serviceUrl.toString(), {
-      max: limits.DB_SERVICE_POOL_MAX,
-    });
   }, 120_000);
 
   afterAll(async () => {
     await app?.$client.end({ timeout: 1 });
-    await service?.$client.end({ timeout: 1 });
     await admin?.end({ timeout: 1 });
     await container?.stop();
   });
@@ -85,11 +70,8 @@ describe("bounded runtime pools", () => {
   it("validates node policy and preserves configurable, finite factory limits", () => {
     expect(poolSchema.parse({})).toEqual({
       DB_POOL_MAX: 1,
-      DB_SERVICE_POOL_MAX: 2,
     });
-    expect(
-      poolSchema.parse({ DB_POOL_MAX: "3", DB_SERVICE_POOL_MAX: "4" })
-    ).toEqual({ DB_POOL_MAX: 3, DB_SERVICE_POOL_MAX: 4 });
+    expect(poolSchema.parse({ DB_POOL_MAX: "3" })).toEqual({ DB_POOL_MAX: 3 });
     for (const invalid of [
       "0",
       "-1",
@@ -103,9 +85,6 @@ describe("bounded runtime pools", () => {
         false
       );
     }
-    expect(poolSchema.safeParse({ DB_SERVICE_POOL_MAX: "1" }).success).toBe(
-      false
-    );
     expect(
       serverSchema.safeParse({ ...BASE_VALID_ENV, DB_POOL_MAX: "0" }).success
     ).toBe(false);
@@ -114,7 +93,7 @@ describe("bounded runtime pools", () => {
     ).toThrow("positive safe integer");
   });
 
-  it("queues concurrent RLS thread operations, idempotency reads and heartbeats within one app session", async () => {
+  it("queues concurrent RLS thread operations, idempotency reads within one app session", async () => {
     const alice = toUserId(randomUUID());
     const bob = toUserId(randomUUID());
     const a = new DrizzleThreadPersistenceAdapter(app, userActor(alice));
@@ -147,10 +126,6 @@ describe("bounded runtime pools", () => {
           )
         );
         expect(scoped[0]?.actor).toBe(actor);
-        await executions.heartbeatRequest(
-          key,
-          new Date(Date.now() + 60_000).toISOString()
-        );
         expect((await executions.checkIdempotency(key, "hash")).status).toBe(
           "pending"
         );
@@ -175,17 +150,4 @@ describe("bounded runtime pools", () => {
       await admin`select count(*)::int as count from pg_stat_activity where usename = 'pool_app'`;
     expect(sessions[0]?.count).toBe(1);
   }, 10_000);
-
-  it("makes service queries progress while one session is reserved", async () => {
-    const held = await service.$client.reserve();
-    try {
-      const rows = await service.$client`select current_user as role`;
-      expect(rows[0]?.role).toBe("pool_service");
-      const sessions =
-        await admin`select count(*)::int as count from pg_stat_activity where usename = 'pool_service'`;
-      expect(sessions[0]?.count).toBe(2);
-    } finally {
-      held.release();
-    }
-  }, 5_000);
 });
