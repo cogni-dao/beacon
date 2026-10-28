@@ -279,66 +279,72 @@ async function fileFindingAndRule(args: {
   } = args;
 
   const findingId = `finding:perf:${campaignId}`;
-  if (!(await store.knowledgeExists(findingId))) {
-    await store.addKnowledge({
-      id: findingId,
-      domain: DOMAIN_POST_PERFORMANCE,
-      title: `Campaign ${campaignId} engagement ${score}/100 (${edge})`,
-      content: `Independent KPI for campaign '${campaignId}': score ${score}/100, observed rate ${observedRate.toFixed(
-        4
-      )} (${basis}) over ${snapshotCount} snapshot(s). Derived solely from cached post_metrics (broadcast ground-truth).`,
-      entryType: "finding",
-      sourceType: "analysis_signal",
-      // sourceRef points at the broadcast plane that produced the ground-truth.
-      sourceRef: `broadcast:campaign:${campaignId}`,
-      tags: ["growth-loop", "engagement", basis],
-      confidencePct: null,
-    });
+  // bug.5544 write contract: one logical write + its commit stay in a single
+  // `withWrite` scope; the retired bare `commit()` now fails closed.
+  await store.withWrite(
+    {
+      operationId: `growth.resolve-engagement:${campaignId}:${edge}`,
+      message: `growth: file ${DOMAIN_POST_PERFORMANCE} finding for campaign ${campaignId} (${edge})`,
+    },
+    async (write) => {
+      if (!(await write.knowledgeExists(findingId))) {
+        await write.addKnowledge({
+          id: findingId,
+          domain: DOMAIN_POST_PERFORMANCE,
+          title: `Campaign ${campaignId} engagement ${score}/100 (${edge})`,
+          content: `Independent KPI for campaign '${campaignId}': score ${score}/100, observed rate ${observedRate.toFixed(
+            4
+          )} (${basis}) over ${snapshotCount} snapshot(s). Derived solely from cached post_metrics (broadcast ground-truth).`,
+          entryType: "finding",
+          sourceType: "analysis_signal",
+          // sourceRef points at the broadcast plane that produced the ground-truth.
+          sourceRef: `broadcast:campaign:${campaignId}`,
+          tags: ["growth-loop", "engagement", basis],
+          confidencePct: null,
+        });
 
-    // op:cite — evidence_for edge from the finding to the campaign hypothesis.
-    await store.addCitation({
-      citingId: findingId,
-      citedId: hypothesisId,
-      citationType: "evidence_for",
-      context: `engagement KPI ${score}/100 (${edge}) from cached post_metrics`,
-    });
-  }
+        // op:cite — evidence_for edge from the finding to the campaign hypothesis.
+        await write.addCitation({
+          citingId: findingId,
+          citedId: hypothesisId,
+          citationType: "evidence_for",
+          context: `engagement KPI ${score}/100 (${edge}) from cached post_metrics`,
+        });
+      }
 
-  // On validation, distill/update a durable brand-voice rule.
-  if (edge === "validates") {
-    const ruleId = `rule:brand-voice:${campaignId}`;
-    if (await store.knowledgeExists(ruleId)) {
-      await store.updateKnowledge(ruleId, {
-        content: `Validated angle for campaign '${campaignId}': hit the engagement target (KPI ${score}/100, rate ${observedRate.toFixed(
-          4
-        )} via ${basis}). Reuse this angle/hook/format for the audience+channel.`,
-      });
-    } else {
-      await store.addKnowledge({
-        id: ruleId,
-        domain: DOMAIN_BRAND_VOICE,
-        title: `Winning angle — campaign ${campaignId}`,
-        content: `Validated angle for campaign '${campaignId}': hit the engagement target (KPI ${score}/100, rate ${observedRate.toFixed(
-          4
-        )} via ${basis}). Reuse this angle/hook/format for the audience+channel.`,
-        entryType: "rule",
-        sourceType: "derived",
-        sourceRef: `campaign:${campaignId}`,
-        tags: ["growth-loop", "brand-voice", "validated"],
-        confidencePct: null,
-      });
+      // On validation, distill/update a durable brand-voice rule.
+      if (edge === "validates") {
+        const ruleId = `rule:brand-voice:${campaignId}`;
+        if (await write.knowledgeExists(ruleId)) {
+          await write.updateKnowledge(ruleId, {
+            content: `Validated angle for campaign '${campaignId}': hit the engagement target (KPI ${score}/100, rate ${observedRate.toFixed(
+              4
+            )} via ${basis}). Reuse this angle/hook/format for the audience+channel.`,
+          });
+        } else {
+          await write.addKnowledge({
+            id: ruleId,
+            domain: DOMAIN_BRAND_VOICE,
+            title: `Winning angle — campaign ${campaignId}`,
+            content: `Validated angle for campaign '${campaignId}': hit the engagement target (KPI ${score}/100, rate ${observedRate.toFixed(
+              4
+            )} via ${basis}). Reuse this angle/hook/format for the audience+channel.`,
+            entryType: "rule",
+            sourceType: "derived",
+            sourceRef: `campaign:${campaignId}`,
+            tags: ["growth-loop", "brand-voice", "validated"],
+            confidencePct: null,
+          });
+        }
+        // The brand-voice rule supports the campaign hypothesis (op:cite). Guard
+        // with the deterministic edge id so re-runs are no-ops.
+        await write.addCitation({
+          citingId: ruleId,
+          citedId: hypothesisId,
+          citationType: "supports",
+          context: `distilled brand-voice rule from validated campaign ${campaignId}`,
+        });
+      }
     }
-    // The brand-voice rule supports the campaign hypothesis (op:cite). Guard
-    // with the deterministic edge id so re-runs are no-ops.
-    await store.addCitation({
-      citingId: ruleId,
-      citedId: hypothesisId,
-      citationType: "supports",
-      context: `distilled brand-voice rule from validated campaign ${campaignId}`,
-    });
-  }
-
-  await store.commit(
-    `growth: file ${DOMAIN_POST_PERFORMANCE} finding for campaign ${campaignId} (${edge})`
   );
 }
