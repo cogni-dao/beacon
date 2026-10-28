@@ -59,6 +59,7 @@ import {
 import {
   buildDoltgresClient,
   createDoltgresPusher,
+  DoltBranchSessionRunner,
   DoltgresEdoResolverAdapter,
   DoltgresKnowledgeContributionAdapter,
   DoltgresKnowledgeStoreAdapter,
@@ -802,8 +803,30 @@ function createContainer(): Container {
       recreateClient: createLegacyClient,
     });
     doltgresWorkItems = composeEvaluationWorkItems(content, legacy);
+    const createKnowledgeBranchClient = () =>
+      buildDoltgresClient({
+        connectionString: env.DOLTGRES_URL as string,
+        applicationName: `cogni_knowledge_branch_${env.SERVICE_NAME ?? "app"}`,
+        max: 1,
+      });
+    // Branch work gets its own `max: 1` client, deliberately NOT the pool that
+    // serves reads. Dolt branch ops need a session-pinned connection; bounding
+    // them above the pool (FIFO + advisory lock, see `DoltBranchSessionRunner`)
+    // is what keeps a burst of admin rejects from burning every slot — and
+    // keeping them off the read pool is what keeps knowledge reads alive while
+    // a write is degraded (bug.5391, bug.5358). Carries the bug.5544 evict-and-
+    // replace fix via @cogni-dao/doltgres-admission bundled in knowledge-store.
+    const knowledgeWriter = new DoltBranchSessionRunner(
+      createKnowledgeBranchClient(),
+      {
+        writerProtocol: "database",
+        logger: log,
+        recreateClient: createKnowledgeBranchClient,
+      }
+    );
     const knowledgePort = new DoltgresKnowledgeStoreAdapter({
       sql: doltClient,
+      writerSession: knowledgeWriter,
     });
     knowledgeStorePort = knowledgePort;
     knowledgeCapability = createKnowledgeCapability(knowledgePort);
@@ -815,6 +838,8 @@ function createContainer(): Container {
     edoCapability = createEdoCapability(knowledgePort, doltgresEdoResolver);
     const contributionPort = new DoltgresKnowledgeContributionAdapter({
       sql: doltClient,
+      writerSession: knowledgeWriter,
+      logger: log,
     });
     // Optional post-merge mirror to DoltHub (task.5069). Disabled when
     // DOLTHUB_REMOTE_URL is unset. Gate-by-secret-presence follows the
