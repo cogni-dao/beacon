@@ -23,6 +23,9 @@ export const EVENT_NAMES = {
   GROWTH_CAMPAIGN_POST_UPDATE_COMPLETE: "growth.campaign.post_update.complete",
   GROWTH_CAMPAIGN_PUBLISH_APPROVED_COMPLETE:
     "growth.campaign.publish_approved.complete",
+  // /admin/payments money-plane snapshot: one terminal event per page read
+  // (outcome success|error, durationMs, worst grade, per-plane grade enums).
+  MONEY_PLANE_SNAPSHOT: "money_plane.snapshot",
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];

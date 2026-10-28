@@ -48,6 +48,7 @@ Next.js App Router delivery layer. UI pages and API routes that expose features 
   - `api`: Versioned JSON APIs (v1, v2, etc.)
 - **Routes (if any):**
   - Public pages: `/` (homepage via `(public)/page.tsx`)
+  - Development-only: `/dev/finance-preview` — actual Financials/shell fixture preview; production/test → 404; isolated disabled treasury query cache
   - Protected pages: `/chat` (via `(app)/chat/page.tsx`)
   - Infra: `/health`, `/openapi.json`, `/meta/route-manifest` (via `(infra)/*`)
   - API: `/api/auth/*`, `/api/v1/chat/completions`
