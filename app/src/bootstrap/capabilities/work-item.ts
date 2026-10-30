@@ -28,9 +28,11 @@ import type {
   WorkItemType,
 } from "@cogni/work-items";
 import {
+  isValidTransition,
   toWorkItemId,
   toWorkItemDto as toWorkItemInfo,
 } from "@cogni/work-items";
+import { InvalidTransitionError } from "@cogni/work-items/markdown";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
 /**
@@ -105,6 +107,17 @@ export function createWorkItemCapability(
       );
       if (!current) {
         throw new Error(`Work item not found: ${input.id}`);
+      }
+
+      if (
+        deps.liveStore &&
+        !isValidTransition(current.status, input.toStatus as WorkItemStatus)
+      ) {
+        throw new InvalidTransitionError(
+          current.id,
+          current.status,
+          input.toStatus as WorkItemStatus,
+        );
       }
 
       const updated = deps.liveStore

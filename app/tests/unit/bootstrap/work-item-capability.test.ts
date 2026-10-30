@@ -199,6 +199,66 @@ describe("published evaluation writer binding", () => {
     expect(result).toEqual(parsed);
   });
 
+  it.each([
+    ["done", "needs_design"],
+    ["cancelled", "needs_implement"],
+    ["needs_implement", "done"],
+  ] as const)(
+    "refuses live transition %s -> %s before patch",
+    async (from, to) => {
+      const patch = vi
+        .fn()
+        .mockResolvedValue({ ...item, status: to, revision: 8 });
+      const capability = createWorkItemCapability({
+        workItemQuery: {} as WorkItemQueryPort,
+        workItemCommand: {} as WorkItemCommandPort,
+        liveStore: () =>
+          ({
+            get: vi.fn().mockResolvedValue({ ...item, status: from }),
+            patch,
+          }) as unknown as EvaluationWorkItemsPort,
+        getActorId: () => "trusted-actor",
+      });
+      await expect(
+        capability.transitionStatus({ id: item.id, toStatus: to }),
+      ).rejects.toMatchObject({
+        name: "InvalidTransitionError",
+        itemId: item.id,
+        from,
+        to,
+      });
+      expect(patch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("live permitted transition retains current revision CAS and returns actual new revision", async () => {
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ ...item, status: "needs_closeout", revision: 8 });
+    const capability = createWorkItemCapability({
+      workItemQuery: {} as WorkItemQueryPort,
+      workItemCommand: {} as WorkItemCommandPort,
+      liveStore: () =>
+        ({
+          get: vi.fn().mockResolvedValue(item),
+          patch,
+        }) as unknown as EvaluationWorkItemsPort,
+      getActorId: () => "trusted-actor",
+    });
+    await expect(
+      capability.transitionStatus({ id: item.id, toStatus: "needs_closeout" }),
+    ).resolves.toEqual({
+      id: item.id,
+      previousStatus: "needs_implement",
+      newStatus: "needs_closeout",
+      revision: 8,
+    });
+    expect(patch).toHaveBeenCalledExactlyOnceWith(
+      { id: item.id, expectedRevision: 7, set: { status: "needs_closeout" } },
+      "trusted-actor",
+    );
+  });
+
   it("reads the current trusted actor at each call and forwards whole-score CAS without priority", async () => {
     let actor = "actor-a";
     const patch = vi.fn().mockResolvedValue({ ...item, scores, revision: 8 });
