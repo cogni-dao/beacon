@@ -12,11 +12,26 @@
  * @internal
  */
 
-import type { WorkItemCommandPort, WorkItemQueryPort } from "@cogni/work-items";
-import { toWorkItemId } from "@cogni/work-items";
+import {
+  createWorkItemQueryImplementation,
+  WorkItemQueryOutputSchema,
+  workItemQueryContract,
+} from "@cogni/shared-ai-tools";
+import type {
+  WorkItem,
+  WorkItemCommandPort,
+  WorkItemQueryPort,
+  WorkItemsContentPort,
+} from "@cogni/work-items";
+import { toWorkItemId, WorkItemDtoSchema } from "@cogni/work-items";
 import { describe, expect, it, vi } from "vitest";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
+import {
+  composeEvaluationWorkItems,
+  WorkItemNotFoundError,
+} from "@/bootstrap/evaluation-work-items";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
+import { makeLangChainTool } from "../../../../packages/langgraph-graphs/src/runtime/core/langchain-tools";
 
 const empty = { items: [], pageInfo: { endCursor: null, hasMore: false } };
 
@@ -77,6 +92,8 @@ describe("createWorkItemCapability", () => {
         title: "t",
         labels: [],
         assignees: [],
+        externalRefs: [],
+        specRefs: [],
       }),
     };
     const backlog = { list: vi.fn() };
@@ -99,6 +116,7 @@ describe("published evaluation writer binding", () => {
     id: toWorkItemId("task.0001"),
     type: "task" as const,
     title: "fixture",
+    outcome: "preserve complete read context",
     status: "needs_implement" as const,
     node: "beacon",
     actor: "either" as const,
@@ -120,6 +138,127 @@ describe("published evaluation writer binding", () => {
     confidence: { v: 3 },
     agent: { v: 2 },
   };
+  it("inherits every canonical read field and preserves filters, revision and trusted provenance through the installed wrapper", async () => {
+    const list = vi.fn().mockResolvedValue({
+      items: [{ ...item, sourceUrl: "https://untrusted.invalid/spoof" }],
+      nextCursor: "next-page",
+      pageInfo: { endCursor: "next-page", hasMore: true },
+    });
+    const capability = createWorkItemCapability({
+      workItemQuery: {} as WorkItemQueryPort,
+      workItemCommand: {} as WorkItemCommandPort,
+      liveStore: () => ({ list }) as unknown as EvaluationWorkItemsPort,
+    });
+    const implementation = createWorkItemQueryImplementation({
+      workItemCapability: capability,
+      nodePublicOrigin: "https://beacon.cognidao.org",
+    });
+    const output = await implementation.execute({
+      labels: ["adoption"],
+      labelPrefix: "fleet",
+      scored: false,
+      sortBy: "updatedAt",
+      sortDirection: "asc",
+      cursor: "previous-page",
+      limit: 1,
+    });
+    expect(list).toHaveBeenCalledWith({
+      labels: ["adoption"],
+      labelPrefix: "fleet",
+      scored: false,
+      sortBy: "updatedAt",
+      sortDirection: "asc",
+      cursor: "previous-page",
+      limit: 1,
+    });
+    const parsed = WorkItemQueryOutputSchema.parse(output);
+    expect(
+      Object.keys(WorkItemQueryOutputSchema.shape.items.element.shape),
+    ).toEqual(expect.arrayContaining(Object.keys(WorkItemDtoSchema.shape)));
+    expect(parsed.items[0]).toMatchObject({
+      revision: 7,
+      outcome: item.outcome,
+      createdAt: item.createdAt,
+      sourceUrl: "https://beacon.cognidao.org/work/items/task.0001",
+    });
+    expect(parsed.nextCursor).toBe("next-page");
+    const exec = vi.fn().mockResolvedValue({ ok: true, value: parsed });
+    const tool = makeLangChainTool({
+      contract: workItemQueryContract,
+      execResolver: () => exec,
+    });
+    const denied = JSON.parse(await tool.invoke({ limit: 1 }));
+    expect(denied.error).toBe("policy_denied");
+    expect(exec).not.toHaveBeenCalled();
+    const result = JSON.parse(
+      await tool.invoke(
+        { limit: 1 },
+        { configurable: { toolIds: [workItemQueryContract.name] } },
+      ),
+    );
+    expect(result).toEqual(parsed);
+  });
+
+  it.each([
+    ["done", "needs_design"],
+    ["cancelled", "needs_implement"],
+    ["needs_implement", "done"],
+  ] as const)(
+    "refuses live transition %s -> %s before patch",
+    async (from, to) => {
+      const patch = vi
+        .fn()
+        .mockResolvedValue({ ...item, status: to, revision: 8 });
+      const capability = createWorkItemCapability({
+        workItemQuery: {} as WorkItemQueryPort,
+        workItemCommand: {} as WorkItemCommandPort,
+        liveStore: () =>
+          ({
+            get: vi.fn().mockResolvedValue({ ...item, status: from }),
+            patch,
+          }) as unknown as EvaluationWorkItemsPort,
+        getActorId: () => "trusted-actor",
+      });
+      await expect(
+        capability.transitionStatus({ id: item.id, toStatus: to }),
+      ).rejects.toMatchObject({
+        name: "InvalidTransitionError",
+        itemId: item.id,
+        from,
+        to,
+      });
+      expect(patch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("live permitted transition retains current revision CAS and returns actual new revision", async () => {
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ ...item, status: "needs_closeout", revision: 8 });
+    const capability = createWorkItemCapability({
+      workItemQuery: {} as WorkItemQueryPort,
+      workItemCommand: {} as WorkItemCommandPort,
+      liveStore: () =>
+        ({
+          get: vi.fn().mockResolvedValue(item),
+          patch,
+        }) as unknown as EvaluationWorkItemsPort,
+      getActorId: () => "trusted-actor",
+    });
+    await expect(
+      capability.transitionStatus({ id: item.id, toStatus: "needs_closeout" }),
+    ).resolves.toEqual({
+      id: item.id,
+      previousStatus: "needs_implement",
+      newStatus: "needs_closeout",
+      revision: 8,
+    });
+    expect(patch).toHaveBeenCalledExactlyOnceWith(
+      { id: item.id, expectedRevision: 7, set: { status: "needs_closeout" } },
+      "trusted-actor",
+    );
+  });
+
   it("reads the current trusted actor at each call and forwards whole-score CAS without priority", async () => {
     let actor = "actor-a";
     const patch = vi.fn().mockResolvedValue({ ...item, scores, revision: 8 });
@@ -145,6 +284,9 @@ describe("published evaluation writer binding", () => {
     expect(result.scores).toEqual(scores);
     expect(result.rankScore).toBeTypeOf("number");
     expect(result.revision).toBe(8);
+    expect(result.createdAt).toBe(item.createdAt);
+    expect(result.externalRefs).toEqual(item.externalRefs);
+    expect(result.specRefs).toEqual(item.specRefs);
     actor = "actor-b";
     await capability.patch({
       id: item.id,
@@ -200,4 +342,106 @@ describe("published evaluation writer binding", () => {
       currentRevision: 8,
     });
   });
+});
+
+describe("legacy lease writes refresh canonical content", () => {
+  const id = toWorkItemId("task.0001");
+  const current: WorkItem = {
+    id,
+    type: "task",
+    title: "current content",
+    status: "needs_implement",
+    actor: "either",
+    assignees: [],
+    externalRefs: [],
+    labels: [],
+    specRefs: [],
+    revision: 42,
+    deployVerified: false,
+    createdAt: "2026-10-30",
+    updatedAt: "2026-10-30",
+    claimedByRun: "stale-content-claim",
+    claimedAt: "stale",
+    lastCommand: "stale",
+  };
+  it.each(["claim", "heartbeat", "release"] as const)(
+    "%s preserves legacy input/authority and returns only current revision with lease fields",
+    async (method) => {
+      const {
+        claimedByRun: _run,
+        claimedAt: _at,
+        lastCommand: _command,
+        ...legacyContent
+      } = current;
+      const lease = {
+        ...legacyContent,
+        title: "old lease content",
+        revision: undefined,
+        ...(method !== "release" && {
+          claimedByRun: "legacy-run",
+          claimedAt: "legacy-time",
+          lastCommand: "legacy-command",
+        }),
+      };
+      const write = vi.fn().mockResolvedValue(lease);
+      const get = vi.fn().mockResolvedValue(current);
+      const legacy = {
+        claim: write,
+        heartbeat: write,
+        release: write,
+        get: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      };
+      const port = composeEvaluationWorkItems(
+        { get } as unknown as WorkItemsContentPort,
+        legacy,
+      );
+      const input = {
+        id,
+        runId: "legacy-token",
+        principalId: "trusted-actor",
+        command: "existing-command",
+      };
+      const result = await port[method](input);
+      expect(write).toHaveBeenCalledWith(input);
+      expect(get).toHaveBeenCalledWith(id);
+      expect(result).toMatchObject({ title: current.title, revision: 42 });
+      expect(result.claimedByRun).toBe(lease.claimedByRun);
+      expect(result.claimedAt).toBe(lease.claimedAt);
+      expect(result.lastCommand).toBe(lease.lastCommand);
+    },
+  );
+  it.each(["claim", "heartbeat", "release"] as const)(
+    "%s refuses missing canonical content instead of returning the legacy row",
+    async (method) => {
+      const write = vi.fn().mockResolvedValue({
+        id,
+        title: "legacy only",
+        claimedByRun: "legacy-run",
+      });
+      const legacy = {
+        claim: write,
+        heartbeat: write,
+        release: write,
+        get: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      };
+      const port = composeEvaluationWorkItems(
+        {
+          get: vi.fn().mockResolvedValue(null),
+        } as unknown as WorkItemsContentPort,
+        legacy,
+      );
+      await expect(
+        port[method]({
+          id,
+          runId: "token",
+          principalId: "actor",
+          command: "command",
+        }),
+      ).rejects.toBeInstanceOf(WorkItemNotFoundError);
+    },
+  );
 });

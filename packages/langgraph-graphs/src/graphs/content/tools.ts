@@ -14,7 +14,7 @@
  * @public
  */
 
-import { BROADCAST_POST_NAME } from "@cogni/ai-tools";
+import { BROADCAST_POST_NAME } from "@cogni/beacon-ai-tools";
 
 /**
  * Tool IDs for the content graph.

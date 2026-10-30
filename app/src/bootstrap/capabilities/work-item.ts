@@ -22,14 +22,17 @@ import type {
 import { WorkItemPatchConflictError } from "@cogni/shared-ai-tools";
 import type {
   ActorKind,
-  SubjectRef,
-  WorkItem,
   WorkItemCommandPort,
   WorkItemQueryPort,
   WorkItemStatus,
   WorkItemType,
 } from "@cogni/work-items";
-import { rankScore, toWorkItemId } from "@cogni/work-items";
+import {
+  isValidTransition,
+  toWorkItemId,
+  toWorkItemDto as toWorkItemInfo,
+} from "@cogni/work-items";
+import { InvalidTransitionError } from "@cogni/work-items/markdown";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
 /**
@@ -49,42 +52,6 @@ export interface WorkItemCapabilityDeps {
   readonly backlogReader?: Pick<WorkItemQueryPort, "list">;
 }
 
-function assigneeId(a: SubjectRef): string {
-  switch (a.kind) {
-    case "user":
-      return a.userId;
-    case "agent":
-      return a.agentId;
-    case "system":
-      return a.serviceId;
-  }
-}
-
-function toWorkItemInfo(item: WorkItem): WorkItemInfo {
-  const computedRank = rankScore(item.scores);
-  return {
-    id: item.id,
-    type: item.type,
-    title: item.title,
-    status: item.status,
-    labels: [...item.labels],
-    assignees: item.assignees.map((a) => ({ kind: a.kind, id: assigneeId(a) })),
-    updatedAt: item.updatedAt,
-    ...(item.actor !== "either" && { actor: item.actor }),
-    ...(item.priority !== undefined && { priority: item.priority }),
-    ...(item.rank !== undefined && { rank: item.rank }),
-    ...(item.estimate !== undefined && { estimate: item.estimate }),
-    revision: item.revision,
-    ...(item.scores !== undefined && { scores: item.scores }),
-    ...(computedRank !== undefined && { rankScore: computedRank }),
-    ...(item.summary !== undefined && { summary: item.summary }),
-    ...(item.projectId !== undefined && { projectId: item.projectId }),
-    ...(item.branch !== undefined && { branch: item.branch }),
-    ...(item.pr !== undefined && { pr: item.pr }),
-    ...(item.blockedBy !== undefined && { blockedBy: item.blockedBy }),
-  };
-}
-
 /**
  * Create a WorkItemCapability backed by hexagonal ports.
  */
@@ -99,6 +66,11 @@ export function createWorkItemCapability(
       deps.backlogReader ??
       workItemQuery
     ).list({
+      ...(params.sortBy && { sortBy: params.sortBy }),
+      ...(params.sortDirection && { sortDirection: params.sortDirection }),
+      ...(params.labels && { labels: [...params.labels] }),
+      ...(params.labelPrefix && { labelPrefix: params.labelPrefix }),
+      ...(params.scored !== undefined && { scored: params.scored }),
       ...(params.statuses && {
         statuses: params.statuses as readonly WorkItemStatus[],
       }),
@@ -137,17 +109,26 @@ export function createWorkItemCapability(
         throw new Error(`Work item not found: ${input.id}`);
       }
 
+      if (
+        deps.liveStore &&
+        !isValidTransition(current.status, input.toStatus as WorkItemStatus)
+      ) {
+        throw new InvalidTransitionError(
+          current.id,
+          current.status,
+          input.toStatus as WorkItemStatus,
+        );
+      }
+
       const updated = deps.liveStore
-        ? await deps
-            .liveStore()
-            .patch(
-              {
-                id: current.id,
-                expectedRevision: current.revision,
-                set: { status: input.toStatus as WorkItemStatus },
-              },
-              actor(),
-            )
+        ? await deps.liveStore().patch(
+            {
+              id: current.id,
+              expectedRevision: current.revision,
+              set: { status: input.toStatus as WorkItemStatus },
+            },
+            actor(),
+          )
         : await workItemCommand.transitionStatus({
             id: toWorkItemId(input.id),
             expectedRevision: String(current.revision),
@@ -182,18 +163,16 @@ export function createWorkItemCapability(
 
       try {
         const updated = deps.liveStore
-          ? await deps
-              .liveStore()
-              .patch(
-                {
-                  id: current.id,
-                  ...(input.expectedRevision !== undefined && {
-                    expectedRevision: input.expectedRevision,
-                  }),
-                  set: input.set,
-                },
-                actor(),
-              )
+          ? await deps.liveStore().patch(
+              {
+                id: current.id,
+                ...(input.expectedRevision !== undefined && {
+                  expectedRevision: input.expectedRevision,
+                }),
+                set: input.set,
+              },
+              actor(),
+            )
           : await workItemCommand.patch({
               id: current.id,
               expectedRevision: String(current.revision),

@@ -5,6 +5,19 @@ import type { WorkItemsDoltgresPort as LegacyWorkItemsPort } from "@cogni/legacy
 import type { WorkItem, WorkItemsContentPort } from "@cogni/work-items";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
+// Same failure reexported by the HTTP facade; no incomplete canonical row escapes.
+export class WorkItemNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Work item not found: ${id}`);
+    this.name = "WorkItemNotFoundError";
+  }
+}
+
+type LeaseFields = Pick<WorkItem, "claimedByRun" | "claimedAt" | "lastCommand">;
+type LegacyLeaseRow = NonNullable<
+  Awaited<ReturnType<LegacyWorkItemsPort["get"]>>
+>;
+
 type LegacyLeasePort = Pick<
   LegacyWorkItemsPort,
   "get" | "list" | "claim" | "heartbeat" | "release" | "delete"
@@ -14,7 +27,7 @@ export function composeEvaluationWorkItems(
   content: WorkItemsContentPort,
   legacy: LegacyLeasePort,
 ): EvaluationWorkItemsPort {
-  const project = (item: WorkItem, lease: WorkItem | null): WorkItem => {
+  const project = (item: WorkItem, lease: LeaseFields | null): WorkItem => {
     const {
       claimedByRun: _run,
       claimedAt: _at,
@@ -32,8 +45,11 @@ export function composeEvaluationWorkItems(
       }),
     };
   };
-  const refresh = async (item: WorkItem): Promise<WorkItem> =>
-    project((await content.get(item.id)) ?? item, item);
+  const refresh = async (lease: LegacyLeaseRow): Promise<WorkItem> => {
+    const current = await content.get(lease.id);
+    if (!current) throw new WorkItemNotFoundError(lease.id);
+    return project(current, lease);
+  };
   return {
     async get(id) {
       const item = await content.get(id);

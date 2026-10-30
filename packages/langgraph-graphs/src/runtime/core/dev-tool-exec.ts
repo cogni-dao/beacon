@@ -22,7 +22,10 @@ import {
   createToolRunner,
   type ToolExecFn,
 } from "@cogni/ai-core";
-import { type CatalogBoundTool, toBoundToolRuntime } from "@cogni/ai-tools";
+import {
+  type CatalogBoundTool,
+  toBoundToolRuntime,
+} from "@cogni/beacon-ai-tools";
 
 /**
  * No-op event emitter for dev server.
@@ -44,7 +47,7 @@ const devEmit = (_event: AiEvent): void => {
  * @returns ToolExecFn that delegates to toolRunner.exec()
  */
 export function createDevToolExecFn(
-  boundTools: Readonly<Record<string, CatalogBoundTool>>
+  boundTools: Readonly<Record<string, CatalogBoundTool>>,
 ): ToolExecFn {
   // Convert CatalogBoundTool to BoundToolRuntime
   const runtimeTools: Record<string, BoundToolRuntime> = {};

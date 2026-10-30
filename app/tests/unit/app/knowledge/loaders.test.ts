@@ -38,6 +38,7 @@ async function seed() {
         id: "k1",
         domain: DOMAIN,
         title: "First",
+        useWhen: "when testing inherited recall fields",
         content: "...",
         entryType: "finding",
         sourceType: "agent",
@@ -55,7 +56,7 @@ async function seed() {
         citedId: "k2",
         citationType: "supports",
       });
-    }
+    },
   );
   return store;
 }
@@ -69,8 +70,9 @@ describe("knowledge SSR loaders", () => {
     expect(res.domains).toContain(DOMAIN);
 
     const k1 = res.items.find((i) => i.id === "k1");
+    expect(k1?.useWhen).toBe("when testing inherited recall fields");
     expect(k1?.createdAt === null || typeof k1?.createdAt === "string").toBe(
-      true
+      true,
     );
     // JSON round-trip is a no-op ⇒ SSR initialData matches the client refetch.
     expect(JSON.parse(JSON.stringify(res))).toEqual(res);
