@@ -15,10 +15,7 @@
  * @public
  */
 
-import {
-  KNOWLEDGE_READ_NAME,
-  KNOWLEDGE_SEARCH_NAME,
-} from "@cogni/beacon-ai-tools";
+import { KNOWLEDGE_READ_NAME, KNOWLEDGE_SEARCH_NAME } from "@cogni/ai-tools";
 
 /**
  * Tool IDs for the growth-chat graph.

@@ -13,7 +13,7 @@
  * @public
  */
 
-import { GET_CURRENT_TIME_NAME } from "@cogni/beacon-ai-tools";
+import { GET_CURRENT_TIME_NAME } from "@cogni/ai-tools";
 
 /**
  * Tool IDs for poet graph.

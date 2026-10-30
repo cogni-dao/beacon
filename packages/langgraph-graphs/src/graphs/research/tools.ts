@@ -13,7 +13,7 @@
  * @public
  */
 
-import { WEB_SEARCH_NAME } from "@cogni/beacon-ai-tools";
+import { WEB_SEARCH_NAME } from "@cogni/ai-tools";
 
 /**
  * Tool IDs for research graph.

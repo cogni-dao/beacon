@@ -13,10 +13,7 @@
  * @public
  */
 
-import {
-  GET_CURRENT_TIME_NAME,
-  METRICS_QUERY_NAME,
-} from "@cogni/beacon-ai-tools";
+import { GET_CURRENT_TIME_NAME, METRICS_QUERY_NAME } from "@cogni/ai-tools";
 
 /**
  * Tool IDs for ponderer graph.

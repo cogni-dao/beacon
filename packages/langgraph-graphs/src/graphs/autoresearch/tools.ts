@@ -27,7 +27,7 @@ import {
   VCS_GET_CI_STATUS_NAME,
   VCS_LIST_PRS_NAME,
   WEB_SEARCH_NAME,
-} from "@cogni/beacon-ai-tools";
+} from "@cogni/ai-tools";
 
 export const AUTORESEARCH_TOOL_IDS = [
   GET_CURRENT_TIME_NAME,
