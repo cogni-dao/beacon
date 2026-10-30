@@ -53,5 +53,8 @@
     "@langchain/langgraph-cli": "^1.1.11",
     "tsup": "^8.5.1",
     "typescript": "^5"
+  },
+  "peerDependencies": {
+    "@cogni/shared-langgraph-graphs": "0.2.1"
   }
 }

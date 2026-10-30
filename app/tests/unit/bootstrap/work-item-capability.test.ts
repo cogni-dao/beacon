@@ -12,8 +12,14 @@
  * @internal
  */
 
+import {
+  createWorkItemQueryImplementation,
+  WorkItemQueryOutputSchema,
+  workItemQueryContract,
+} from "@cogni/shared-ai-tools";
+import { makeLangChainTool } from "@cogni/shared-langgraph-graphs/runtime";
 import type { WorkItemCommandPort, WorkItemQueryPort } from "@cogni/work-items";
-import { toWorkItemId } from "@cogni/work-items";
+import { toWorkItemId, WorkItemDtoSchema } from "@cogni/work-items";
 import { describe, expect, it, vi } from "vitest";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
@@ -101,6 +107,7 @@ describe("published evaluation writer binding", () => {
     id: toWorkItemId("task.0001"),
     type: "task" as const,
     title: "fixture",
+    outcome: "preserve complete read context",
     status: "needs_implement" as const,
     node: "beacon",
     actor: "either" as const,
@@ -122,6 +129,67 @@ describe("published evaluation writer binding", () => {
     confidence: { v: 3 },
     agent: { v: 2 },
   };
+  it("inherits every canonical read field and preserves filters, revision and trusted provenance through the installed wrapper", async () => {
+    const list = vi.fn().mockResolvedValue({
+      items: [{ ...item, sourceUrl: "https://untrusted.invalid/spoof" }],
+      nextCursor: "next-page",
+      pageInfo: { endCursor: "next-page", hasMore: true },
+    });
+    const capability = createWorkItemCapability({
+      workItemQuery: {} as WorkItemQueryPort,
+      workItemCommand: {} as WorkItemCommandPort,
+      liveStore: () => ({ list }) as unknown as EvaluationWorkItemsPort,
+    });
+    const implementation = createWorkItemQueryImplementation({
+      workItemCapability: capability,
+      nodePublicOrigin: "https://beacon.cognidao.org",
+    });
+    const output = await implementation.execute({
+      labels: ["adoption"],
+      labelPrefix: "fleet",
+      scored: false,
+      sortBy: "updatedAt",
+      sortDirection: "asc",
+      cursor: "previous-page",
+      limit: 1,
+    });
+    expect(list).toHaveBeenCalledWith({
+      labels: ["adoption"],
+      labelPrefix: "fleet",
+      scored: false,
+      sortBy: "updatedAt",
+      sortDirection: "asc",
+      cursor: "previous-page",
+      limit: 1,
+    });
+    const parsed = WorkItemQueryOutputSchema.parse(output);
+    expect(
+      Object.keys(WorkItemQueryOutputSchema.shape.items.element.shape),
+    ).toEqual(expect.arrayContaining(Object.keys(WorkItemDtoSchema.shape)));
+    expect(parsed.items[0]).toMatchObject({
+      revision: 7,
+      outcome: item.outcome,
+      createdAt: item.createdAt,
+      sourceUrl: "https://beacon.cognidao.org/work/items/task.0001",
+    });
+    expect(parsed.nextCursor).toBe("next-page");
+    const exec = vi.fn().mockResolvedValue({ ok: true, value: parsed });
+    const tool = makeLangChainTool({
+      contract: workItemQueryContract,
+      execResolver: () => exec,
+    });
+    const denied = JSON.parse(await tool.invoke({ limit: 1 }));
+    expect(denied.error).toBe("policy_denied");
+    expect(exec).not.toHaveBeenCalled();
+    const result = JSON.parse(
+      await tool.invoke(
+        { limit: 1 },
+        { configurable: { toolIds: [workItemQueryContract.name] } },
+      ),
+    );
+    expect(result).toEqual(parsed);
+  });
+
   it("reads the current trusted actor at each call and forwards whole-score CAS without priority", async () => {
     let actor = "actor-a";
     const patch = vi.fn().mockResolvedValue({ ...item, scores, revision: 8 });

@@ -14,7 +14,7 @@ RUN apk add --no-cache g++ make python3
 
 # 1. Copy dependency manifests first (maximizes install layer caching)
 #    --parents preserves directory structure with wildcards (BuildKit feature)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY --parents app/package.json ./
 COPY --parents packages/*/package.json ./
 COPY --parents graphs/package.json ./
