@@ -19,7 +19,7 @@ import {
   VCS_LIST_PRS_NAME,
   VCS_MERGE_PR_NAME,
   WORK_ITEM_QUERY_NAME,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 /**
  * Tool IDs available to the PR Manager agent.

@@ -14,7 +14,7 @@
  * @public
  */
 
-import type { ToolContract } from "@cogni/ai-tools";
+import type { ToolContract } from "@cogni/beacon-ai-tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
 import { makeLangChainTools } from "../core/langchain-tools";
@@ -38,7 +38,7 @@ export interface ToLangChainToolsFromContextOptions {
  * @returns Array of LangChain StructuredToolInterface
  */
 export function toLangChainToolsFromContext(
-  opts: ToLangChainToolsFromContextOptions
+  opts: ToLangChainToolsFromContextOptions,
 ): StructuredToolInterface[] {
   const { contracts } = opts;
   return makeLangChainTools({

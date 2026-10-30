@@ -22,7 +22,7 @@ import {
   REPO_SEARCH_NAME,
   SCHEDULE_LIST_NAME,
   SCHEDULE_MANAGE_NAME,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 /**
  * Tool IDs for brain graph.

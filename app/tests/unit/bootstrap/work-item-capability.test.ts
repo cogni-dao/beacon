@@ -17,12 +17,12 @@ import {
   WorkItemQueryOutputSchema,
   workItemQueryContract,
 } from "@cogni/shared-ai-tools";
-import { makeLangChainTool } from "@cogni/shared-langgraph-graphs/runtime";
 import type { WorkItemCommandPort, WorkItemQueryPort } from "@cogni/work-items";
 import { toWorkItemId, WorkItemDtoSchema } from "@cogni/work-items";
 import { describe, expect, it, vi } from "vitest";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
+import { makeLangChainTool } from "../../../../packages/langgraph-graphs/src/runtime/core/langchain-tools";
 
 const empty = { items: [], pageInfo: { endCursor: null, hasMore: false } };
 

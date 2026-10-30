@@ -19,7 +19,7 @@ import {
   SCHEDULE_LIST_NAME,
   WORK_ITEM_QUERY_NAME,
   WORK_ITEM_TRANSITION_NAME,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 /**
  * Tool IDs for Operating Review.

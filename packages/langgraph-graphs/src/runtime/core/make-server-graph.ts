@@ -16,7 +16,7 @@
  * @public
  */
 
-import { type CatalogBoundTool, TOOL_CATALOG } from "@cogni/ai-tools";
+import { type CatalogBoundTool, TOOL_CATALOG } from "@cogni/beacon-ai-tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { initChatModel } from "langchain/chat_models/universal";
 
@@ -83,8 +83,9 @@ export async function makeServerGraph<
       toolIds
         .map((id) => [id, TOOL_CATALOG[id]] as const)
         .filter(
-          (entry): entry is [string, CatalogBoundTool] => entry[1] !== undefined
-        )
+          (entry): entry is [string, CatalogBoundTool] =>
+            entry[1] !== undefined,
+        ),
     );
 
   // Fail fast if tools missing (per FAIL_FAST_ON_MISSING_TOOLS)
@@ -92,7 +93,7 @@ export async function makeServerGraph<
   if (missingTools.length > 0) {
     throw new Error(
       `[makeServerGraph:${name}] Missing tools in TOOL_CATALOG: ${missingTools.join(", ")}. ` +
-        `Ensure all tool IDs in toolIds exist in @cogni/ai-tools TOOL_CATALOG.`
+        `Ensure all tool IDs in toolIds exist in @cogni/ai-tools TOOL_CATALOG.`,
     );
   }
 
