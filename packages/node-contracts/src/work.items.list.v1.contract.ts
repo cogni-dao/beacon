@@ -13,55 +13,14 @@
  * @internal
  */
 
+import {
+  WORK_ITEM_SORT_DIRECTIONS,
+  WORK_ITEM_SORT_FIELDS,
+  WorkItemDtoSchema,
+} from "@cogni/work-items";
 import { z } from "zod";
-import { WorkItemScoresSchema } from "./work.items.scores";
 
-const SubjectRefSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("user"), userId: z.string() }),
-  z.object({ kind: z.literal("agent"), agentId: z.string() }),
-  z.object({ kind: z.literal("system"), serviceId: z.string() }),
-]);
-
-const ExternalRefSchema = z.object({
-  system: z.string(),
-  kind: z.string(),
-  externalId: z.string().optional(),
-  url: z.string().optional(),
-  title: z.string().optional(),
-});
-
-export const WorkItemDtoSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  title: z.string(),
-  status: z.string(),
-  priority: z.number().optional(),
-  rank: z.number().optional(),
-  estimate: z.number().optional(),
-  scores: WorkItemScoresSchema.optional(),
-  rankScore: z.number().optional(),
-  summary: z.string().optional(),
-  outcome: z.string().optional(),
-  projectId: z.string().optional(),
-  parentId: z.string().optional(),
-  node: z.string().optional(),
-  assignees: z.array(SubjectRefSchema),
-  externalRefs: z.array(ExternalRefSchema),
-  actor: z.string().optional(),
-  labels: z.array(z.string()),
-  specRefs: z.array(z.string()),
-  branch: z.string().optional(),
-  pr: z.string().optional(),
-  reviewer: z.string().optional(),
-  revision: z.number(),
-  blockedBy: z.string().optional(),
-  deployVerified: z.boolean(),
-  claimedByRun: z.string().optional(),
-  claimedAt: z.string().optional(),
-  lastCommand: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
+export { WorkItemDtoSchema } from "@cogni/work-items";
 
 export const workItemsListOperation = {
   id: "work.items.list.v1",
@@ -69,6 +28,11 @@ export const workItemsListOperation = {
   description:
     "Returns work items matching optional type, status, text, and project filters.",
   input: z.object({
+    sortBy: z.enum(WORK_ITEM_SORT_FIELDS).optional(),
+    sortDirection: z.enum(WORK_ITEM_SORT_DIRECTIONS).optional(),
+    labels: z.array(z.string()).optional(),
+    labelPrefix: z.string().optional(),
+    scored: z.boolean().optional(),
     types: z.array(z.string()).optional(),
     statuses: z.array(z.string()).optional(),
     text: z.string().optional(),

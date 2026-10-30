@@ -10,7 +10,7 @@
  *     accepts any authenticated principal — session human or bearer agent
  *     (DOMAIN_LIST_REQUIRES_PRINCIPAL); POST register accepts bearer or session
  *     (DOMAIN_REGISTER_BEARER_OR_SESSION).
- *   - DOMAIN_REGISTRATION_IS_STICKY: no DELETE/PUT in v0.
+ *   - DOMAIN_DELETE_REFUSES_NONEMPTY; baseline domains remain protected.
  *   - id is short, slug-shaped (alnum, dash, underscore).
  * Side-effects: none
  * Links: docs/spec/knowledge-domain-registry.md
@@ -19,7 +19,7 @@
 
 import { z } from "zod";
 
-const DomainIdSchema = z
+export const DomainIdSchema = z
   .string()
   .min(2)
   .max(64)
@@ -51,3 +51,42 @@ export type DomainsCreateRequest = z.infer<typeof DomainsCreateRequestSchema>;
 
 export const DomainsCreateResponseSchema = DomainSchema;
 export type DomainsCreateResponse = z.infer<typeof DomainsCreateResponseSchema>;
+
+export const DomainsUpdateBodySchema = z
+  .strictObject({
+    name: z.string().min(1).max(128).optional(),
+    description: z.string().max(512).nullable().optional(),
+  })
+  .refine((body) => body.name !== undefined || body.description !== undefined, {
+    message: "patch must set name or description",
+  });
+export type DomainsUpdateBody = z.infer<typeof DomainsUpdateBodySchema>;
+
+export const DomainsDeleteResponseSchema = z.object({
+  id: z.string(),
+  deleted: z.literal(true),
+});
+export const DomainsErrorResponseSchema = z.object({
+  error: z.string(),
+  errorCode: z.enum([
+    "unauthorized",
+    "invalid_json",
+    "invalid_input",
+    "domain_not_found",
+    "domain_not_empty",
+    "domain_protected",
+    "store_not_configured",
+    "knowledge_write_outcome_unknown",
+    "knowledge_write_scope_required",
+    "knowledge_write_conflict",
+    "knowledge_busy",
+  ]),
+  retryable: z.boolean().optional(),
+  entryCount: z.number().int().optional(),
+  issues: z.array(z.unknown()).optional(),
+  operationId: z.string().optional(),
+  branch: z.string().optional(),
+  commitHash: z.string().nullable().optional(),
+  entryId: z.string().optional(),
+});
+export type DomainsErrorResponse = z.infer<typeof DomainsErrorResponseSchema>;

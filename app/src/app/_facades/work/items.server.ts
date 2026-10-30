@@ -14,15 +14,21 @@
 
 import type {
   WorkItemsCreateInput as ContractCreateInput,
-  WorkItemCoordinationOutput,
   WorkItemsPatchInput as ContractPatchInput,
+  WorkItemCoordinationOutput,
   WorkItemDto,
   WorkItemsListInput,
   WorkItemsListOutput,
 } from "@cogni/node-contracts";
 import type { WorkItem, WorkItemId } from "@cogni/work-items";
-import { rankScore, toWorkItemId, WorkItemWriteOutcomeUnknownError, WorkItemScoresInvalidError } from "@cogni/work-items";
-export { WorkItemWriteOutcomeUnknownError, WorkItemScoresInvalidError };
+import {
+  toWorkItemDto as toDto,
+  toWorkItemId,
+  WorkItemScoresInvalidError,
+  WorkItemWriteOutcomeUnknownError,
+} from "@cogni/work-items";
+
+export { WorkItemScoresInvalidError, WorkItemWriteOutcomeUnknownError };
 
 import {
   checkNodeAdmin,
@@ -69,7 +75,7 @@ export class WorkItemForbiddenError extends Error {
  */
 async function assertPriorityAuthority(
   priority: number | null | undefined,
-  actor: WorkItemActor
+  actor: WorkItemActor,
 ): Promise<void> {
   if (!isPrivilegedPriority(priority)) return;
   const decision = await checkNodeAdmin(getContainer().nodeAdmin, {
@@ -79,7 +85,7 @@ async function assertPriorityAuthority(
   if (!decision.ok) {
     const err = new NodeAdminRequiredError(
       decision,
-      `work.items.priority.p${priority}`
+      `work.items.priority.p${priority}`,
     );
     getContainer().log.warn(
       {
@@ -88,7 +94,7 @@ async function assertPriorityAuthority(
         action: err.action,
         userId: actor.id,
       },
-      "work.items.priority_node_admin_refused"
+      "work.items.priority_node_admin_refused",
     );
     throw err;
   }
@@ -112,41 +118,6 @@ export class WorkItemsBackendNotReadyError extends Error {
     super(message);
     this.name = "WorkItemsBackendNotReadyError";
   }
-}
-
-function toDto(item: WorkItem): WorkItemDto {
-  return {
-    id: item.id as string,
-    type: item.type,
-    title: item.title,
-    status: item.status,
-    ...(item.actor !== "either" && { actor: item.actor }),
-    priority: item.priority,
-    rank: item.rank,
-    estimate: item.estimate,
-    scores: item.scores,
-    rankScore: rankScore(item.scores),
-    summary: item.summary,
-    outcome: item.outcome,
-    projectId: item.projectId as string | undefined,
-    parentId: item.parentId as string | undefined,
-    node: item.node,
-    assignees: item.assignees as WorkItemDto["assignees"],
-    externalRefs: item.externalRefs as WorkItemDto["externalRefs"],
-    labels: item.labels as string[],
-    specRefs: item.specRefs as string[],
-    branch: item.branch,
-    pr: item.pr,
-    reviewer: item.reviewer,
-    revision: item.revision,
-    blockedBy: item.blockedBy as string | undefined,
-    deployVerified: item.deployVerified,
-    claimedByRun: item.claimedByRun,
-    claimedAt: item.claimedAt,
-    lastCommand: item.lastCommand,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-  };
 }
 
 function nextActionForWorkItem(item: WorkItem): string | null {
@@ -177,7 +148,7 @@ type StripUndefined<T> = {
 };
 
 function dropUndefined<T extends Record<string, unknown>>(
-  obj: T
+  obj: T,
 ): StripUndefined<T> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -188,12 +159,27 @@ function dropUndefined<T extends Record<string, unknown>>(
 
 function rethrowBackendError(error: unknown): never {
   // Adapter/root entrypoints can bundle distinct constructors; normalize by identity fields.
-  if (error instanceof Error && error.name === "WorkItemWriteOutcomeUnknownError") {
-    const unknown = error as Error & { operationId: string; branch: string; commitHash?: string; itemId?: string };
-    throw new WorkItemWriteOutcomeUnknownError(unknown.operationId, unknown.branch, unknown.commitHash, unknown.itemId);
+  if (
+    error instanceof Error &&
+    error.name === "WorkItemWriteOutcomeUnknownError"
+  ) {
+    const unknown = error as Error & {
+      operationId: string;
+      branch: string;
+      commitHash?: string;
+      itemId?: string;
+    };
+    throw new WorkItemWriteOutcomeUnknownError(
+      unknown.operationId,
+      unknown.branch,
+      unknown.commitHash,
+      unknown.itemId,
+    );
   }
   if (error instanceof Error && error.name === "WorkItemScoresInvalidError") {
-    const invalid = error as Error & { issues: ConstructorParameters<typeof WorkItemScoresInvalidError>[0] };
+    const invalid = error as Error & {
+      issues: ConstructorParameters<typeof WorkItemScoresInvalidError>[0];
+    };
     throw new WorkItemScoresInvalidError(invalid.issues);
   }
   const message = (error as Error)?.message ?? "";
@@ -216,24 +202,43 @@ function rethrowBackendError(error: unknown): never {
     throw new WorkItemLeaseConflictError(id);
   }
   if ((error as Error)?.name === "WorkItemRevisionConflictError") {
-    const conflict = error as Error & { id: string; expectedRevision: number; currentRevision: number };
-    throw new WorkItemRevisionConflictError(conflict.id, conflict.expectedRevision, conflict.currentRevision);
+    const conflict = error as Error & {
+      id: string;
+      expectedRevision: number;
+      currentRevision: number;
+    };
+    throw new WorkItemRevisionConflictError(
+      conflict.id,
+      conflict.expectedRevision,
+      conflict.currentRevision,
+    );
   }
   throw error;
 }
 
 export class WorkItemRevisionConflictError extends Error {
-  constructor(readonly id: string, readonly expectedRevision: number, readonly currentRevision: number) {
-    super(`Work item ${id} is at revision ${currentRevision}, expected ${expectedRevision}; nothing written`);
+  constructor(
+    readonly id: string,
+    readonly expectedRevision: number,
+    readonly currentRevision: number,
+  ) {
+    super(
+      `Work item ${id} is at revision ${currentRevision}, expected ${expectedRevision}; nothing written`,
+    );
     this.name = "WorkItemRevisionConflictError";
   }
 }
 
 export async function listWorkItems(
-  input: WorkItemsListInput
+  input: WorkItemsListInput,
 ): Promise<WorkItemsListOutput> {
   const container = getContainer();
   const queryShared = {
+    ...(input.sortBy && { sortBy: input.sortBy }),
+    ...(input.sortDirection && { sortDirection: input.sortDirection }),
+    ...(input.labels && { labels: input.labels }),
+    ...(input.labelPrefix && { labelPrefix: input.labelPrefix }),
+    ...(input.scored !== undefined && { scored: input.scored }),
     ...(input.types && { types: input.types as WorkItem["type"][] }),
     ...(input.statuses && { statuses: input.statuses as WorkItem["status"][] }),
     ...(input.text && { text: input.text }),
@@ -312,7 +317,7 @@ export async function getWorkItem(id: string): Promise<WorkItemDto | null> {
 
 export async function createWorkItem(
   input: ContractCreateInput,
-  sessionUser: WorkItemActor
+  sessionUser: WorkItemActor,
 ): Promise<WorkItemDto> {
   await assertPriorityAuthority(input.priority, sessionUser);
   const container = getContainer();
@@ -340,7 +345,7 @@ export async function createWorkItem(
         ...(input.estimate !== undefined && { estimate: input.estimate }),
         ...(input.scores !== undefined && { scores: input.scores }),
       },
-      sessionUser.id
+      sessionUser.id,
     );
     return toDto(created);
   } catch (e) {
@@ -350,7 +355,7 @@ export async function createWorkItem(
 
 export async function patchWorkItem(
   input: ContractPatchInput,
-  sessionUser: WorkItemActor
+  sessionUser: WorkItemActor,
 ): Promise<WorkItemDto> {
   await assertPriorityAuthority(input.set.priority, sessionUser);
   const container = getContainer();
@@ -359,9 +364,11 @@ export async function patchWorkItem(
       {
         id: toWorkItemId(input.id),
         set: dropUndefined(input.set),
-        ...(input.expectedRevision !== undefined && { expectedRevision: input.expectedRevision }),
+        ...(input.expectedRevision !== undefined && {
+          expectedRevision: input.expectedRevision,
+        }),
       },
-      sessionUser.id
+      sessionUser.id,
     );
     if (!patched) throw new WorkItemNotFoundError(input.id);
     return toDto(patched);
@@ -372,13 +379,13 @@ export async function patchWorkItem(
 
 export async function deleteWorkItem(
   id: string,
-  sessionUser: { id: string }
+  sessionUser: { id: string },
 ): Promise<boolean> {
   const container = getContainer();
   try {
     return await container.doltgresWorkItems.delete(
       toWorkItemId(id),
-      sessionUser.id
+      sessionUser.id,
     );
   } catch (e) {
     rethrowBackendError(e);
@@ -444,7 +451,7 @@ export async function heartbeatWorkItem(input: {
 }
 
 export async function getWorkItemCoordination(
-  id: string
+  id: string,
 ): Promise<WorkItemCoordinationOutput> {
   const container = getContainer();
   try {

@@ -122,3 +122,5 @@ pnpm --filter @cogni/langgraph-graphs test
 - `LangGraphInProcProvider` in `src/adapters/server/ai/langgraph/` wires this package
 - Package isolation enables LangGraph Server to import graphs without Next.js deps
 - **Dual tsconfig:** LangGraph CLI generates runtime `.ts` files (`__langgraph__*.ts`) that break `composite` mode. This package uses `tsconfig.json` (noEmit, for CLI) + `tsconfig.build.json` (composite, for `tsc -b`). Root tsconfig.json references the build config explicitly. This is not proper form, but a valid workaround.
+
+Generic LangChain tool wrappers delegate to the published shared-langgraph-graphs/runtime alias; node graph factories, ALS context and catalogs stay local. The adoption draft requires the verified wrapper receipt before declaring/installing that alias.

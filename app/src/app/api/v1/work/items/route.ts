@@ -21,10 +21,10 @@ import {
   createWorkItem,
   InvalidCursorError,
   listWorkItems,
+  NodeAdminRequiredError,
+  WorkItemScoresInvalidError,
   WorkItemsBackendNotReadyError,
   WorkItemWriteOutcomeUnknownError,
-  WorkItemScoresInvalidError,
-  NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
@@ -54,6 +54,17 @@ export const GET = wrapRouteHandlerWithLogging(
     const cursorParam = url.searchParams.get("cursor");
 
     const input = workItemsListOperation.input.parse({
+      sortBy: url.searchParams.get("sortBy") ?? undefined,
+      sortDirection: url.searchParams.get("sortDirection") ?? undefined,
+      labels: url.searchParams.get("labels")?.split(","),
+      labelPrefix: url.searchParams.get("labelPrefix") ?? undefined,
+      scored: url.searchParams.has("scored")
+        ? url.searchParams.get("scored") === "true"
+          ? true
+          : url.searchParams.get("scored") === "false"
+            ? false
+            : "invalid"
+        : undefined,
       types: typesParam ? typesParam.split(",") : undefined,
       statuses: statusesParam ? statusesParam.split(",") : undefined,
       text: textParam ?? undefined,
@@ -76,10 +87,21 @@ export const GET = wrapRouteHandlerWithLogging(
         return NextResponse.json({ error: "invalid cursor" }, { status: 400 });
       }
       if (e instanceof WorkItemWriteOutcomeUnknownError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: e.message,
+            errorCode: e.code,
+            retryable: false,
+            receipt: e.receipt,
+          },
+          { status: 500 },
+        );
       }
       if (e instanceof WorkItemScoresInvalidError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
+        return NextResponse.json(
+          { error: e.message, errorCode: e.code, issues: e.issues },
+          { status: 400 },
+        );
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
@@ -90,7 +112,7 @@ export const GET = wrapRouteHandlerWithLogging(
     ctx.log.info({ count: result.items.length }, "work.items.list_success");
 
     return NextResponse.json(workItemsListOperation.output.parse(result));
-  }
+  },
 );
 
 /**
@@ -118,7 +140,7 @@ export const POST = wrapRouteHandlerWithLogging(
     if (!parseResult.success) {
       return NextResponse.json(
         { error: "invalid input", issues: parseResult.error.issues },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -129,7 +151,7 @@ export const POST = wrapRouteHandlerWithLogging(
       });
       ctx.log.info(
         { workItemId: created.id, node: created.node },
-        "work.items.create_success"
+        "work.items.create_success",
       );
       return NextResponse.json(workItemsCreateOperation.output.parse(created), {
         status: 201,
@@ -138,14 +160,25 @@ export const POST = wrapRouteHandlerWithLogging(
       if (e instanceof NodeAdminRequiredError) {
         return NextResponse.json(
           { error: e.message, errorCode: e.errorCode, action: e.action },
-          { status: e.status }
+          { status: e.status },
         );
       }
       if (e instanceof WorkItemWriteOutcomeUnknownError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: e.message,
+            errorCode: e.code,
+            retryable: false,
+            receipt: e.receipt,
+          },
+          { status: 500 },
+        );
       }
       if (e instanceof WorkItemScoresInvalidError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
+        return NextResponse.json(
+          { error: e.message, errorCode: e.code, issues: e.issues },
+          { status: 400 },
+        );
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
         return NextResponse.json({ error: e.message }, { status: 503 });
@@ -153,10 +186,10 @@ export const POST = wrapRouteHandlerWithLogging(
       if ((e as Error)?.name === "WorkItemAlreadyExistsError") {
         return NextResponse.json(
           { error: (e as Error).message },
-          { status: 409 }
+          { status: 409 },
         );
       }
       throw e;
     }
-  }
+  },
 );

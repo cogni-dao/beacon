@@ -16,8 +16,6 @@
 
 import type {
   BroadcastCapability,
-  EdoCapability,
-  KnowledgeCapability,
   MetricsCapability,
   RepoCapability,
   ScheduleCapability,
@@ -28,10 +26,6 @@ import type {
 import {
   BROADCAST_POST_NAME,
   createBroadcastPostImplementation,
-  createEdoHypothesizeImplementation,
-  createEdoRecordOutcomeImplementation,
-  createKnowledgeReadImplementation,
-  createKnowledgeWriteImplementation,
   createMetricsQueryImplementation,
   createRepoListImplementation,
   createRepoOpenImplementation,
@@ -69,12 +63,18 @@ import {
 
 import {
   createEdoDecideImplementation,
+  createEdoHypothesizeImplementation,
+  createEdoRecordOutcomeImplementation,
   createGoalListImplementation,
+  createKnowledgeReadImplementation,
   createKnowledgeSearchImplementation,
+  createKnowledgeWriteImplementation,
   createWorkItemQueryImplementation,
   createWorkItemTransitionImplementation,
+  type EdoCapability,
   GOAL_LIST_NAME,
   getCurrentTimeImplementation,
+  type KnowledgeCapability,
   type WorkItemCapability,
 } from "@cogni/shared-ai-tools";
 
@@ -140,6 +140,7 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
       knowledgeCapability: deps.knowledgeCapability,
     }) as AnyToolImplementation,
     [KNOWLEDGE_READ_NAME]: createKnowledgeReadImplementation({
+      nodePublicOrigin: deps.nodePublicOrigin,
       knowledgeCapability: deps.knowledgeCapability,
     }) as AnyToolImplementation,
     [KNOWLEDGE_WRITE_NAME]: createKnowledgeWriteImplementation({

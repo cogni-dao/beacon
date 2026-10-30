@@ -113,3 +113,5 @@ pnpm --filter @cogni/ai-tools build
 - Per LANGGRAPH_AI.md: tool contracts live here, LangChain `tool()` wrappers in langgraph-graphs
 - Per PACKAGES_NO_SRC_IMPORTS: This package cannot import from `src/**`
 - Package isolation enables LangGraph Server to import tools without Next.js deps
+
+Canonical work-item/knowledge/EDO tool modules retain legacy paths through published reexports. Domain capability types come from knowledge-store/contracts; product tools retain local Zod 3 compilation, published Zod 4 tools use the published compiler. Final release pins remain gated in the node adoption PR.

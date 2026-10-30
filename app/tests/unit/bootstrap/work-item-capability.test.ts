@@ -77,6 +77,8 @@ describe("createWorkItemCapability", () => {
         title: "t",
         labels: [],
         assignees: [],
+        externalRefs: [],
+        specRefs: [],
       }),
     };
     const backlog = { list: vi.fn() };
@@ -145,6 +147,9 @@ describe("published evaluation writer binding", () => {
     expect(result.scores).toEqual(scores);
     expect(result.rankScore).toBeTypeOf("number");
     expect(result.revision).toBe(8);
+    expect(result.createdAt).toBe(item.createdAt);
+    expect(result.externalRefs).toEqual(item.externalRefs);
+    expect(result.specRefs).toEqual(item.specRefs);
     actor = "actor-b";
     await capability.patch({
       id: item.id,
