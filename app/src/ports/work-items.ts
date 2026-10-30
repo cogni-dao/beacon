@@ -2,7 +2,11 @@
 /** Beacon's existing v1 lease commands remain owned by the exact legacy release. */
 
 import type { WorkItemsDoltgresPort as LegacyWorkItemsPort } from "@cogni/legacy-work-items/adapters/doltgres";
-import type { WorkItemsContentPort } from "@cogni/work-items";
+import type { WorkItem, WorkItemsContentPort } from "@cogni/work-items";
 
 export type EvaluationWorkItemsPort = Omit<WorkItemsContentPort, "delete"> &
-  Pick<LegacyWorkItemsPort, "claim" | "heartbeat" | "release" | "delete">;
+  Pick<LegacyWorkItemsPort, "delete"> & {
+    [Method in "claim" | "heartbeat" | "release"]: (
+      input: Parameters<LegacyWorkItemsPort[Method]>[0],
+    ) => Promise<WorkItem>;
+  };

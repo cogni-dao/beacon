@@ -36,6 +36,7 @@ import {
   NodeAdminRequiredError,
 } from "@cogni/knowledge-store";
 import { getContainer } from "@/bootstrap/container";
+import { WorkItemNotFoundError } from "@/bootstrap/evaluation-work-items";
 
 /**
  * Thrown when the opaque pagination cursor cannot be decoded — translated
@@ -52,14 +53,7 @@ export class InvalidCursorError extends Error {
   }
 }
 
-export { NodeAdminRequiredError };
-
-export class WorkItemNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Work item not found: ${id}`);
-    this.name = "WorkItemNotFoundError";
-  }
-}
+export { NodeAdminRequiredError, WorkItemNotFoundError };
 
 export class WorkItemForbiddenError extends Error {
   constructor(id: string) {

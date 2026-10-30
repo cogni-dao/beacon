@@ -17,10 +17,19 @@ import {
   WorkItemQueryOutputSchema,
   workItemQueryContract,
 } from "@cogni/shared-ai-tools";
-import type { WorkItemCommandPort, WorkItemQueryPort } from "@cogni/work-items";
+import type {
+  WorkItem,
+  WorkItemCommandPort,
+  WorkItemQueryPort,
+  WorkItemsContentPort,
+} from "@cogni/work-items";
 import { toWorkItemId, WorkItemDtoSchema } from "@cogni/work-items";
 import { describe, expect, it, vi } from "vitest";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
+import {
+  composeEvaluationWorkItems,
+  WorkItemNotFoundError,
+} from "@/bootstrap/evaluation-work-items";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 import { makeLangChainTool } from "../../../../packages/langgraph-graphs/src/runtime/core/langchain-tools";
 
@@ -273,4 +282,106 @@ describe("published evaluation writer binding", () => {
       currentRevision: 8,
     });
   });
+});
+
+describe("legacy lease writes refresh canonical content", () => {
+  const id = toWorkItemId("task.0001");
+  const current: WorkItem = {
+    id,
+    type: "task",
+    title: "current content",
+    status: "needs_implement",
+    actor: "either",
+    assignees: [],
+    externalRefs: [],
+    labels: [],
+    specRefs: [],
+    revision: 42,
+    deployVerified: false,
+    createdAt: "2026-10-30",
+    updatedAt: "2026-10-30",
+    claimedByRun: "stale-content-claim",
+    claimedAt: "stale",
+    lastCommand: "stale",
+  };
+  it.each(["claim", "heartbeat", "release"] as const)(
+    "%s preserves legacy input/authority and returns only current revision with lease fields",
+    async (method) => {
+      const {
+        claimedByRun: _run,
+        claimedAt: _at,
+        lastCommand: _command,
+        ...legacyContent
+      } = current;
+      const lease = {
+        ...legacyContent,
+        title: "old lease content",
+        revision: undefined,
+        ...(method !== "release" && {
+          claimedByRun: "legacy-run",
+          claimedAt: "legacy-time",
+          lastCommand: "legacy-command",
+        }),
+      };
+      const write = vi.fn().mockResolvedValue(lease);
+      const get = vi.fn().mockResolvedValue(current);
+      const legacy = {
+        claim: write,
+        heartbeat: write,
+        release: write,
+        get: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      };
+      const port = composeEvaluationWorkItems(
+        { get } as unknown as WorkItemsContentPort,
+        legacy,
+      );
+      const input = {
+        id,
+        runId: "legacy-token",
+        principalId: "trusted-actor",
+        command: "existing-command",
+      };
+      const result = await port[method](input);
+      expect(write).toHaveBeenCalledWith(input);
+      expect(get).toHaveBeenCalledWith(id);
+      expect(result).toMatchObject({ title: current.title, revision: 42 });
+      expect(result.claimedByRun).toBe(lease.claimedByRun);
+      expect(result.claimedAt).toBe(lease.claimedAt);
+      expect(result.lastCommand).toBe(lease.lastCommand);
+    },
+  );
+  it.each(["claim", "heartbeat", "release"] as const)(
+    "%s refuses missing canonical content instead of returning the legacy row",
+    async (method) => {
+      const write = vi.fn().mockResolvedValue({
+        id,
+        title: "legacy only",
+        claimedByRun: "legacy-run",
+      });
+      const legacy = {
+        claim: write,
+        heartbeat: write,
+        release: write,
+        get: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      };
+      const port = composeEvaluationWorkItems(
+        {
+          get: vi.fn().mockResolvedValue(null),
+        } as unknown as WorkItemsContentPort,
+        legacy,
+      );
+      await expect(
+        port[method]({
+          id,
+          runId: "token",
+          principalId: "actor",
+          command: "command",
+        }),
+      ).rejects.toBeInstanceOf(WorkItemNotFoundError);
+    },
+  );
 });
