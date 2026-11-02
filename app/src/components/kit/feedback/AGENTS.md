@@ -6,6 +6,7 @@
 
 - **Owners:** @derekg1729
 - **Status:** stable
+- **Last reviewed:** 2026-11-02
 - **Parent:** [components/kit](../../../AGENTS.md)
 
 ## Purpose
@@ -23,7 +24,7 @@ Provides reusable feedback UI components for error states, loading indicators, a
 ```json
 {
   "layer": "components",
-  "may_import": ["shared", "types"],
+  "may_import": ["shared", "types", "styles"],
   "must_not_import": [
     "app",
     "features",
@@ -37,8 +38,8 @@ Provides reusable feedback UI components for error states, loading indicators, a
 
 ## Public Surface
 
-- **Exports (via index.ts and ../index.ts):** ErrorAlert
-- **Files considered API:** ErrorAlert.tsx, index.ts
+- **Exports (via `@/components`):** Alert, BrainLoading, ErrorAlert, HintText, Progress
+- **Files considered API:** component exports via `@/components`
 
 ## Responsibilities
 
@@ -66,18 +67,19 @@ import { ErrorAlert } from "@/components";
 
 - Generic components only (no contract imports)
 - Semantic tokens for all styling
+- `BrainLoading` is a wordless, accessible status with a stationary mark and reduced-motion-aware activity arc.
 - Support deduplication (same error code shown once)
-- Export through parent index.ts
+- Export through `@/components`
 - Action buttons are optional props (consumers control visibility)
 
 ## Dependencies
 
-- **Internal:** @/shared/util/cn, @/components/kit/inputs (Button)
+- **Internal:** @/shared/util/cn, @/components/kit/inputs (Button), @/styles/ui
 - **External:** react, lucide-react
 
 ## Change Protocol
 
-- Update index.ts and parent index.ts when adding component exports
+- Update the `@/components` barrel when adding component exports
 - Prop changes are breaking (require consumer updates)
 - Keep components domain-agnostic (presenters receive primitive props)
 
