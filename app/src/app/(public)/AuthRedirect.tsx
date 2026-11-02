@@ -18,8 +18,8 @@
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
 
-import { BrainLoading } from "@/components/kit/feedback/BrainLoading";
-import { AppShell } from "@/features/layout/components/AppShell";
+import { BrainLoading } from "@/components";
+import { AppShell } from "@/features/layout";
 
 export function AuthRedirect(): React.JSX.Element | null {
   const { status } = useSession();

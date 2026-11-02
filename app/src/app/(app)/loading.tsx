@@ -16,7 +16,7 @@
  * @public
  */
 
-import { BrainLoading } from "@/components/kit/feedback/BrainLoading";
+import { BrainLoading } from "@/components";
 
 export default function AppLoading() {
   return <BrainLoading />;

@@ -15,7 +15,7 @@
 
 import type { ReactNode } from "react";
 
-import { AppShell } from "@/features/layout/components/AppShell";
+import { AppShell } from "@/features/layout";
 
 export default function AppLayout({
   children,

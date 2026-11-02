@@ -23,7 +23,7 @@ import {
 
 export function BrainLoading() {
   return (
-    <div role="status" aria-label="Loading" className={brainLoading()}>
+    <output aria-label="Loading" className={brainLoading()}>
       <div className={brainLoadingGraphic()}>
         <svg
           viewBox="0 0 80 80"
@@ -54,6 +54,6 @@ export function BrainLoading() {
           className={brainLoadingMark()}
         />
       </div>
-    </div>
+    </output>
   );
 }
