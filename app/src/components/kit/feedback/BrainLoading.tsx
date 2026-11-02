@@ -24,7 +24,7 @@ import {
 export function BrainLoading() {
   return (
     <output aria-label="Loading" className={brainLoading()}>
-      <div className={brainLoadingGraphic()}>
+      <span className={brainLoadingGraphic()}>
         <svg
           viewBox="0 0 80 80"
           fill="none"
@@ -53,7 +53,7 @@ export function BrainLoading() {
           loading="eager"
           className={brainLoadingMark()}
         />
-      </div>
+      </span>
     </output>
   );
 }
