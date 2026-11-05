@@ -5,7 +5,8 @@
  * Module: `@app/(app)/work/view`
  * Purpose: Client-side work dashboard. ReUI DataGrid with per-column header
  *          dropdowns owning sort + filter, single top-right Columns toggle,
- *          search input, URL-driven state, detail panel.
+ *          search input, URL-driven state, detail panel. `?view=board` swaps
+ *          the table for the shared WorkBoard over the same filtered page.
  * Scope: Presentation. Fetches data via React Query.
  * Invariants:
  *   - HEADER_OWNS_SORT_AND_FILTER — sort + per-column facet filter live in
@@ -42,7 +43,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Settings2 } from "lucide-react";
+import { Columns3, List, Settings2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Input } from "@/components";
@@ -50,9 +51,12 @@ import { Button, Input } from "@/components";
 import { fetchWorkItem, fetchWorkItems } from "./_api/fetchWorkItems";
 import { columns } from "./_components/columns";
 import { WorkItemDetail } from "./_components/WorkItemDetail";
+import { WorkKanban } from "./_components/WorkKanban";
 import {
   closeWorkItemPermalink,
   openWorkItemPermalink,
+  workItemHref,
+  workListHref,
   workViewHref,
 } from "./_lib/workItemNavigation";
 
@@ -65,6 +69,7 @@ const ACTIVE_STATUSES = [
   "needs_merge",
   "blocked",
 ];
+const ALL_STATUSES = [...ACTIVE_STATUSES, "done", "cancelled"];
 
 export function WorkDashboardView({
   selectedItemId,
@@ -242,6 +247,25 @@ export function WorkDashboardView({
   }, [rows, focusedRowIndex, selectedItemId, openItem, closeItem]);
 
   const hasActiveFilters = columnFilters.length > 0;
+  const boardView = searchParams.get("view") === "board";
+  const statusFilter = columnFilters.find((f) => f.id === "status")?.value;
+  const filteredStatuses = Array.isArray(statusFilter)
+    ? ALL_STATUSES.filter((status) => statusFilter.includes(status))
+    : [];
+  const boardStatuses =
+    filteredStatuses.length > 0 ? filteredStatuses : ALL_STATUSES;
+
+  const setView = (view: "board" | "table") => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (view === "board") params.set("view", "board");
+    else params.delete("view");
+    router.replace(
+      selectedItemId
+        ? workItemHref(selectedItemId, params)
+        : workListHref(params),
+      { scroll: false }
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4 p-5 md:p-6">
@@ -272,16 +296,43 @@ export function WorkDashboardView({
             Clear filters
           </button>
         )}
-        <div className="ml-auto">
-          <DataGridColumnVisibility
-            table={table}
-            trigger={
-              <Button variant="outline" size="sm" className="h-9 gap-1.5">
-                <Settings2 className="size-3.5" />
-                Columns
-              </Button>
-            }
-          />
+        <div className="ml-auto flex items-center gap-2">
+          <fieldset
+            className="inline-flex min-w-0 rounded-lg border bg-muted/30 p-1"
+            aria-label="Work view"
+          >
+            <Button
+              variant={boardView ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 gap-1.5"
+              aria-pressed={boardView}
+              onClick={() => setView("board")}
+            >
+              <Columns3 className="size-3.5" />
+              Board
+            </Button>
+            <Button
+              variant={boardView ? "ghost" : "secondary"}
+              size="sm"
+              className="h-7 gap-1.5"
+              aria-pressed={!boardView}
+              onClick={() => setView("table")}
+            >
+              <List className="size-3.5" />
+              Table
+            </Button>
+          </fieldset>
+          {!boardView && (
+            <DataGridColumnVisibility
+              table={table}
+              trigger={
+                <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                  <Settings2 className="size-3.5" />
+                  Columns
+                </Button>
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -309,9 +360,18 @@ export function WorkDashboardView({
           }}
           emptyMessage="No work items found."
         >
-          <DataGridContainer className="overflow-x-auto">
-            <DataGridTable />
-          </DataGridContainer>
+          {boardView ? (
+            <WorkKanban
+              items={rows.map((row) => row.original)}
+              statuses={boardStatuses}
+              isLoading={isLoading}
+              onOpenItem={openItem}
+            />
+          ) : (
+            <DataGridContainer className="overflow-x-auto">
+              <DataGridTable />
+            </DataGridContainer>
+          )}
           <DataGridPagination sizes={[25, 50, 100]} />
         </DataGrid>
       )}
