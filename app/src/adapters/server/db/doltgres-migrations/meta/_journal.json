@@ -29,6 +29,13 @@
       "when": 1792799423629,
       "tag": "0003_curly_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794015320056,
+      "tag": "0004_knowledge_metric_columns",
+      "breakpoints": true
     }
   ]
 }

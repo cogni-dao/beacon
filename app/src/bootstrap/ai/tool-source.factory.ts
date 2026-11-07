@@ -27,7 +27,7 @@ import {
   type CatalogBoundTool,
   contractToRuntime as sharedContractToRuntime,
 } from "@cogni/shared-ai-tools";
-import { EVALUATION_TOOL_IDS } from "./evaluation-baseline";
+import { PUBLISHED_TOOL_IDS } from "./evaluation-baseline";
 
 import type { ToolBindings } from "./tool-bindings";
 
@@ -63,7 +63,7 @@ export function createBoundToolSource(
     }
     // Published schemas use the published compiler; product tools retain their local Zod 3 compiler.
     runtimes.push(
-      EVALUATION_TOOL_IDS.some((id) => id === toolId)
+      PUBLISHED_TOOL_IDS.includes(toolId)
         ? sharedContractToRuntime(
             (boundTool as CatalogBoundTool).contract,
             impl,
