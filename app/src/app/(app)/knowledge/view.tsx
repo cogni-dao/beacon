@@ -12,7 +12,7 @@
  *   - SINGLE_COLUMNS_TOGGLE (toolbar, not per-column).
  *   - URL_DRIVEN_STATE (mode + filters persist in URL).
  *   - Cookie-session merges only — no Bearer header is ever sent from this page.
- * Side-effects: IO (GET /knowledge, GET /knowledge/contributions, POST .../merge, POST .../close).
+ * Side-effects: IO (GET /knowledge, GET /knowledge/contributions, GET /metrics/goals, POST .../merge, POST .../close).
  * Links: docs/spec/knowledge-syntropy.md, [/work view](../work/view.tsx)
  * @public
  */
@@ -26,6 +26,7 @@ import type {
   KnowledgeListResponse,
   KnowledgeRow,
 } from "@cogni/node-contracts";
+import type { GoalsProgress } from "@cogni-dao/metrics/contracts";
 import {
   DataGrid,
   DataGridContainer,
@@ -55,11 +56,13 @@ import {
   Plus,
   Settings2,
   Tags,
+  Target,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { Button, Input } from "@/components";
+import { GoalsBoard } from "@/features/goals";
 
 import { closeContribution } from "./_api/closeContribution";
 import { fetchContributions } from "./_api/fetchContributions";
@@ -75,7 +78,7 @@ import { domainColumns } from "./_components/domain-columns";
 import { GraphView } from "./_components/GraphView";
 import { KnowledgeDetail } from "./_components/KnowledgeDetail";
 
-type ViewMode = "browse" | "domains" | "inbox" | "chains" | "graph";
+type ViewMode = "browse" | "domains" | "inbox" | "chains" | "graph" | "goals";
 
 const EDO_ENTRY_TYPES: ReadonlySet<string> = new Set([
   "hypothesis",
@@ -90,7 +93,8 @@ function isMode(v: string | null): v is ViewMode {
     v === "domains" ||
     v === "inbox" ||
     v === "chains" ||
-    v === "graph"
+    v === "graph" ||
+    v === "goals"
   );
 }
 
@@ -105,12 +109,15 @@ interface KnowledgeDashboardViewProps {
   readonly initialDomains?: DomainsListResponse | undefined;
   /** SSR-seeded graph — only present on a `?mode=graph` deep-link. */
   readonly initialGraph?: KnowledgeGraphResponse | undefined;
+  /** SSR-seeded goal progress — only present on a `?mode=goals` deep-link. */
+  readonly initialGoals?: GoalsProgress | undefined;
 }
 
 export function KnowledgeDashboardView({
   initialList,
   initialDomains,
   initialGraph,
+  initialGoals,
 }: KnowledgeDashboardViewProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -241,6 +248,12 @@ export function KnowledgeDashboardView({
               icon={<Tags className="size-3.5" />}
             />
             <ModeButton
+              active={mode === "goals"}
+              onClick={() => setModeUrl("goals")}
+              label="Goals"
+              icon={<Target className="size-3.5" />}
+            />
+            <ModeButton
               active={mode === "inbox"}
               onClick={() => setModeUrl("inbox")}
               label="Inbox"
@@ -283,6 +296,7 @@ export function KnowledgeDashboardView({
           onAddDomain={() => setAddDomainOpen(true)}
         />
       )}
+      {mode === "goals" && <GoalsBoard initialData={initialGoals} />}
       {mode === "inbox" && (
         <InboxPanel
           rows={contributionsQuery.data?.contributions ?? []}

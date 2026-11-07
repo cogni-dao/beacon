@@ -143,7 +143,14 @@ import {
   getTestOnChainVerifier,
   getTestOperatorWallet,
 } from "@/adapters/test";
+import { KpiBindingsSchema, type GoalsProgress, type MetricService } from "@cogni-dao/metrics";
 import { createToolBindings } from "@/bootstrap/ai/tool-bindings";
+import { createGoalMetricTools } from "@/bootstrap/capabilities/goal-metric-tools";
+import {
+  createGoalMetrics,
+  createGoalProgressReader,
+} from "@/bootstrap/capabilities/goal-metrics";
+import { startMetricsSyncOnBoot } from "@/bootstrap/startup-reconcile";
 import { createBoundToolSource } from "@/bootstrap/ai/tool-source.factory";
 import {
   createMetricsCapability,
@@ -282,6 +289,10 @@ export interface Container {
   knowledgeContributionService: ContributionService | undefined;
   /** GOAL_CHANGE_IS_NODE_ADMIN / P0P1_IS_NODE_ADMIN: this node's one node-admin authority (repo-spec admin wallets). */
   nodeAdmin: NodeAdminAuthority;
+  /** Goal-metric engine from @cogni-dao/metrics — undefined when DOLTGRES_URL is unset. */
+  goalMetrics: MetricService | undefined;
+  /** The node's one goal-progress read; HTTP, SSR and core__goal_progress share it. */
+  goalProgress: () => Promise<GoalsProgress>;
   /** Direct knowledge store port — exposed for the cookie-only browse endpoint. Undefined when DOLTGRES_URL is unset. */
   knowledgeStorePort: KnowledgeStorePort | undefined;
   /** EDO hypothesis-loop capability for the langgraph tool bindings AND the bearer-auth REST routes under /api/v1/edo. Always present (stubs throw when DOLTGRES_URL is unset). */
@@ -366,6 +377,7 @@ let _workflowClientPromise: Promise<{
 export function getContainer(): Container {
   if (!_container) {
     _container = createContainer();
+    if (_container.goalMetrics) startMetricsSyncOnBoot();
   }
   return _container;
 }
@@ -766,6 +778,7 @@ function createContainer(): Container {
   });
 
   // KnowledgeCapability + EdoCapability for AI tools (require DOLTGRES_URL)
+  let goalMetrics: MetricService | undefined;
   let knowledgeCapability: KnowledgeCapability;
   let edoCapability: EdoCapability;
   let edoResolver: EdoResolverPort | undefined;
@@ -829,7 +842,37 @@ function createContainer(): Container {
       writerSession: knowledgeWriter,
     });
     knowledgeStorePort = knowledgePort;
+    goalMetrics = createGoalMetrics({
+      knowledgeSql: doltClient,
+      observationsSql: serviceDb.$client,
+      environment: env.DEPLOY_ENVIRONMENT ?? "unknown",
+      // Compute receipts and skipped invalid definitions must reach Loki.
+      log: (event) => log.info(event, "metric.event"),
+    });
     knowledgeCapability = createKnowledgeCapability(knowledgePort);
+    const listGoals =
+      knowledgeCapability.listActiveGoals?.bind(knowledgeCapability);
+    if (listGoals)
+      knowledgeCapability.listActiveGoals = async () => {
+        const goals = await listGoals();
+        return Promise.all(
+          goals.map(async (goal) => {
+            const row = await knowledgePort.getKnowledge(goal.id);
+            // Invalid stored bindings never break the goal list.
+            const parsed = KpiBindingsSchema.safeParse(row?.kpiBindings ?? []);
+            const bindings = parsed.success ? parsed.data : [];
+            return {
+              ...goal,
+              kpis:
+                bindings.length && goalMetrics
+                  ? await goalMetrics.bindings(bindings, {
+                      deadline: goal.evaluateAt,
+                    })
+                  : [],
+            };
+          })
+        );
+      };
     const doltgresEdoResolver = new DoltgresEdoResolverAdapter({
       sql: doltClient,
       store: knowledgePort,
@@ -928,7 +971,20 @@ function createContainer(): Container {
     workItemCapability,
     nodePublicOrigin: env.APP_BASE_URL,
   });
-  const toolSource = createBoundToolSource([...CORE_TOOL_BUNDLE], toolBindings);
+  const goalProgress = createGoalProgressReader({
+    metrics: () => goalMetrics,
+    knowledge: () => knowledgeStorePort,
+    // Same fallback as createGoalMetrics, so payload environment == observation scope.
+    environment: env.DEPLOY_ENVIRONMENT ?? "unknown",
+  });
+  const metricTools = createGoalMetricTools({
+    metrics: () => goalMetrics,
+    goalProgress,
+  });
+  const toolSource = createBoundToolSource([...CORE_TOOL_BUNDLE], {
+    ...toolBindings,
+    ...metricTools.bindings,
+  });
 
   // Config: rethrow in dev/test for diagnosis, respond_500 in production for safety
   const config: ContainerConfig = {
@@ -1106,6 +1162,8 @@ function createContainer(): Container {
     toolSource,
     knowledgeContributionService,
     nodeAdmin,
+    goalMetrics,
+    goalProgress,
     knowledgeStorePort,
     edoCapability,
     edoResolver,

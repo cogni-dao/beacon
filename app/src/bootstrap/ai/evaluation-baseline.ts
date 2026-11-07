@@ -3,6 +3,7 @@
 import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
 import {
   type CatalogBoundTool,
+  METRIC_TOOL_BUNDLE,
   CORE_TOOL_BUNDLE as SHARED_CORE_TOOL_BUNDLE,
 } from "@cogni/shared-ai-tools";
 export const EVALUATION_TOOL_IDS = [
@@ -33,4 +34,14 @@ for (const id of EVALUATION_TOOL_IDS) {
     contract: { ...existing?.contract, ...shared.contract },
   });
 }
+/** Published goal-metric tools (core__goal_progress, core__metric_*) over @cogni-dao/metrics. */
+export const METRIC_TOOL_IDS: readonly string[] = METRIC_TOOL_BUNDLE.map(
+  (tool) => tool.contract.name,
+);
+for (const tool of METRIC_TOOL_BUNDLE) local.set(tool.contract.name, tool);
+/** Tools whose contracts use the published (Zod 4) compiler. */
+export const PUBLISHED_TOOL_IDS: readonly string[] = [
+  ...EVALUATION_TOOL_IDS,
+  ...METRIC_TOOL_IDS,
+];
 export const BEACON_CORE_TOOL_BUNDLE = [...local.values()];

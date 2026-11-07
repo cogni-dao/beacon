@@ -26,6 +26,9 @@ export const EVENT_NAMES = {
   // /admin/payments money-plane snapshot: one terminal event per page read
   // (outcome success|error, durationMs, worst grade, per-plane grade enums).
   MONEY_PLANE_SNAPSHOT: "money_plane.snapshot",
+  // Goal metrics (@cogni-dao/metrics): one terminal event per refresh dispatch / goals read.
+  METRIC_REFRESH_COMPLETE: "metric.refresh_complete",
+  GOALS_PROGRESS_READ: "goals.progress_read",
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];

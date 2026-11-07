@@ -25,10 +25,12 @@ import type {
   WorkItemCommandPort,
   WorkItemQueryPort,
   WorkItemStatus,
+  WorkItemSortBy,
   WorkItemType,
 } from "@cogni/work-items";
 import {
   isValidTransition,
+  WORK_ITEM_SORT_FIELDS,
   toWorkItemId,
   toWorkItemDto as toWorkItemInfo,
 } from "@cogni/work-items";
@@ -52,6 +54,10 @@ export interface WorkItemCapabilityDeps {
   readonly backlogReader?: Pick<WorkItemQueryPort, "list">;
 }
 
+function isStoreSortBy(value: string): value is WorkItemSortBy {
+  return (WORK_ITEM_SORT_FIELDS as readonly string[]).includes(value);
+}
+
 /**
  * Create a WorkItemCapability backed by hexagonal ports.
  */
@@ -66,7 +72,9 @@ export function createWorkItemCapability(
       deps.backlogReader ??
       workItemQuery
     ).list({
-      ...(params.sortBy && { sortBy: params.sortBy }),
+      // The published tool contract offers more sort keys than this store orders by.
+      ...(params.sortBy &&
+        isStoreSortBy(params.sortBy) && { sortBy: params.sortBy }),
       ...(params.sortDirection && { sortDirection: params.sortDirection }),
       ...(params.labels && { labels: [...params.labels] }),
       ...(params.labelPrefix && { labelPrefix: params.labelPrefix }),
