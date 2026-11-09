@@ -4,7 +4,7 @@
 /**
  * Module: `@app/_facades/work/items.server`
  * Purpose: Server-side facade for work item read/write operations across the markdown + Doltgres surfaces.
- * Scope: Maps port results to contract DTOs and merges node-local Doltgres rows with legacy markdown rows.
+ * Scope: Maps port results to contract DTOs. Exactly one backend owns each list order and cursor: node-local Doltgres, or legacy markdown only when Doltgres is not configured.
  * Invariants: P0P1_IS_NODE_ADMIN (story.5101: priority <= 1 on create/patch requires node admin,
  *   checked before the store write), PORT_VIA_CONTAINER (no direct adapter imports), CONTRACTS_ARE_TRUTH, NODE_STORE_IS_LOCAL.
  * Side-effects: IO (filesystem read via port; database read/write via Doltgres port)
@@ -19,11 +19,20 @@ import type {
   WorkItemDto,
   WorkItemsListInput,
   WorkItemsListOutput,
+  WorkItemSummariesListInput,
+  WorkItemSummariesListOutput,
 } from "@cogni/node-contracts";
-import type { WorkItem, WorkItemId } from "@cogni/work-items";
+import type {
+  WorkBoardColumnPages,
+  WorkItem,
+  WorkItemId,
+  WorkQuery,
+  WorkSummaryReadOptions,
+} from "@cogni/work-items";
 import {
   toWorkItemDto as toDto,
   toWorkItemId,
+  WorkItemSummarySchema,
   WorkItemScoresInvalidError,
   WorkItemWriteOutcomeUnknownError,
 } from "@cogni/work-items";
@@ -243,53 +252,141 @@ export async function listWorkItems(
     ...(input.cursor && { cursor: input.cursor }),
   };
 
-  // Pagination strategy:
-  //   - Doltgres is the cursor-paginated source of truth (post-#1144 importer
-  //     back-fills markdown items into Doltgres at their original IDs).
-  //   - On the first page (no cursor) we ALSO query the markdown adapter so
-  //     any items that haven't been imported yet still appear. Doltgres rows
-  //     win on id conflict (single-source dedup).
-  //   - Merged page is truncated to `limit` so the response never overflows.
-  //   - hasMore tracks Doltgres only — markdown is finite/small and only
-  //     contributes to page 1; once Doltgres exhausts pagination ends.
-  //   - Markdown-only items that overflow page 1 are dropped from the response;
-  //     this is acceptable because markdown is being deprecated and the
-  //     importer back-fill closes the gap.
-  let dgItems: WorkItem[] = [];
-  let endCursor: string | null = null;
-  let hasMore = false;
-
+  // Exactly one backend owns the total order and its cursor (task.0056). The
+  // former page-1 merge read the whole markdown backlog on every first page;
+  // Beacon has no markdown work items, so it only cost an unbounded read.
+  // Configured Doltgres failures stay errors; only genuinely absent
+  // configuration selects markdown.
   try {
-    const dgResult = await container.doltgresWorkItems.list(queryShared);
-    dgItems = [...dgResult.items];
-    endCursor = dgResult.pageInfo.endCursor;
-    hasMore = dgResult.pageInfo.hasMore;
+    const result = await container.doltgresWorkItems.list(queryShared);
+    return {
+      items: result.items.map(toDto),
+      pageInfo: result.pageInfo,
+      ...(result.pageInfo.endCursor !== null && {
+        nextCursor: result.pageInfo.endCursor,
+      }),
+    };
   } catch (e) {
-    const name = (e as Error)?.name;
-    if (name === "InvalidCursorError") {
+    rethrowReadUnlessNotConfigured(e);
+  }
+  try {
+    const result = await container.workItemQuery.list(queryShared);
+    return {
+      items: result.items.map(toDto),
+      pageInfo: {
+        endCursor: result.nextCursor ?? null,
+        hasMore: result.nextCursor !== undefined,
+      },
+      ...(result.nextCursor !== undefined && { nextCursor: result.nextCursor }),
+    };
+  } catch (e) {
+    if ((e as Error)?.name === "InvalidCursorError")
       throw new InvalidCursorError((e as Error).message);
-    }
-    if (name !== "DoltgresNotConfiguredError") rethrowBackendError(e);
+    throw e;
   }
+}
 
-  let merged: WorkItem[] = dgItems;
-  if (!input.cursor) {
-    const mdResult = await container.workItemQuery.list(queryShared);
-    const dgIds = new Set(dgItems.map((i) => i.id as string));
-    const mdOnly = mdResult.items.filter((i) => !dgIds.has(i.id as string));
-    merged = [...dgItems, ...mdOnly];
+/** Map a store read failure; returns only when Doltgres is not configured. */
+function rethrowReadUnlessNotConfigured(error: unknown): void {
+  const name = (error as Error)?.name;
+  if (name === "InvalidCursorError") {
+    throw new InvalidCursorError((error as Error).message);
   }
+  if (name !== "DoltgresNotConfiguredError") rethrowBackendError(error);
+}
 
-  const requestedLimit = input.limit ?? 100;
-  if (merged.length > requestedLimit) {
-    merged = merged.slice(0, requestedLimit);
-  }
-
+/** The store query for one decoded summary request (the published codec already bounded it). */
+function summaryQuery(input: WorkItemSummariesListInput): WorkQuery {
   return {
-    items: merged.map(toDto),
-    pageInfo: { endCursor, hasMore },
-    ...(endCursor !== null && { nextCursor: endCursor }),
+    ...(input.sortBy !== undefined && { sortBy: input.sortBy }),
+    ...(input.sortDirection !== undefined && {
+      sortDirection: input.sortDirection,
+    }),
+    ...(input.types && { types: input.types as WorkItem["type"][] }),
+    ...(input.statuses && { statuses: input.statuses as WorkItem["status"][] }),
+    ...(input.text && { text: input.text }),
+    ...(input.actor && { actor: input.actor as WorkItem["actor"] }),
+    ...(input.projectId && { projectId: toWorkItemId(input.projectId) }),
+    ...(input.projectIds && { projectIds: input.projectIds.map(toWorkItemId) }),
+    ...(input.rankMin !== undefined && { rankMin: input.rankMin }),
+    ...(input.rankMax !== undefined && { rankMax: input.rankMax }),
+    ...(input.node && { node: input.node }),
+    ...(input.labels && { labels: input.labels }),
+    ...(input.labelPrefix !== undefined && { labelPrefix: input.labelPrefix }),
+    ...(input.scored !== undefined && { scored: input.scored }),
+    limit: input.limit ?? 25,
+    ...(input.cursor && { cursor: input.cursor }),
   };
+}
+
+/**
+ * One bounded summary page (task.0056). `options` (signal, shared deadline,
+ * scan budget) only tightens the read. Doltgres owns the page; markdown serves
+ * it only when Doltgres is not configured (same rule as `listWorkItems`).
+ */
+export async function listWorkSummaries(
+  input: WorkItemSummariesListInput,
+  options?: WorkSummaryReadOptions,
+): Promise<WorkItemSummariesListOutput> {
+  const container = getContainer();
+  const query = summaryQuery(input);
+  try {
+    return await container.doltgresWorkItems.listSummaries(query, options);
+  } catch (error) {
+    rethrowReadUnlessNotConfigured(error);
+  }
+  try {
+    const result = await container.workItemQuery.list(query);
+    return {
+      items: result.items.map((item) =>
+        WorkItemSummarySchema.parse(toDto(item)),
+      ),
+      pageInfo: {
+        endCursor: result.nextCursor ?? null,
+        hasMore: result.nextCursor !== undefined,
+      },
+      ...(result.nextCursor !== undefined && { nextCursor: result.nextCursor }),
+    };
+  } catch (error) {
+    if ((error as Error)?.name === "InvalidCursorError")
+      throw new InvalidCursorError((error as Error).message);
+    throw error;
+  }
+}
+
+/**
+ * First page of every listed board column in ONE store read when the port
+ * composes it (task.0056); otherwise one bounded summary read per column.
+ * Text queries never reach here (the package keeps them per-column).
+ */
+export async function listWorkBoardColumns(
+  input: WorkItemSummariesListInput,
+  statuses: readonly string[],
+  perColumn: number,
+  options?: { readonly signal?: AbortSignal },
+): Promise<WorkBoardColumnPages> {
+  const port = getContainer().doltgresWorkItems;
+  if (port.listBoardColumns) {
+    try {
+      return await port.listBoardColumns(
+        summaryQuery(input),
+        statuses,
+        perColumn,
+        options,
+      );
+    } catch (error) {
+      rethrowReadUnlessNotConfigured(error);
+    }
+  }
+  const columns = [];
+  for (const status of statuses) {
+    const page = await listWorkSummaries(
+      { ...input, statuses: [status], limit: perColumn },
+      options,
+    );
+    columns.push({ status, items: page.items, pageInfo: page.pageInfo });
+  }
+  return { columns, queryCount: columns.length };
 }
 
 export async function getWorkItem(id: string): Promise<WorkItemDto | null> {

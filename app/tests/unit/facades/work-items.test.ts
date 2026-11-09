@@ -107,6 +107,28 @@ describe("app/_facades/work/items.server", () => {
   });
 
   describe("listWorkItems", () => {
+    // Markdown serves a list only when Doltgres is not configured (task.0056:
+    // exactly one backend owns the order; no page-1 merge).
+    beforeEach(() => {
+      mockDoltgres.list.mockRejectedValue(
+        Object.assign(new Error("not configured"), {
+          name: "DoltgresNotConfiguredError",
+        })
+      );
+    });
+
+    it("never reads markdown when Doltgres is configured", async () => {
+      mockDoltgres.list.mockResolvedValue({
+        items: [SAMPLE_WORK_ITEM],
+        pageInfo: { endCursor: null, hasMore: false },
+      });
+
+      const result = await listWorkItems({});
+
+      expect(result.items.map((item) => item.id)).toEqual(["task.0001"]);
+      expect(mockPort.list).not.toHaveBeenCalled();
+    });
+
     it("returns items mapped to contract-compliant DTOs", async () => {
       vi.mocked(mockPort.list).mockResolvedValue({
         items: [SAMPLE_WORK_ITEM],

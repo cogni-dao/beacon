@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Shield-1.0.0
-/** Compose published content with unchanged v1 lease/DELETE behavior; no lease algorithm. */
+/**
+ * Compose published content with unchanged v1 lease/DELETE behavior; no lease algorithm.
+ *
+ * BOUNDED_CLAIM_OVERLAY (task.0056): the legacy claim overlay applies only to the
+ * full-item agent list and reads exactly the page's ids (limit = page length).
+ * Summary pages and board columns (the /work and /dashboard read path) carry no
+ * claim fields and never touch the legacy adapter.
+ */
 
 import type { WorkItemsDoltgresPort as LegacyWorkItemsPort } from "@cogni/legacy-work-items/adapters/doltgres";
 import type { WorkItem, WorkItemsContentPort } from "@cogni/work-items";
@@ -51,6 +58,7 @@ export function composeEvaluationWorkItems(
     return project(current, lease);
   };
   const history = content.history?.bind(content);
+  const listBoardColumns = content.listBoardColumns?.bind(content);
   return {
     async get(id) {
       const item = await content.get(id);
@@ -59,11 +67,10 @@ export function composeEvaluationWorkItems(
     async list(query) {
       const page = await content.list(query);
       if (!page.items.length) return page;
-      // The content page owns membership, order, scores and revision.
-      const claims = await legacy.list({
-        ids: page.items.map((item) => item.id),
-        limit: 500,
-      });
+      // The content page owns membership, order, scores and revision; one keyed
+      // read of this page's ids only.
+      const ids = page.items.map((item) => item.id);
+      const claims = await legacy.list({ ids, limit: ids.length });
       const byId = new Map(claims.items.map((item) => [item.id, item]));
       return {
         ...page,
@@ -72,9 +79,11 @@ export function composeEvaluationWorkItems(
         ),
       };
     },
-    async listSummaries(query) {
-      return content.listSummaries(query);
-    },
+    // Read options (signal, text deadline, scan cap) must reach the content adapter (task.0056).
+    listSummaries: (query, options) => content.listSummaries(query, options),
+    // Composed board read (one store read for every column) when the content
+    // adapter provides it; otherwise the facade reads one column at a time.
+    ...(listBoardColumns && { listBoardColumns }),
     ...(history && { history }),
     async create(input, principalId) {
       return content.create(input, principalId);
