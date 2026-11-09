@@ -62,7 +62,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { Button, Input } from "@/components";
-import { GoalsBoard } from "@/features/goals";
 
 import { closeContribution } from "./_api/closeContribution";
 import { fetchContributions } from "./_api/fetchContributions";
@@ -75,6 +74,7 @@ import { ContributionDetail } from "./_components/ContributionDetail";
 import { knowledgeColumns } from "./_components/columns";
 import { buildContributionColumns } from "./_components/contribution-columns";
 import { domainColumns } from "./_components/domain-columns";
+import { KnowledgeGoalsBoard } from "./_components/GoalsMount";
 import { GraphView } from "./_components/GraphView";
 import { KnowledgeDetail } from "./_components/KnowledgeDetail";
 
@@ -296,7 +296,7 @@ export function KnowledgeDashboardView({
           onAddDomain={() => setAddDomainOpen(true)}
         />
       )}
-      {mode === "goals" && <GoalsBoard initialData={initialGoals} />}
+      {mode === "goals" && <KnowledgeGoalsBoard initialData={initialGoals} />}
       {mode === "inbox" && (
         <InboxPanel
           rows={contributionsQuery.data?.contributions ?? []}
