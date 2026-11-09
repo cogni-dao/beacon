@@ -173,7 +173,8 @@ describe("change reasons and row history", () => {
     const { store, content } = fixture();
     await store.listSummaries({});
     await store.history?.(item.id);
-    expect(content.listSummaries).toHaveBeenCalledWith({});
+    // Read options are forwarded too (task.0056); none were passed here.
+    expect(content.listSummaries).toHaveBeenCalledWith({}, undefined);
     expect(content.history).toHaveBeenCalledWith(item.id);
   });
   it("forwards a patch reason through the facade to the store", async () => {
