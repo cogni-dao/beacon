@@ -106,7 +106,8 @@ describe("published content with v1 lease compatibility", () => {
       scores: item.scores,
       claimedByRun: "run-a",
     });
-    expect(legacy.list).toHaveBeenCalledWith({ ids: [item.id], limit: 500 });
+    // BOUNDED_CLAIM_OVERLAY (task.0056): one keyed read of exactly this page's ids.
+    expect(legacy.list).toHaveBeenCalledWith({ ids: [item.id], limit: 1 });
     expect(rankScore(current?.scores)).toBe(rankScore(item.scores));
   });
   it("delegates unchanged v1 claim/heartbeat/release inputs and preserves new score readback", async () => {
@@ -172,7 +173,8 @@ describe("change reasons and row history", () => {
     const { store, content } = fixture();
     await store.listSummaries({});
     await store.history?.(item.id);
-    expect(content.listSummaries).toHaveBeenCalledWith({});
+    // Read options are forwarded too (task.0056); none were passed here.
+    expect(content.listSummaries).toHaveBeenCalledWith({}, undefined);
     expect(content.history).toHaveBeenCalledWith(item.id);
   });
   it("forwards a patch reason through the facade to the store", async () => {
@@ -188,26 +190,54 @@ describe("change reasons and row history", () => {
   });
 });
 
-describe("complete rank-view pagination", () => {
-  it("loads later higher-ranked items and unscored rows before client sorting", async () => {
-    const late = { ...item, id: toWorkItemId("task.0002"), rankScore: 20 };
-    const fetch = vi.spyOn(globalThis, "fetch");
-    fetch.mockResolvedValueOnce(Response.json({ items: [{ ...item, rankScore: 1 }], pageInfo: { hasMore: true, endCursor: "page-two" } }));
-    fetch.mockResolvedValueOnce(Response.json({ items: [late, { ...item, id: toWorkItemId("task.0003"), scores: undefined }], pageInfo: { hasMore: false, endCursor: null } }));
+describe("read forwarding (task.0056)", () => {
+  it("forwards listSummaries read options (signal, text deadline, scan cap) to the content store", async () => {
+    const { store, content } = fixture();
+    const options = { signal: new AbortController().signal, deadline: 1_700_000_000_000, maxScanRows: 400 };
+    const query = { statuses: ["needs_design" as WorkItem["status"]], text: "needle", limit: 20 };
+    await store.listSummaries(query, options);
+    expect(content.listSummaries).toHaveBeenCalledWith(query, options);
+  });
+  it("forwards the composed board read to the content store and never touches legacy claims", async () => {
+    const { content, legacy } = fixture();
+    const pages = { columns: [], queryCount: 1 };
+    const listBoardColumns = vi.fn().mockResolvedValue(pages);
+    const store = composeEvaluationWorkItems(
+      { ...content, listBoardColumns } as unknown as WorkItemsContentPort,
+      legacy as unknown as LegacyPort,
+    );
+    const options = { signal: new AbortController().signal };
+    await expect(
+      store.listBoardColumns?.({ limit: 20 }, ["needs_design", "done"], 20, options),
+    ).resolves.toBe(pages);
+    expect(listBoardColumns).toHaveBeenCalledWith({ limit: 20 }, ["needs_design", "done"], 20, options);
+    expect(legacy.list).not.toHaveBeenCalled();
+  });
+  it("omits listBoardColumns when the content store has none", () => {
+    const { store } = fixture();
+    expect(store.listBoardColumns).toBeUndefined();
+  });
+});
+
+describe("bounded work reads (task.0056)", () => {
+  it("fetches exactly one summaries page and never walks its cursor", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ items: [item], pageInfo: { hasMore: true, endCursor: "page-two" } }));
     try {
-      const all = await fetchWorkItems();
-      expect(all.items.map(row => row.id)).toEqual(["task.0001", "task.0002", "task.0003"]);
-      expect(all.items[1]?.rankScore).toBe(20);
-      expect(String(fetch.mock.calls[1]?.[0])).toContain("cursor=page-two");
-      expect(all.pageInfo?.hasMore).toBe(false);
+      const params = new URLSearchParams({ limit: "25", sortBy: "rankScore", sortDirection: "desc" });
+      const page = await fetchWorkItems(params);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(String(fetch.mock.calls[0]?.[0])).toBe(`/api/v1/work/summaries?${params}`);
+      expect(page.pageInfo).toEqual({ hasMore: true, endCursor: "page-two" });
     } finally { fetch.mockRestore(); }
   });
-  it("rejects a repeated cursor rather than exposing a silently truncated ranking", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ items: [item], pageInfo: { hasMore: true, endCursor: "same" } }));
-    // Each request receives its own response body.
-    fetch.mockImplementation(async () => Response.json({ items: [item], pageInfo: { hasMore: true, endCursor: "same" } }));
-    try { await expect(fetchWorkItems()).rejects.toThrow("did not advance"); }
-    finally { fetch.mockRestore(); }
+  it("rejects with the HTTP status so the package hooks retry only 5xx", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ error: "Work-item store is busy" }, { status: 503 }));
+    try {
+      await expect(fetchWorkItems(new URLSearchParams())).rejects.toMatchObject({ status: 503 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { fetch.mockRestore(); }
   });
 });
 

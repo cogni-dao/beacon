@@ -60,6 +60,8 @@ HTTP API endpoints using Next.js App Router. Contract-validated entry points tha
   - `/api/v1/attribution/epochs/[id]/pool-components` [POST] - record pool component (SIWE + approver)
   - `/api/v1/users/me` [GET, PATCH] - current profile
   - `/api/v1/users/me/ownership` [GET] - current ownership summary derived from linked identities
+  - `/api/v1/work/summaries` [GET] - one bounded page (default 25, max 100; text scans ≤1000 rows) of projected Work summaries; auth + logging + the published `handleWorkSummariesRequest` (task.0056)
+  - `/api/v1/work/board` [GET] - first page (≤20) of each visible status column in one composed read; auth + logging + the published `handleWorkBoardRequest`; column cursors continue through `/summaries` (task.0056)
   - `/api/v1/work/items` [GET, POST] - list or create node-local Dolt work items (SIWE or agent bearer auth)
   - `/api/v1/work/items/[id]` [GET, PATCH, DELETE] - read, update, or delete a node-local Dolt work item (SIWE or agent bearer auth)
   - `/api/v1/work/items/[id]/claims` [POST, DELETE] - acquire or release an authenticated principal+run lease
