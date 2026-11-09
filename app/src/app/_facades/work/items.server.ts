@@ -361,6 +361,7 @@ export async function patchWorkItem(
         ...(input.expectedRevision !== undefined && {
           expectedRevision: input.expectedRevision,
         }),
+        ...(input.reason !== undefined && { reason: input.reason }),
       },
       sessionUser.id,
     );

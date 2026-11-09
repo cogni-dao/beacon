@@ -50,6 +50,7 @@ export function composeEvaluationWorkItems(
     if (!current) throw new WorkItemNotFoundError(lease.id);
     return project(current, lease);
   };
+  const history = content.history?.bind(content);
   return {
     async get(id) {
       const item = await content.get(id);
@@ -71,6 +72,10 @@ export function composeEvaluationWorkItems(
         ),
       };
     },
+    async listSummaries(query) {
+      return content.listSummaries(query);
+    },
+    ...(history && { history }),
     async create(input, principalId) {
       return content.create(input, principalId);
     },

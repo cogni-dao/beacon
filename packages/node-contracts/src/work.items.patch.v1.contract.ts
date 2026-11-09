@@ -9,12 +9,14 @@
  *   - Contract remains stable; breaking changes require new version
  *   - All consumers use z.infer types
  *   - PATCH_ALLOWLIST: only fields in `set` are mutable. id/created_at/updated_at are server-managed.
- *   - v0 has no expectedRevision optimistic concurrency and no transition state-machine — whoever holds a valid token is trusted.
+ *   - v0 has no transition state-machine — whoever holds a valid token is trusted.
+ *   - Optional reason is one line (CR/LF become spaces), 1-512 chars, stored in Dolt history, never in the item (task.0052).
  * Side-effects: none
  * Links: /api/v1/work/items/[id] route, docs/spec/work-items-port.md, work/items/task.0423.doltgres-work-items-source-of-truth.md
  * @internal
  */
 
+import { ChangeReasonSchema } from "@cogni/work-items";
 import { z } from "zod";
 import { WorkItemScoresSchema } from "./work.items.scores";
 
@@ -36,10 +38,12 @@ export const workItemsPatchOperation = {
   id: "work.items.patch.v1",
   summary: "Patch a work item",
   description:
-    "Updates a subset of fields on a work item. Whitelisted fields only — id, created_at, updated_at are server-managed.",
+    "Updates a subset of fields on a work item. Whitelisted fields only — id, created_at, updated_at are server-managed. Optional reason (one line, 1-512 chars) says why; it is stored in history (GET /work/items/{id}/history), not in the item.",
   input: z.object({
     id: z.string(),
     expectedRevision: z.number().int().nonnegative().optional(),
+    // The adapter turns CR/LF into spaces and trims; this checks the result fits.
+    reason: ChangeReasonSchema.optional(),
     set: z
       .strictObject({
         title: z.string().min(1).max(500).optional(),

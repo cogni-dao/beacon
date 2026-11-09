@@ -948,6 +948,8 @@ function createContainer(): Container {
     doltgresWorkItems = {
       get: notConfiguredWorkItems,
       list: notConfiguredWorkItems,
+      listSummaries: notConfiguredWorkItems,
+      history: notConfiguredWorkItems,
       create: notConfiguredWorkItems,
       patch: notConfiguredWorkItems,
       delete: notConfiguredWorkItems,

@@ -62,6 +62,11 @@ function fixture() {
     create: vi.fn().mockResolvedValue(item),
     patch: vi.fn().mockResolvedValue(item),
     delete: vi.fn(),
+    listSummaries: vi.fn().mockResolvedValue({
+      items: [],
+      pageInfo: { endCursor: null, hasMore: false },
+    }),
+    history: vi.fn().mockResolvedValue([]),
   };
   const legacy = {
     get: vi.fn().mockResolvedValue(old),
@@ -161,6 +166,27 @@ describe("published content with v1 lease compatibility", () => {
   });
 });
 
+
+describe("change reasons and row history", () => {
+  it("delegates listSummaries and history to the published content store", async () => {
+    const { store, content } = fixture();
+    await store.listSummaries({});
+    await store.history?.(item.id);
+    expect(content.listSummaries).toHaveBeenCalledWith({});
+    expect(content.history).toHaveBeenCalledWith(item.id);
+  });
+  it("forwards a patch reason through the facade to the store", async () => {
+    backend.patch.mockResolvedValueOnce(item);
+    await patchWorkItem(
+      { id: item.id, reason: "why", set: { priority: 3 } },
+      { id: "actor" },
+    );
+    expect(backend.patch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: "why" }),
+      "actor",
+    );
+  });
+});
 
 describe("complete rank-view pagination", () => {
   it("loads later higher-ranked items and unscored rows before client sorting", async () => {
