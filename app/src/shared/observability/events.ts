@@ -29,6 +29,9 @@ export const EVENT_NAMES = {
   // Goal metrics (@cogni-dao/metrics): one terminal event per refresh dispatch / goals read.
   METRIC_REFRESH_COMPLETE: "metric.refresh_complete",
   GOALS_PROGRESS_READ: "goals.progress_read",
+  // Row history reads (task.0052): one terminal event per read, counts only.
+  WORK_ITEMS_HISTORY_READ: "work.items.history_read",
+  KNOWLEDGE_HISTORY_READ: "knowledge.history_read",
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];

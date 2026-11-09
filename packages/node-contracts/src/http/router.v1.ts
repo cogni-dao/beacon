@@ -14,6 +14,10 @@
 
 import { initContract } from "@ts-rest/core";
 
+import {
+  knowledgeHistoryOperation,
+  workItemsHistoryOperation,
+} from "../history.v1.contract";
 import { metaLivezOutputSchema } from "../meta.livez.read.v1.contract";
 import { metaReadyzOutputSchema } from "../meta.readyz.read.v1.contract";
 import { metaRoutesOutputSchema } from "../meta.route-manifest.read.v1.contract";
@@ -99,6 +103,24 @@ export const ApiContractV1 = c.router({
     body: workItemsPatchOperation.input.omit({ id: true }),
     responses: {
       200: workItemsPatchOperation.output,
+    },
+  },
+  workItemsHistory: {
+    method: "GET",
+    path: "/work/items/:id/history",
+    summary: workItemsHistoryOperation.summary,
+    description: workItemsHistoryOperation.description,
+    responses: {
+      200: workItemsHistoryOperation.output,
+    },
+  },
+  knowledgeHistory: {
+    method: "GET",
+    path: "/knowledge/:id/history",
+    summary: knowledgeHistoryOperation.summary,
+    description: knowledgeHistoryOperation.description,
+    responses: {
+      200: knowledgeHistoryOperation.output,
     },
   },
   workItemsDelete: {
