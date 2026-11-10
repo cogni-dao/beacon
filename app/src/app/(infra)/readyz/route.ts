@@ -6,12 +6,13 @@
  * Purpose: HTTP readiness endpoint. The default (k8s probe) path answers only "can this pod serve HTTP?" — local serving readiness: env, runtime secrets, system tenant.
  * Scope: Validates env + runtime secrets + system tenant (fatal). Checks EVM RPC, Temporal, and scheduler-worker connectivity but treats transient failures as NON-FATAL on the default probe (logged, still 200). `?deep=1` restores hard substrate assertion for provisioning / stack-test smoke checks.
  * Invariants: Always returns valid readyz schema; force-dynamic runtime. Every managed non-test node requires and exercises EVM RPC even before payment activation. The default path does not drain the fleet for a transient upstream failure (incident 2026-06-26: scheduler-worker hiccup → fleet-wide 502); `?deep=1` forces a live RPC read and makes EVM RPC, Temporal, and scheduler-worker failures fatal (503).
- * Side-effects: IO (HTTP response, structured logging, network calls to RPC and Temporal)
+ * Side-effects: IO (HTTP response, structured logging, network calls to RPC, Temporal, LiteLLM, Redis, Doltgres)
+ *             `?deep=1` probes exactly the Depend-class dependencies this node DECLARES, from the `SUBSTRATE_DEPENDENCIES` registry (readyz-probes.ts, built on `@cogni-dao/substrate-health`): evm-rpc, temporal, scheduler-worker, postgres, redis, litellm-gateway, and doltgres (only when DOLTGRES_URL is set). They run concurrently, each under DEEP_CHECK_BUDGET_MS, and a 503 body adds `unreachable`: every failing declared dependency. `reason`/`message` come from the first failure in registry order. Config errors (env, secrets) return before any check and carry no `unreachable`. The default path never adds the field and does no new IO. A CI parity test keeps the registry in sync with the env schema.
  * Notes: Used by Docker HEALTHCHECK, deployment validation, K8s readiness probes.
  *        HTTP status is primary truth: 200 = ready, 503 = not ready.
  *        Provisioning / smoke checks that must assert the substrate is up call `/readyz?deep=1`.
  *        Logs readiness failures for deployment debugging.
- * Links: `@contracts/meta.readyz.read.v1.contract`, src/shared/env/invariants.ts, src/app/(infra)/livez/route.ts
+ * Links: `@contracts/meta.readyz.read.v1.contract`, src/app/(infra)/readyz/readyz-probes.ts, src/shared/env/invariants.ts, src/app/(infra)/livez/route.ts
  * @public
  */
 
@@ -32,6 +33,11 @@ import {
 } from "@/shared/env/invariants";
 import type { RequestContext } from "@/shared/observability";
 import { setBuildInfo } from "@/shared/observability/server/metrics";
+import {
+  buildDeepChecks,
+  DeepProbeFailure,
+  runDeepChecks,
+} from "./readyz-probes";
 
 export const dynamic = "force-dynamic";
 
@@ -96,14 +102,13 @@ function logReadinessFailure(
  * and the request paths that need the substrate return 503 at request time — we
  * just never take the public site down with the probe.
  *
- * `deep` (from `?deep=1`) restores hard-fail semantics for provisioning /
- * stack-test smoke checks that must assert the substrate is actually up.
+ * Default (non-deep) path only: `?deep=1` runs the declared-dependency registry
+ * in readyz-probes.ts, where these failures are fatal (503).
  */
 async function assertSubstrate(
   check: () => Promise<void>,
   opts: {
     ctx: RequestContext;
-    deep: boolean;
     event: string;
     dependency: string;
   }
@@ -111,7 +116,6 @@ async function assertSubstrate(
   try {
     await check();
   } catch (error) {
-    if (opts.deep) throw error; // explicit deep probe: hard-fail (503)
     if (error instanceof InfraConnectivityError) {
       opts.ctx.log.error(
         {
@@ -154,63 +158,56 @@ export const GET = wrapRouteHandlerWithLogging(
       // the fleet; explicit deep readiness forces a fresh Base RPC read and
       // fails closed for birth/promotion proof.
       assertEvmRpcConfig(env);
-      const evmRpcResult = await checkEvmRpcConnectivity(
-        container.evmOnchainClient,
-        env,
-        { forceLive: deep }
-      );
-      if (!evmRpcResult.ok) {
-        const message = `EVM RPC connectivity check failed: ${evmRpcResult.errorMessage ?? "unknown"}`;
-        const context = {
-          event: "substrate.evm_rpc.unreachable",
-          severity: deep ? "critical" : "degraded",
-          reason: "INFRA_UNREACHABLE",
-          dependency: "evm-rpc",
-          source: evmRpcResult.source,
-          message,
-        };
-        if (deep) {
-          ctx.log.error(context, "deep readiness: EVM RPC unreachable");
-          throw new InfraConnectivityError(message);
-        }
-        ctx.log.warn(
-          context,
-          "readiness: EVM RPC unreachable, returning ready (non-fatal)"
+
+      if (deep) {
+        // Deep probe: concurrent, hard-fail. Probe exactly the dependencies this
+        // node declares; every failing one is named in the 503 body
+        // (`unreachable`). Registry: readyz-probes.ts.
+        await runDeepChecks(ctx, buildDeepChecks(ctx, container, env));
+      } else {
+        // Default probe: the minimal k8s serving check. It is deliberately NOT
+        // driven by the registry and adds no new IO.
+        const evmRpcResult = await checkEvmRpcConnectivity(
+          container.evmOnchainClient,
+          env,
+          { forceLive: false }
         );
-      } else if (deep) {
-        ctx.log.info(
+        if (!evmRpcResult.ok) {
+          const message = `EVM RPC connectivity check failed: ${evmRpcResult.errorMessage ?? "unknown"}`;
+          ctx.log.warn(
+            {
+              event: "substrate.evm_rpc.unreachable",
+              severity: "degraded",
+              reason: "INFRA_UNREACHABLE",
+              dependency: "evm-rpc",
+              source: evmRpcResult.source,
+              message,
+            },
+            "readiness: EVM RPC unreachable, returning ready (non-fatal)"
+          );
+        }
+
+        // Async substrate: Temporal + scheduler-worker. NON-FATAL to the k8s
+        // probe (a blip must not drain the fleet → 502), but mission-critical:
+        // failures are logged at ERROR with a critical-severity event so
+        // monitoring alarms.
+        await assertSubstrate(
+          () => assertTemporalConnectivity(container.scheduleControl, env),
           {
-            event: "substrate.evm_rpc.reachable",
-            dependency: "evm-rpc",
-            source: evmRpcResult.source,
-          },
-          "deep readiness: EVM RPC reachable"
+            ctx,
+            event: "substrate.temporal.unreachable",
+            dependency: "temporal",
+          }
         );
-      }
-
-      // Async substrate: Temporal + scheduler-worker. NON-FATAL to the k8s
-      // probe by default (a blip must not drain the fleet → 502), but
-      // mission-critical: failures are logged at ERROR with a critical-severity
-      // event so monitoring alarms. `?deep=1` hard-fails (503) for provisioning
-      // / stack-test smoke checks that must confirm the substrate is up.
-      await assertSubstrate(
-        () => assertTemporalConnectivity(container.scheduleControl, env),
-        {
+        await assertSubstrate(() => assertSchedulerWorkerConnectivity(env), {
           ctx,
-          deep,
-          event: "substrate.temporal.unreachable",
-          dependency: "temporal",
-        }
-      );
-      await assertSubstrate(() => assertSchedulerWorkerConnectivity(env), {
-        ctx,
-        deep,
-        event: "substrate.scheduler_worker.unreachable",
-        dependency: "scheduler-worker",
-      });
+          event: "substrate.scheduler_worker.unreachable",
+          dependency: "scheduler-worker",
+        });
 
-      // Verify system tenant billing account exists (per SYSTEM_TENANT_STARTUP_CHECK)
-      await verifySystemTenant(container.serviceAccountService);
+        // Verify system tenant billing account exists (per SYSTEM_TENANT_STARTUP_CHECK)
+        await verifySystemTenant(container.serviceAccountService);
+      }
 
       const payload = {
         status: "healthy" as const,
@@ -221,7 +218,14 @@ export const GET = wrapRouteHandlerWithLogging(
 
       const parsed = metaReadyzOperation.output.parse(payload);
       return NextResponse.json(parsed);
-    } catch (error) {
+    } catch (caught) {
+      // A deep probe wraps its first failure and names every failing dependency.
+      const error =
+        caught instanceof DeepProbeFailure ? (caught.primary as Error) : caught;
+      const unreachable =
+        caught instanceof DeepProbeFailure
+          ? { unreachable: caught.unreachable }
+          : {};
       // HTTP status is primary truth for K8s: 503 = not ready
       // Log failure before returning 503 for deployment debugging
       if (error instanceof EnvValidationError) {
@@ -231,6 +235,7 @@ export const GET = wrapRouteHandlerWithLogging(
             status: "error",
             reason: error.meta.code,
             details: error.meta,
+            ...unreachable,
           }),
           {
             status: 503, // Service Unavailable - not ready
@@ -247,6 +252,7 @@ export const GET = wrapRouteHandlerWithLogging(
             status: "error",
             reason: error.code,
             message: error.message,
+            ...unreachable,
           }),
           {
             status: 503, // Service Unavailable - not ready
@@ -263,6 +269,7 @@ export const GET = wrapRouteHandlerWithLogging(
             status: "error",
             reason: error.code,
             message: error.message,
+            ...unreachable,
           }),
           {
             status: 503, // Service Unavailable - not ready
@@ -277,6 +284,7 @@ export const GET = wrapRouteHandlerWithLogging(
         JSON.stringify({
           status: "error",
           reason: "INTERNAL_ERROR",
+          ...unreachable,
         }),
         {
           status: 503, // Service Unavailable - not ready
