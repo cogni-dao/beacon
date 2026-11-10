@@ -150,6 +150,7 @@ import {
   createGoalMetrics,
   createGoalProgressReader,
 } from "@/bootstrap/capabilities/goal-metrics";
+import { startSystemTenantAssertionOnBoot } from "@/bootstrap/startup-assertions";
 import { startMetricsSyncOnBoot } from "@/bootstrap/startup-reconcile";
 import { createBoundToolSource } from "@/bootstrap/ai/tool-source.factory";
 import {
@@ -377,6 +378,8 @@ let _workflowClientPromise: Promise<{
 export function getContainer(): Container {
   if (!_container) {
     _container = createContainer();
+    // bug.0022: provisioning is asserted once at boot (fail the pod), not on /readyz.
+    void startSystemTenantAssertionOnBoot(_container.serviceAccountService);
     if (_container.goalMetrics) startMetricsSyncOnBoot();
   }
   return _container;
