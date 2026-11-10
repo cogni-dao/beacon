@@ -3,8 +3,8 @@
 
 /**
  * Module: `@app/readyz`
- * Purpose: HTTP readiness endpoint. The default (k8s probe) path answers only "can this pod serve HTTP?" — local serving readiness: env, runtime secrets, system tenant.
- * Scope: Validates env + runtime secrets + system tenant (fatal). Checks EVM RPC, Temporal, and scheduler-worker connectivity but treats transient failures as NON-FATAL on the default probe (logged, still 200). `?deep=1` restores hard substrate assertion for provisioning / stack-test smoke checks.
+ * Purpose: HTTP readiness endpoint. The default (k8s probe) path answers only "can this pod serve HTTP?" — local serving readiness: env and runtime secrets (fatal); remote dependencies are observed, not gated.
+ * Scope: Validates env + runtime secrets (fatal). Checks EVM RPC, Temporal, scheduler-worker, and the Postgres system tenant (bug.0022: failure logs critical and reports degraded; provisioning is asserted once at boot by bootstrap/startup-assertions) but treats failures as NON-FATAL on the default probe (logged, still 200). `?deep=1` restores hard substrate assertion for provisioning / stack-test smoke checks.
  * Invariants: Always returns valid readyz schema; force-dynamic runtime. Every managed non-test node requires and exercises EVM RPC even before payment activation. The default path does not drain the fleet for a transient upstream failure (incident 2026-06-26: scheduler-worker hiccup → fleet-wide 502); `?deep=1` forces a live RPC read and makes EVM RPC, Temporal, and scheduler-worker failures fatal (503).
  * Side-effects: IO (HTTP response, structured logging, network calls to RPC, Temporal, LiteLLM, Redis, Doltgres)
  *             `?deep=1` probes exactly the Depend-class dependencies this node DECLARES, from the `SUBSTRATE_DEPENDENCIES` registry (readyz-probes.ts, built on `@cogni-dao/substrate-health`): evm-rpc, temporal, scheduler-worker, postgres, redis, litellm-gateway, and doltgres (only when DOLTGRES_URL is set). They run concurrently, each under DEEP_CHECK_BUDGET_MS, and a 503 body adds `unreachable`: every failing declared dependency. `reason`/`message` come from the first failure in registry order. Config errors (env, secrets) return before any check and carry no `unreachable`. The default path never adds the field and does no new IO. A CI parity test keeps the registry in sync with the env schema.
@@ -19,7 +19,6 @@
 import { metaReadyzOperation } from "@cogni/node-contracts";
 import { NextResponse } from "next/server";
 import { getContainer } from "@/bootstrap/container";
-import { verifySystemTenant } from "@/bootstrap/healthchecks";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
 import { EnvValidationError, serverEnv } from "@/shared/env";
 import {
@@ -35,6 +34,7 @@ import type { RequestContext } from "@/shared/observability";
 import { setBuildInfo } from "@/shared/observability/server/metrics";
 import {
   buildDeepChecks,
+  checkSystemTenantNonFatal,
   DeepProbeFailure,
   runDeepChecks,
 } from "./readyz-probes";
@@ -205,8 +205,10 @@ export const GET = wrapRouteHandlerWithLogging(
           dependency: "scheduler-worker",
         });
 
-        // Verify system tenant billing account exists (per SYSTEM_TENANT_STARTUP_CHECK)
-        await verifySystemTenant(container.serviceAccountService);
+        // System tenant billing account (SYSTEM_TENANT_STARTUP_CHECK). NON-FATAL
+        // here (bug.0022): a shared DB must not hard-gate readiness. A failure
+        // logs a critical event and degrades; provisioning is asserted at boot.
+        await checkSystemTenantNonFatal(ctx, container.serviceAccountService);
       }
 
       const payload = {
