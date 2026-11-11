@@ -7,7 +7,7 @@
  * Scope: Validates env + runtime secrets (fatal). Checks EVM RPC, Temporal, scheduler-worker, and the Postgres system tenant (bug.0022: failure logs critical and reports degraded; provisioning is asserted once at boot by bootstrap/startup-assertions) but treats failures as NON-FATAL on the default probe (logged, still 200). `?deep=1` restores hard substrate assertion for provisioning / stack-test smoke checks.
  * Invariants: Always returns valid readyz schema; force-dynamic runtime. Every managed non-test node requires and exercises EVM RPC even before payment activation. The default path does not drain the fleet for a transient upstream failure (incident 2026-06-26: scheduler-worker hiccup → fleet-wide 502); `?deep=1` forces a live RPC read and makes EVM RPC, Temporal, and scheduler-worker failures fatal (503).
  * Side-effects: IO (HTTP response, structured logging, network calls to RPC, Temporal, LiteLLM, Redis, Doltgres)
- *             `?deep=1` probes exactly the Depend-class dependencies this node DECLARES, from the `SUBSTRATE_DEPENDENCIES` registry (readyz-probes.ts, built on `@cogni-dao/substrate-health`): evm-rpc, temporal, scheduler-worker, postgres, redis, litellm-gateway, and doltgres (only when DOLTGRES_URL is set). They run concurrently, each under DEEP_CHECK_BUDGET_MS, and a 503 body adds `unreachable`: every failing declared dependency. `reason`/`message` come from the first failure in registry order. Config errors (env, secrets) return before any check and carry no `unreachable`. The default path never adds the field and does no new IO. A CI parity test keeps the registry in sync with the env schema.
+ *             `?deep=1` probes exactly the Depend-class dependencies this node DECLARES, from the `SUBSTRATE_DEPENDENCIES` registry (readyz-probes.ts, built on `@cogni-dao/substrate-health`): evm-rpc, temporal, scheduler-worker, postgres, redis, litellm-gateway, and doltgres (only when DOLTGRES_URL is set). They run concurrently, each under DEEP_CHECK_BUDGET_MS, and a deep body adds `checks` (each probed dependency's status, on 200 and 503); a deep 503 also adds `unreachable` (every failing declared dependency) and `buildSha`. Readers parse it only through `readDeepReadiness` (@cogni-dao/substrate-health). `reason`/`message` come from the first failure in registry order. Config errors (env, secrets) return before any check and carry no `unreachable`. The default path never adds the field and does no new IO. A CI parity test keeps the registry in sync with the env schema.
  * Notes: Used by Docker HEALTHCHECK, deployment validation, K8s readiness probes.
  *        HTTP status is primary truth: 200 = ready, 503 = not ready.
  *        Provisioning / smoke checks that must assert the substrate is up call `/readyz?deep=1`.
@@ -35,6 +35,7 @@ import { setBuildInfo } from "@/shared/observability/server/metrics";
 import {
   buildDeepChecks,
   checkSystemTenantNonFatal,
+  type DeepChecks,
   DeepProbeFailure,
   runDeepChecks,
 } from "./readyz-probes";
@@ -139,8 +140,11 @@ export const GET = wrapRouteHandlerWithLogging(
     // `?deep=1` restores hard-fail substrate semantics for provisioning /
     // stack-test smoke checks; the default (k8s probe) path is non-fatal.
     const deep = new URL(request.url).searchParams.get("deep") === "1";
+    // Set once env parses, so a deep 503 names the revision that answered.
+    let buildSha: string | undefined;
     try {
       const env = serverEnv();
+      buildSha = env.APP_BUILD_SHA || undefined;
       const container = getContainer();
 
       // Set build info for metrics (canonical source: APP_BUILD_SHA from serverEnv())
@@ -159,11 +163,13 @@ export const GET = wrapRouteHandlerWithLogging(
       // fails closed for birth/promotion proof.
       assertEvmRpcConfig(env);
 
+      let checks: DeepChecks | undefined;
       if (deep) {
-        // Deep probe: concurrent, hard-fail. Probe exactly the dependencies this
-        // node declares; every failing one is named in the 503 body
-        // (`unreachable`). Registry: readyz-probes.ts.
-        await runDeepChecks(ctx, buildDeepChecks(ctx, container, env));
+        // Deep probe: concurrent, hard-fail. Probe exactly the
+        // dependencies this node declares; every probed one is in the body's
+        // `checks`, every failing one in the 503 body's `unreachable`.
+        // Registry: readyz-probes.ts.
+        checks = await runDeepChecks(ctx, buildDeepChecks(ctx, container, env));
       } else {
         // Default probe: the minimal k8s serving check. It is deliberately NOT
         // driven by the registry and adds no new IO.
@@ -215,7 +221,8 @@ export const GET = wrapRouteHandlerWithLogging(
         status: "healthy" as const,
         timestamp: new Date().toISOString(),
         version: process.env.npm_package_version || undefined,
-        buildSha: env.APP_BUILD_SHA || undefined,
+        buildSha,
+        ...(checks ? { checks } : {}),
       };
 
       const parsed = metaReadyzOperation.output.parse(payload);
@@ -226,7 +233,7 @@ export const GET = wrapRouteHandlerWithLogging(
         caught instanceof DeepProbeFailure ? (caught.primary as Error) : caught;
       const unreachable =
         caught instanceof DeepProbeFailure
-          ? { unreachable: caught.unreachable }
+          ? { unreachable: caught.unreachable, checks: caught.checks, buildSha }
           : {};
       // HTTP status is primary truth for K8s: 503 = not ready
       // Log failure before returning 503 for deployment debugging
