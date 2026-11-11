@@ -109,8 +109,14 @@ vi.mock("@/app/(app)/knowledge/_components/ConfidenceBar", () => ({
   ConfidenceBar: () => null,
 }));
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: ReactNode }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    href,
+    children,
+    ...rest
+  }: { href: string; children: ReactNode } & Record<string, unknown>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
 }));
 vi.mock("@/components", () => ({
@@ -230,9 +236,9 @@ describe("beacon knowledge selection", () => {
       })
     );
     await screen.findByText(selected.content);
-    await screen.findByRole("link", { name: "supports Direct relation 4" });
+    await screen.findByRole("link", { name: "outgoing supports neighbor-4" });
     expect(
-      screen.queryByRole("link", { name: "supports Direct relation 5" })
+      screen.queryByRole("link", { name: "outgoing supports neighbor-5" })
     ).toBeNull();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       contributions,
@@ -240,7 +246,7 @@ describe("beacon knowledge selection", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "More links" }));
-    await screen.findByRole("link", { name: "supports Direct relation 5" });
+    await screen.findByRole("link", { name: "outgoing supports neighbor-5" });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       contributions,
       first,
