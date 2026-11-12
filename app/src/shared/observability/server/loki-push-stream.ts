@@ -47,8 +47,6 @@ export interface LokiPushStream {
 
 /** Flush cadence; matches the operator v000 stdout pump. */
 const FLUSH_INTERVAL_MS = 2_000;
-/** Flush immediately once a batch reaches this many lines. */
-const MAX_BATCH_ENTRIES = 500;
 /** Hard entry cap — beyond this the oldest lines are dropped. */
 const MAX_BUFFER_ENTRIES = 2_000;
 /** Hard byte cap across buffered lines (~1 MiB). */
@@ -153,7 +151,6 @@ export function createLokiPushStream(
               dropped += 1;
             }
           }
-          if (buffer.length >= MAX_BATCH_ENTRIES) flush();
         } catch {
           // FAIL_OPEN: a sink defect must never surface into app code paths.
         }

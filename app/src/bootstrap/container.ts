@@ -89,7 +89,7 @@ import {
   Connection as TemporalConnection,
   type WorkflowClient,
 } from "@temporalio/client";
-import Redis from "ioredis";
+import { createStreamRedisClient } from "@/bootstrap/stream-redis-client";
 import type { Logger } from "pino";
 import {
   ALCHEMY_ADAPTER_VERSION,
@@ -150,7 +150,7 @@ import {
   createGoalMetrics,
   createGoalProgressReader,
 } from "@/bootstrap/capabilities/goal-metrics";
-import { startSystemTenantAssertionOnBoot } from "@/bootstrap/startup-assertions";
+import { localReadinessPreflight } from "@/bootstrap/local-readiness-preflight";
 import { startMetricsSyncOnBoot } from "@/bootstrap/startup-reconcile";
 import { createBoundToolSource } from "@/bootstrap/ai/tool-source.factory";
 import {
@@ -378,8 +378,6 @@ let _workflowClientPromise: Promise<{
 export function getContainer(): Container {
   if (!_container) {
     _container = createContainer();
-    // bug.0022: provisioning is asserted once at boot (fail the pod), not on /readyz.
-    void startSystemTenantAssertionOnBoot(_container.serviceAccountService);
     if (_container.goalMetrics) startMetricsSyncOnBoot();
   }
   return _container;
@@ -540,7 +538,7 @@ export async function finalizeEpochInProcess(
 }
 
 function createContainer(): Container {
-  const env = serverEnv();
+  const env = localReadinessPreflight();
   const nodeId = getNodeId();
   const db = getAppDb();
   const log = makeLogger({ service: "cogni-template", nodeId });
@@ -1110,10 +1108,7 @@ function createContainer(): Container {
 
   // Redis client for run event streaming (ephemeral stream plane)
   // Per REDIS_IS_STREAM_PLANE: only transient data, no durable state
-  const redisClient = new Redis(env.REDIS_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 3,
-  });
+  const redisClient = createStreamRedisClient(env.REDIS_URL);
   const runStream = new RedisRunStreamAdapter(redisClient);
   const nodeStream = new RedisNodeStreamAdapter(redisClient);
 
