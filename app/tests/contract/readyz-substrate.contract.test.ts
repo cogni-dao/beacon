@@ -12,10 +12,14 @@
  */
 
 import { readDeepReadiness } from "@cogni/substrate-health";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
 const mocks = vi.hoisted(() => ({
+  getNodeId: vi.fn(),
+  getContainer: vi.fn(),
   assertEvmRpcConfig: vi.fn(),
   assertRuntimeSecrets: vi.fn(),
   assertSchedulerWorkerConnectivity: vi.fn(),
@@ -35,7 +39,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/bootstrap/container", () => ({
-  getContainer: () => ({
+  getContainer: () => (mocks.getContainer(), {
     evmOnchainClient: {},
     paymentRailsActive: false,
     scheduleControl: {},
@@ -54,35 +58,16 @@ vi.mock("@/bootstrap/healthchecks", () => ({
     mocks.verifySystemTenant(...args),
 }));
 
-vi.mock("@/bootstrap/http", () => ({
-  wrapRouteHandlerWithLogging:
-    (
-      _options: unknown,
-      handler: (
-        ctx: {
-          log: {
-            debug: ReturnType<typeof vi.fn>;
-            error: ReturnType<typeof vi.fn>;
-            info: ReturnType<typeof vi.fn>;
-            warn: ReturnType<typeof vi.fn>;
-          };
-        },
-        request: NextRequest
-      ) => Promise<Response>
-    ) =>
-    async (request: NextRequest) =>
-      handler(
-        {
-          log: {
-            debug: mocks.debug,
-            error: mocks.error,
-            info: mocks.info,
-            warn: mocks.warn,
-          },
-        },
-        request
-      ),
+vi.mock("@/shared/config", async (original) => ({
+  ...(await original<typeof import("@/shared/config")>()), getNodeId: () => mocks.getNodeId(),
 }));
+vi.mock("@/shared/observability", async (original) => {
+  const actual = await original<typeof import("@/shared/observability")>();
+  const child = vi.fn();
+  const log = { debug: mocks.debug, error: mocks.error, info: mocks.info, warn: mocks.warn, child };
+  child.mockReturnValue(log);
+  return { ...actual, makeLogger: () => log };
+});
 
 vi.mock("@/shared/env", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/shared/env")>();
@@ -110,7 +95,8 @@ vi.mock("@/shared/env/invariants", async (importOriginal) => {
   };
 });
 
-vi.mock("@/shared/observability/server/metrics", () => ({
+vi.mock("@/shared/observability/server/metrics", async (original) => ({
+  ...(await original<typeof import("@/shared/observability/server/metrics")>()),
   setBuildInfo: (...args: unknown[]) => mocks.setBuildInfo(...args),
 }));
 
@@ -128,6 +114,7 @@ function request(path = "/readyz"): NextRequest {
 describe("GET /readyz async substrate contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getNodeId.mockReturnValue("readyz-test-node");
     mocks.assertEvmRpcConfig.mockReset();
     mocks.serverEnv.mockReturnValue({
       APP_BUILD_SHA: "readyz-contract-sha",
@@ -156,30 +143,14 @@ describe("GET /readyz async substrate contract", () => {
     vi.unstubAllGlobals();
   });
 
-  it("checks RPC before payment activation while keeping a transient failure non-draining", async () => {
-    mocks.checkEvmRpcConnectivity.mockResolvedValue({
-      ok: false,
-      source: "live",
-      errorMessage: "upstream 429",
-    });
-
+  it("default admission constructs no container and performs no dependency IO", async () => {
     const response = await GET(request());
-
     expect(response.status).toBe(200);
-    expect(mocks.assertEvmRpcConfig).toHaveBeenCalledOnce();
-    expect(mocks.checkEvmRpcConnectivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ APP_ENV: "production" }),
-      { forceLive: false }
-    );
-    expect(mocks.warn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.evm_rpc.unreachable",
-        severity: "degraded",
-        dependency: "evm-rpc",
-      }),
-      expect.stringContaining("returning ready")
-    );
+    expect(mocks.getContainer).not.toHaveBeenCalled();
+    expect(mocks.checkEvmRpcConnectivity).not.toHaveBeenCalled();
+    expect(mocks.verifySystemTenant).not.toHaveBeenCalled();
+    expect(mocks.assertTemporalConnectivity).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
   it("returns 503 when the mandatory RPC secret is missing", async () => {
@@ -218,130 +189,14 @@ describe("GET /readyz async substrate contract", () => {
       expect.objectContaining({ APP_ENV: "production" }),
       { forceLive: true }
     );
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.evm_rpc.unreachable",
-        severity: "critical",
-      }),
-      "deep readiness: EVM RPC unreachable"
-    );
+
   });
 
   it("records successful deep RPC proof", async () => {
     const response = await GET(request("/readyz?deep=1"));
 
     expect(response.status).toBe(200);
-    expect(mocks.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.evm_rpc.reachable",
-        dependency: "evm-rpc",
-      }),
-      "deep readiness: EVM RPC reachable"
-    );
-  });
 
-  it("keeps shallow readiness healthy and critically observes both missing dependencies", async () => {
-    mocks.assertTemporalConnectivity.mockRejectedValue(
-      new InfraConnectivityError("Temporal is unavailable")
-    );
-    mocks.assertSchedulerWorkerConnectivity.mockRejectedValue(
-      new InfraConnectivityError("scheduler-worker is unavailable")
-    );
-
-    const response = await GET(request());
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      status: "healthy",
-      buildSha: "readyz-contract-sha",
-    });
-    expect(mocks.verifySystemTenant).toHaveBeenCalledOnce();
-    expect(mocks.error).toHaveBeenCalledTimes(2);
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.temporal.unreachable",
-        severity: "critical",
-        reason: "INFRA_UNREACHABLE",
-        dependency: "temporal",
-      }),
-      expect.stringContaining("MISSION-CRITICAL async substrate down")
-    );
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.scheduler_worker.unreachable",
-        severity: "critical",
-        reason: "INFRA_UNREACHABLE",
-        dependency: "scheduler-worker",
-      }),
-      expect.stringContaining("MISSION-CRITICAL async substrate down")
-    );
-  });
-
-  it("stays ready and reports degraded when the system tenant check exceeds its budget (bug.0022)", async () => {
-    vi.useFakeTimers();
-    mocks.verifySystemTenant.mockReturnValue(new Promise<never>(() => {}));
-
-    const pending = GET(request());
-    await vi.advanceTimersByTimeAsync(2000);
-    const response = await pending;
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ status: "healthy" });
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.postgres.unreachable",
-        severity: "critical",
-        reason: "INFRA_UNREACHABLE",
-        dependency: "postgres",
-        message: "System tenant check exceeded 2000ms budget",
-      }),
-      expect.stringContaining("Returning ready")
-    );
-  });
-
-  it("default readiness stays 200 with a critical log when the tenant check rejects (bug.0022)", async () => {
-    mocks.verifySystemTenant.mockRejectedValue(
-      Object.assign(new Error("Failed query"), {
-        cause: { code: "ECONNREFUSED", message: "connection refused" },
-      })
-    );
-
-    const response = await GET(request());
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      status: "healthy",
-      buildSha: "readyz-contract-sha",
-    });
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.postgres.unreachable",
-        severity: "critical",
-        reason: "SYSTEM_TENANT_CHECK_FAILED",
-        dependency: "postgres",
-        message: "Failed query",
-        causeCode: "ECONNREFUSED",
-        causeMessage: "connection refused",
-      }),
-      expect.stringContaining("Returning ready")
-    );
-  });
-
-  it("treats a missing cogni_system tenant as non-fatal on the default path (bug.0022)", async () => {
-    mocks.verifySystemTenant.mockRejectedValue(
-      new Error("FATAL: cogni_system billing account missing. Run migrations.")
-    );
-
-    const response = await GET(request());
-
-    expect(response.status).toBe(200);
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: "substrate.postgres.unreachable",
-        message: expect.stringContaining("cogni_system billing account missing"),
-      }),
-      expect.stringContaining("Returning ready")
-    );
   });
 
   it("default readiness still returns 503 when runtime secrets are missing, before any check runs", async () => {
@@ -733,4 +588,96 @@ describe("GET /readyz async substrate contract", () => {
       "deep readiness: checks complete"
     );
   });
+  it.each(["healthy", "evm-failed", "multiple", "timeout", "unexpected"] as const)(
+    "keeps readiness diagnostics bounded and private: %s", async (scenario) => {
+      const sentinel = "READINESS_PRIVATE_SENTINEL";
+      if (scenario === "evm-failed" || scenario === "multiple")
+        mocks.checkEvmRpcConnectivity.mockResolvedValueOnce({ ok: false, source: "live", errorMessage: sentinel });
+      if (scenario === "multiple") mocks.assertTemporalConnectivity.mockRejectedValueOnce(new Error(sentinel));
+      if (scenario === "timeout") { vi.useFakeTimers(); mocks.assertTemporalConnectivity.mockReturnValueOnce(new Promise(() => {})); }
+      if (scenario === "unexpected") mocks.getNodeId.mockImplementationOnce(() => { throw new Error(sentinel); });
+      const pending = GET(request("/readyz?deep=1"));
+      if (scenario === "timeout") await vi.advanceTimersByTimeAsync(3001);
+      const response = await pending;
+      expect(response.status).toBe(scenario === "healthy" ? 200 : scenario === "unexpected" ? 500 : 503);
+      const body = await response.json();
+      if (scenario === "unexpected") expect(body).toEqual({ status: "error", reason: "INTERNAL_ERROR" });
+      else {
+        expect(body.checks).toBeDefined();
+        if (scenario === "evm-failed" || scenario === "multiple") expect(body.unreachable).toContain("evm-rpc");
+        if (scenario === "multiple" || scenario === "timeout") expect(body.unreachable).toContain("temporal");
+      }
+      const lines = [...mocks.info.mock.calls, ...mocks.error.mock.calls, ...mocks.warn.mock.calls];
+      expect(lines.length).toBeLessThanOrEqual(3);
+      expect(JSON.stringify(lines)).not.toContain(sentinel);
+      expect(lines.filter(([fields]) => fields?.event === "substrate.deep.complete")).toHaveLength(scenario === "unexpected" ? 0 : 1);
+      expect(lines.filter(([, message]) => message === "request complete")).toHaveLength(1);
+      vi.useRealTimers();
+    }
+  );
+
+  it.each(["local", "construction", "logger", "context", "span", "annotation", "response", "error", "summary", "build-info", "counter", "histogram", "completion", "span-finalizer"] as const)(
+    "contains boundary failures without changing resolved readiness: %s", async (phase) => {
+      const sentinel = "READINESS_BOUNDARY_PRIVATE_SENTINEL";
+      const fail = () => { throw new Error(sentinel); };
+      const obs = await import("@/shared/observability");
+      const otel = await import("@/bootstrap/otel");
+      if (phase === "local" || phase === "error") mocks.serverEnv.mockImplementationOnce(fail);
+      if (phase === "construction") mocks.getContainer.mockImplementationOnce(fail);
+      if (phase === "logger") vi.spyOn(obs, "makeLogger").mockImplementationOnce(fail);
+      if (phase === "context") vi.spyOn(obs, "createRequestContext").mockImplementationOnce(fail);
+      if (phase === "span") vi.spyOn(otel, "withRootSpan").mockImplementationOnce(fail);
+      if (phase === "response") vi.spyOn(NextResponse, "json").mockImplementationOnce(fail);
+      if (phase === "annotation") vi.spyOn(otel, "withRootSpan").mockImplementationOnce(async (_name, _attrs, callback) => callback({ traceId: "trace", span: { setAttribute: fail } } as never));
+      if (phase === "error") mocks.error.mockImplementationOnce(fail);
+      if (phase === "summary") mocks.info.mockImplementationOnce(fail);
+      if (phase === "build-info") mocks.setBuildInfo.mockImplementationOnce(fail);
+      if (phase === "counter") vi.spyOn(obs.httpRequestsTotal, "inc").mockImplementationOnce(fail);
+      if (phase === "histogram") vi.spyOn(obs.httpRequestDurationMs, "observe").mockImplementationOnce(fail);
+      if (phase === "completion") vi.spyOn(obs, "logRequestEnd").mockImplementationOnce(fail);
+      if (phase === "span-finalizer") vi.spyOn(otel, "withRootSpan").mockImplementationOnce(async (_name, _attrs, callback) => {
+        await callback({ traceId: "trace", span: { setAttribute: () => {} } } as never); throw new Error(sentinel);
+      });
+      const response = await GET(request(phase === "construction" || phase === "summary" ? "/readyz?deep=1" : "/readyz"));
+      expect(response.status).toBe(phase === "local" || phase === "construction" || phase === "error" ? 503 : phase === "logger" || phase === "context" || phase === "span" || phase === "annotation" || phase === "response" ? 500 : 200);
+      expect(JSON.stringify(await response.json())).not.toContain(sentinel);
+      expect(JSON.stringify([...mocks.info.mock.calls, ...mocks.error.mock.calls, ...mocks.warn.mock.calls])).not.toContain(sentinel);
+    }
+  );
+
+  it("preserves a resolved 503 when span cleanup fails", async () => {
+    const otel = await import("@/bootstrap/otel");
+    mocks.serverEnv.mockImplementationOnce(() => { throw new Error("PRIVATE_PREFLIGHT"); });
+    vi.spyOn(otel, "withRootSpan").mockImplementationOnce(async (_name, _attrs, callback) => {
+      await callback({ traceId: "trace", span: { setAttribute: () => {} } } as never);
+      throw new Error("PRIVATE_SPAN_FINALIZER");
+    });
+    const response = await GET(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ status: "error", reason: "INTERNAL_ERROR" });
+    expect(JSON.stringify([...mocks.info.mock.calls, ...mocks.error.mock.calls])).not.toContain("PRIVATE_SPAN_FINALIZER");
+  });
+
+  it("bounds logs when failed deep response construction throws", async () => {
+    const sentinel = "RESPONSE_PRIVATE_SENTINEL";
+    mocks.checkEvmRpcConnectivity.mockResolvedValueOnce({ ok: false, source: "live", errorMessage: sentinel });
+    vi.spyOn(NextResponse, "json").mockImplementationOnce(() => { throw new Error(sentinel); });
+    const response = await GET(request("/readyz?deep=1"));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ status: "error", reason: "INTERNAL_ERROR" });
+    const lines = [...mocks.info.mock.calls, ...mocks.error.mock.calls, ...mocks.warn.mock.calls];
+    expect(lines.length).toBeLessThanOrEqual(3);
+    expect(JSON.stringify(lines)).not.toContain(sentinel);
+    expect(lines.filter(([fields]) => fields?.event === "substrate.deep.complete")).toHaveLength(1);
+    expect(lines.filter(([fields]) => fields?.errorCode === "INTERNAL_SERVER_ERROR")).toHaveLength(1);
+    expect(lines.filter(([, message]) => message === "request complete")).toHaveLength(1);
+  });
+  it.each(["healthy", "failed-deep"] as const)("ignores build-info failure for %s", async (scenario) => {
+    mocks.setBuildInfo.mockImplementationOnce(() => { throw new Error("PRIVATE_BUILD_INFO"); });
+    if (scenario === "failed-deep") mocks.checkEvmRpcConnectivity.mockResolvedValueOnce({ ok: false, source: "live", errorMessage: "rpc failed" });
+    const response = await GET(request(scenario === "failed-deep" ? "/readyz?deep=1" : "/readyz"));
+    expect(response.status).toBe(scenario === "healthy" ? 200 : 503);
+    expect(JSON.stringify([...mocks.info.mock.calls, ...mocks.error.mock.calls])).not.toContain("PRIVATE_BUILD_INFO");
+  });
+
 });

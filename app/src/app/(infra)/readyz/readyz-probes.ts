@@ -9,7 +9,7 @@
  *   env and declaration map.
  * Scope: Owns the node declaration map (`SUBSTRATE_DEPENDENCIES`), the EVM-RPC deep closure, the three node
  *   probe wrappers over the package factories, and the node-local drift-guard allowlist. Does not own the HTTP
- *   handler or the default (k8s) probe path, which stays inline in `route.ts`.
+ *   handler or shared response policy.
  * Invariants:
  *   - Imports are one-way: `route.ts` → this module → `@cogni/substrate-health` (never the reverse).
  *   - `?deep=1` probes exactly the dependencies this node DECLARES (`isDeclared`), each reach-only, fatal.
@@ -30,7 +30,6 @@ import {
   probeKnowledgePlane,
   probeLiteLlmGateway,
   probeRedisStream,
-  runDeepChecks as pkgRunDeepChecks,
   type SubstrateDependency as PkgSubstrateDependency,
   SUBSTRATE_ENV_KEY_PATTERN,
 } from "@cogni/substrate-health";
@@ -51,9 +50,6 @@ export { type DeepChecks, DeepProbeFailure, SUBSTRATE_ENV_KEY_PATTERN };
 
 type Container = ReturnType<typeof getContainer>;
 type Env = ReturnType<typeof serverEnv>;
-
-/** Default-path budget for the system-tenant DB check; exceeding it reports degraded (non-fatal, bug.0022). */
-export const SYSTEM_TENANT_BUDGET_MS = 2000;
 
 /**
  * Deep-path budget for each dependency check. The checks run concurrently, so the
@@ -80,92 +76,21 @@ export type DeepDependency =
   | "litellm-gateway"
   | "doltgres";
 
-/**
- * Deep path: run every declared dependency check concurrently and report every
- * failure, with per-dependency observability. Thin wrapper that injects this
- * node's logger, connectivity error and deep budget into the package runner; the
- * package throws the shared `DeepProbeFailure` and emits `substrate.deep.complete`.
- */
-export async function runDeepChecks(
-  ctx: RequestContext,
-  checks: ReadonlyArray<readonly [DeepDependency, () => Promise<unknown>]>
-): Promise<DeepChecks> {
-  return pkgRunDeepChecks(checks, {
-    log: (fields, message) => ctx.log.info(fields, message),
-    timeoutError: (dependency, budgetMs) =>
-      new InfraConnectivityError(
-        `${dependency} check exceeded ${budgetMs}ms budget`
-      ),
+/** Configure the shared runner with this node's logger and deadline. */
+export function deepRuntime(ctx: RequestContext) {
+  return {
+    log: (fields: Record<string, unknown>, message: string) => ctx.log.info(fields, message),
+    timeoutError: (dependency: string, budgetMs: number) => new InfraConnectivityError(`${dependency} check exceeded ${budgetMs}ms budget`),
     budgetMs: DEEP_CHECK_BUDGET_MS,
-  });
-}
-
-/** Outcome of the default-path system-tenant check: it never throws. */
-export type SystemTenantCheckStatus = "ok" | "degraded";
-
-/**
- * Default-path system-tenant check: NON-FATAL (bug.0022). A k8s readiness probe
- * must not hard-gate on a shared DB: a Postgres blip would drain every pod from
- * its Service at once. Provisioning (a missing cogni_system tenant) is asserted
- * once at process boot instead (`bootstrap/startup-assertions`), so a pod that
- * is genuinely unprovisioned crash-loops rather than serving.
- *
- * Any rejection of `verifySystemTenant` (query error, missing account, budget
- * exceeded) becomes `"degraded"` plus a stable critical log, never a throw. The
- * deep probe does not use this: it calls `verifySystemTenant` directly and
- * still 503s with `postgres` in `unreachable`.
- */
-export async function checkSystemTenantNonFatal(
-  ctx: RequestContext,
-  serviceAccountService: Parameters<typeof verifySystemTenant>[0],
-  budgetMs: number = SYSTEM_TENANT_BUDGET_MS
-): Promise<SystemTenantCheckStatus> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          new InfraConnectivityError(
-            `System tenant check exceeded ${budgetMs}ms budget`
-          )
-        ),
-      budgetMs
-    );
-  });
-  try {
-    await Promise.race([verifySystemTenant(serviceAccountService), timeout]);
-    return "ok";
-  } catch (error) {
-    // pg/drizzle errors wrap the driver error (with its SQLSTATE `code`) in `cause`.
-    const cause = (error as { cause?: { code?: unknown; message?: unknown } })
-      .cause;
-    ctx.log.error(
-      {
-        event: "substrate.postgres.unreachable",
-        severity: "critical",
-        reason:
-          error instanceof InfraConnectivityError
-            ? error.code
-            : "SYSTEM_TENANT_CHECK_FAILED",
-        dependency: "postgres",
-        message: error instanceof Error ? error.message : String(error),
-        causeCode: cause?.code,
-        causeMessage: cause?.message,
-      },
-      "readiness: postgres system-tenant check failed — shared DB down or unprovisioned. Returning ready: probe stays non-fatal so the fleet is not drained; provisioning is asserted at boot and the critical alert covers the outage."
-    );
-    return "degraded";
-  } finally {
-    clearTimeout(timer);
-  }
+  };
 }
 
 /**
  * EVM RPC deep check: forced live read, fatal on failure. The default probe path
- * keeps its own non-fatal EVM check inline in `route.ts`.
+ * is excluded from default readiness.
  */
 export async function checkEvmRpc(
-  ctx: RequestContext,
+  _ctx: RequestContext,
   container: Container,
   env: Env
 ): Promise<void> {
@@ -176,27 +101,8 @@ export async function checkEvmRpc(
   );
   if (!evmRpcResult.ok) {
     const message = `EVM RPC connectivity check failed: ${evmRpcResult.errorMessage ?? "unknown"}`;
-    ctx.log.error(
-      {
-        event: "substrate.evm_rpc.unreachable",
-        severity: "critical",
-        reason: "INFRA_UNREACHABLE",
-        dependency: "evm-rpc",
-        source: evmRpcResult.source,
-        message,
-      },
-      "deep readiness: EVM RPC unreachable"
-    );
     throw new InfraConnectivityError(message);
   }
-  ctx.log.info(
-    {
-      event: "substrate.evm_rpc.reachable",
-      dependency: "evm-rpc",
-      source: evmRpcResult.source,
-    },
-    "deep readiness: EVM RPC reachable"
-  );
 }
 
 /**

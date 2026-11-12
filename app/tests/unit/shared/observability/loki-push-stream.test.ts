@@ -4,7 +4,7 @@
 /**
  * Module: `@tests/shared/observability/loki-push-stream`
  * Purpose: Verifies the env-gated lease Loki push sink (bug.5127): gating on LOKI_PUSH_URL, batch shape +
- *   labels + basic auth, size-triggered and timer-triggered flushes, memory caps with oldest-first drops,
+ *   labels + basic auth, enqueue-only writes and timer-triggered flushes, memory caps with oldest-first drops,
  *   and fail-open behavior on push failure.
  * Scope: Pure unit — injected env/fetch/clock; no real network, no pino integration.
  * Invariants: createLokiPushStream never throws; a failed push drops the batch; buffer never exceeds caps.
@@ -88,23 +88,20 @@ describe("createLokiPushStream", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("flushes immediately once the batch threshold is reached", () => {
+  it("does not flush on a request write even after 500 entries", () => {
     const fetchFn = makeFetchMock();
     const stream = createLokiPushStream({ env: BASE_ENV, fetchFn });
     for (let i = 0; i < 500; i++) stream?.write(`{"i":${i}}\n`);
+    expect(fetchFn).not.toHaveBeenCalled();
+    stream?.flushNow();
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("caps the buffer, drops oldest lines, and reports the drop count", async () => {
     const fetchFn = makeFetchMock();
     const stream = createLokiPushStream({ env: BASE_ENV, fetchFn });
-    // The size-triggered flush at 500 claims one batch and stays in flight for
-    // the whole synchronous loop, so the remaining 2500 writes overflow the
-    // 2000-entry hard cap and must drop the oldest 500.
     for (let i = 0; i < 3_000; i++) stream?.write(`{"i":${i}}\n`);
-    // First advance lets the in-flight push settle; second flushes the
-    // capped remainder including the drop report.
-    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetchFn).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(2_000);
     const calls = fetchFn.mock.calls.map(
       ([, init]) => JSON.parse((init as RequestInit).body as string) as {
