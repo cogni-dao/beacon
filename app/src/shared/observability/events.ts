@@ -34,6 +34,8 @@ export const EVENT_NAMES = {
   KNOWLEDGE_HISTORY_READ: "knowledge.history_read",
   // Bounded work reads (task.0056): one terminal event per /work/summaries or /work/board request.
   WORK_ITEMS_LIST_COMPLETE: "work.items.list_complete",
+  // The EDO expectations read behind a work item's Metrics card (story.0033): one terminal event per request.
+  WORK_EXPECTATIONS_READ: "work.expectations.read",
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];

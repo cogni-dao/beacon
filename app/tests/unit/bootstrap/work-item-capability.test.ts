@@ -74,7 +74,11 @@ describe("createWorkItemCapability", () => {
       workItemCommand: command as unknown as WorkItemCommandPort,
     });
     await expect(
-      cap.patch({ id: "task.5001", set: { priority: 0 } }),
+      cap.patch({
+        id: "task.5001",
+        reason: "Raise it",
+        set: { priority: 0 },
+      }),
     ).rejects.toThrow("authz_denied");
     expect(command.patch).not.toHaveBeenCalled();
   });
@@ -103,7 +107,11 @@ describe("createWorkItemCapability", () => {
       backlogReader: backlog as unknown as Pick<WorkItemQueryPort, "list">,
     });
     await cap.transitionStatus({ id: "task.5001", toStatus: "done" });
-    await cap.patch({ id: "task.5001", set: { priority: 3 } });
+    await cap.patch({
+      id: "task.5001",
+      reason: "Lower it",
+      set: { priority: 3 },
+    });
     expect(markdown.get).toHaveBeenCalledTimes(2);
     expect(command.transitionStatus).toHaveBeenCalledTimes(1);
     expect(command.patch).toHaveBeenCalledTimes(1);
@@ -254,7 +262,13 @@ describe("published evaluation writer binding", () => {
       revision: 8,
     });
     expect(patch).toHaveBeenCalledExactlyOnceWith(
-      { id: item.id, expectedRevision: 7, set: { status: "needs_closeout" } },
+      {
+        id: item.id,
+        expectedRevision: 7,
+        // REASON_REQUIRED (task.0086): a transition with no caller reason still carries one.
+        reason: "Transition to needs_closeout",
+        set: { status: "needs_closeout" },
+      },
       "trusted-actor",
     );
   });
@@ -275,10 +289,19 @@ describe("published evaluation writer binding", () => {
     const result = await capability.patch({
       id: item.id,
       expectedRevision: 7,
+      reason: "Score from the live backlog",
+      cites: [{ id: "node-template-mission" }],
       set: { scores },
     });
+    // PATCH_REASON_AND_CITES (task.0086): the required reason and the cites reach the store.
     expect(patch).toHaveBeenLastCalledWith(
-      { id: item.id, expectedRevision: 7, set: { scores } },
+      {
+        id: item.id,
+        expectedRevision: 7,
+        reason: "Score from the live backlog",
+        cites: [{ id: "node-template-mission" }],
+        set: { scores },
+      },
       "actor-a",
     );
     expect(result.scores).toEqual(scores);
@@ -291,10 +314,16 @@ describe("published evaluation writer binding", () => {
     await capability.patch({
       id: item.id,
       expectedRevision: 8,
+      reason: "Clear the scores",
       set: { scores: null },
     });
     expect(patch).toHaveBeenLastCalledWith(
-      { id: item.id, expectedRevision: 8, set: { scores: null } },
+      {
+        id: item.id,
+        expectedRevision: 8,
+        reason: "Clear the scores",
+        set: { scores: null },
+      },
       "actor-b",
     );
   });
@@ -311,10 +340,10 @@ describe("published evaluation writer binding", () => {
       getActorId: () => "",
     });
     await expect(
-      capability.patch({ id: item.id, set: { scores } }),
+      capability.patch({ id: item.id, reason: "Score it", set: { scores } }),
     ).rejects.toThrow("authenticated execution actor");
     await expect(
-      capability.patch({ id: item.id, set: { priority: 1 } }),
+      capability.patch({ id: item.id, reason: "Raise it", set: { priority: 1 } }),
     ).rejects.toThrow("authz_denied");
     expect(patch).not.toHaveBeenCalled();
   });
@@ -335,7 +364,12 @@ describe("published evaluation writer binding", () => {
       getActorId: () => "actor-a",
     });
     await expect(
-      capability.patch({ id: item.id, expectedRevision: 7, set: { scores } }),
+      capability.patch({
+        id: item.id,
+        expectedRevision: 7,
+        reason: "Score it",
+        set: { scores },
+      }),
     ).rejects.toMatchObject({
       name: "WorkItemPatchConflictError",
       expectedRevision: 7,

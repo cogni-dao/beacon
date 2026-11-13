@@ -75,6 +75,7 @@ System setup installers were moved to `scripts/bootstrap/` and are out of scope 
 
 - `ai/` - AI tool bindings and tool source factory
 - `capabilities/` - Capability factories (MetricsCapability, RepoCapability, WebSearchCapability)
+  - `capabilities/work-item-moves.ts` binds the work-items `moves` ports (baseline pin, read-time readings, KPI chain) to the metrics service; `capabilities/citation-links.ts` is the one citation-links read shared by `GET /api/v1/citations/{id}`, the work item route's `?include=links` and the work item capability's `read` (story.0033, task.0118)
 - `http/` - Route wrappers and rate limiting
 - `jobs/` - Job modules (advisory lock + container wiring for CLI-invoked tasks)
 

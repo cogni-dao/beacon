@@ -58,6 +58,7 @@ import {
 } from "@cogni/knowledge-store";
 import {
   buildDoltgresClient,
+  createDoltgresEntryResolver,
   createDoltgresPusher,
   DoltBranchSessionRunner,
   DoltgresEdoResolverAdapter,
@@ -82,7 +83,7 @@ import type { ScheduleControlPort } from "@cogni/scheduler-core";
 import type { ScheduleRunReader } from "@cogni/scheduling";
 import { PostgresScheduleRunReader } from "@cogni/scheduling/adapters/postgres";
 import type { WorkItemQueryPort } from "@cogni/work-items";
-import { DoltgresWorkItemAdapter } from "@cogni/work-items/adapters/doltgres";
+import { createDoltgresWorkItemStore } from "@cogni/work-items/adapters/doltgres";
 import { MarkdownWorkItemAdapter } from "@cogni/work-items/markdown";
 import {
   Client as TemporalClient,
@@ -163,12 +164,14 @@ import { createScheduleCapability } from "@/bootstrap/capabilities/schedule";
 import { createSocialXCapability } from "@/bootstrap/capabilities/social-x";
 import { stubVcsCapability } from "@/bootstrap/capabilities/vcs";
 import { createWebSearchCapability } from "@/bootstrap/capabilities/web-search";
+import { createCitationLinksPort } from "@/bootstrap/capabilities/citation-links";
 import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
 import {
   type AgentAuthoritySql,
   type AgentToolAuthority,
   createAgentToolAuthority,
 } from "@/bootstrap/agent-authority";
+import { createMoveMetricPorts } from "@/bootstrap/capabilities/work-item-moves";
 import { createApproversNodeAdminAuthority } from "@/bootstrap/node-admin-gate";
 import { createNodeAdminPort } from "@/bootstrap/node-admin-port";
 import type { RateLimitBypassConfig } from "@/bootstrap/http/wrapPublicRoute";
@@ -758,9 +761,19 @@ function createContainer(): Container {
   const workItemAdapter = new MarkdownWorkItemAdapter(
 		env.COGNI_REPO_ROOT ?? "/nonexistent",
   );
+  // story.0033: the work-items `moves` ports over this node's metrics service.
+  // `goalMetrics` and `knowledgeStorePort` are assigned below and read only at call time.
+  const moveMetrics = createMoveMetricPorts(
+    () => goalMetrics,
+    () => knowledgeStorePort,
+  );
   const workItemCapability = createWorkItemCapability({
     workItemQuery: workItemAdapter,
     workItemCommand: workItemAdapter,
+    moveReadings: moveMetrics.readings,
+    // task.0118: first page of an item's citation links, the same read the UI and the route use.
+    links: createCitationLinksPort(() => knowledgeStorePort),
+    log: (event) => log.warn(event, "work.items.envelope_degraded"),
     liveStore: () => doltgresWorkItems,
     getActorId: () => {
       const actor = scopeUserId(getExecutionScope());
@@ -812,10 +825,15 @@ function createContainer(): Container {
     const workItemsClient = createWorkItemsClient();
     // Node stores start their allocator at 1; operator alone reserves the
     // imported legacy range below 5000.
-    const content = new DoltgresWorkItemAdapter(workItemsClient, {
+    const content = createDoltgresWorkItemStore(workItemsClient, {
       writerLockProtocol: "bridge",
       logger: log,
       recreateClient: createWorkItemsClient,
+      // task.0086: pins a patch's cites to commits with lock-free reads on the
+      // knowledge pool, never on the writer connection that holds the lock.
+      entryResolver: createDoltgresEntryResolver(doltClient),
+      // story.0033: a `moves` entry pins the metric's latest good observation as its baseline.
+      metricBaseline: moveMetrics.baselines,
     });
     // Independent bounded sessions; both published writers acquire legacy5001001.
     const createLegacyClient = () => buildDoltgresClient({
@@ -986,6 +1004,8 @@ function createContainer(): Container {
     nodePublicOrigin: env.APP_BASE_URL,
   });
   const goalProgress = createGoalProgressReader({
+    // knowledgeStorePort uses doltClient, not the reserved knowledgeWriter.
+    pooledGoalReads: true,
     metrics: () => goalMetrics,
     knowledge: () => knowledgeStorePort,
     // Same fallback as createGoalMetrics, so payload environment == observation scope.
