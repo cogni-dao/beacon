@@ -59,6 +59,7 @@ import {
   WEB_SEARCH_NAME,
   WORK_ITEM_QUERY_NAME,
   WORK_ITEM_TRANSITION_NAME,
+  WORK_ITEM_UPDATE_NAME,
 } from "@cogni/ai-tools";
 
 import {
@@ -71,6 +72,7 @@ import {
   createKnowledgeWriteImplementation,
   createWorkItemQueryImplementation,
   createWorkItemTransitionImplementation,
+  createWorkItemUpdateImplementation,
   type EdoCapability,
   GOAL_LIST_NAME,
   getCurrentTimeImplementation,
@@ -214,6 +216,9 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
     }) as AnyToolImplementation,
 
     [WORK_ITEM_TRANSITION_NAME]: createWorkItemTransitionImplementation({
+      workItemCapability: deps.workItemCapability,
+    }) as AnyToolImplementation,
+    [WORK_ITEM_UPDATE_NAME]: createWorkItemUpdateImplementation({
       workItemCapability: deps.workItemCapability,
     }) as AnyToolImplementation,
   };

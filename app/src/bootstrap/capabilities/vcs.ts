@@ -34,4 +34,10 @@ export const stubVcsCapability: VcsCapability = {
   dispatchCandidateFlight: async () => {
     throw new Error("VcsCapability not configured on this node.");
   },
+  getPr: async () => {
+    throw new Error("VcsCapability not configured on this node.");
+  },
+  compareCommits: async () => {
+    throw new Error("VcsCapability not configured on this node.");
+  },
 };

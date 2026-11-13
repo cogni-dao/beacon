@@ -53,12 +53,6 @@ export function buildRequiresById(
   for (const tool of bundle) {
     if (tool.contract.requires) byId[tool.contract.name] = tool.contract.requires;
   }
-  // PINNED_TWIN: SAME_DOOR_ROUTES names `core__work_item_update` as the tool twin of `work.items.patch`. The ai-tools release this node
-  // pins (0.6.0) has no such tool. Its `core__work_item_transition` declares the same scope (`work_item:transition`), so the route
-  // door resolves the one declaration; no scope, label or description is copied here. Remove when ai-tools >= 0.8 is adopted.
-  const transition = byId.core__work_item_transition;
-  if (transition && !byId.core__work_item_update)
-    byId.core__work_item_update = transition;
   return byId;
 }
 
