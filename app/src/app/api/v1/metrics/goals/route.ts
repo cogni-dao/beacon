@@ -13,11 +13,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const GET = wrapRouteHandlerWithLogging(
   { routeId: "metrics.goalsRead", auth: { mode: "required", getSessionUser } },
-  async (ctx, _request, user) => {
+  async (ctx, request, user) => {
+    const started = Date.now();
     if (!user)
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     try {
-      const result = await metricHandlers().goals();
+      const result = await metricHandlers().goals(
+        new URL(request.url).searchParams,
+      );
       if (result.ok) {
         const data = result.body;
         logEvent(ctx.log, EVENT_NAMES.GOALS_PROGRESS_READ, {
@@ -30,10 +33,37 @@ export const GET = wrapRouteHandlerWithLogging(
             0,
           ),
           outcome: "success",
+          // A stale 200 is the last good result, not a fresh read.
+          stale: data.stale !== undefined,
+          ...(data.stale
+            ? {
+                staleReason: data.stale.reason,
+                staleAgeSeconds: data.stale.ageSeconds,
+              }
+            : {}),
+          status: result.status,
+          durationMs: Date.now() - started,
+        });
+      } else {
+        logEvent(ctx.log, EVENT_NAMES.GOALS_PROGRESS_READ, {
+          reqId: ctx.reqId,
+          routeId: ctx.routeId,
+          status: result.status,
+          durationMs: Date.now() - started,
+          outcome: "error",
+          errorCode: result.body.error,
         });
       }
       return metricResponse(result);
     } catch (error) {
+      logEvent(ctx.log, EVENT_NAMES.GOALS_PROGRESS_READ, {
+        reqId: ctx.reqId,
+        routeId: ctx.routeId,
+        status: 503,
+        durationMs: Date.now() - started,
+        outcome: "error",
+        errorCode: "metrics_unavailable",
+      });
       return metricHttpError(error);
     }
   },

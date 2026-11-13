@@ -118,6 +118,14 @@ describe("proxy — page-level routing", () => {
 		expectRedirectTo(res, "/");
 	});
 
+	it("redirects unauthenticated user on /metrics to /", async () => {
+		mockGetToken.mockResolvedValue(null);
+
+		const res = await proxy(makeRequest("/metrics"));
+
+		expectRedirectTo(res, "/");
+	});
+
 	it("redirects unauthenticated user on /chat/some-id to /", async () => {
 		mockGetToken.mockResolvedValue(null);
 
