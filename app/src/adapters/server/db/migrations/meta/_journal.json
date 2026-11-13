@@ -344,6 +344,20 @@
       "when": 1794530256279,
       "tag": "0048_seed_agent_principals",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794546534685,
+      "tag": "0049_agent_spawn_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794546536501,
+      "tag": "0050_agent_personal_grants",
+      "breakpoints": true
     }
   ]
 }

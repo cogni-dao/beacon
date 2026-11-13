@@ -58,6 +58,13 @@ export const EVENT_NAMES = {
   ADMIN_ACTION: "admin.action",
   /** A human route refused a request that carried an Authorization header; carries one of five fixed scheme names. */
   HUMAN_PLANE_REFUSED: "human_plane.refused",
+  /** Spawn grants (task.5474): a person issued a setup code, an agent redeemed one (userId = the new agent, ownerUserId = the issuer), a redeem was refused (reason only), the owner revoked an owned agent's keys. Never a grant, key or hash. */
+  AGENT_SPAWN_GRANT_ISSUED: "agent.spawn_grant.issued",
+  AGENT_SPAWN_GRANT_REDEEMED: "agent.spawn_grant.redeemed",
+  AGENT_SPAWN_GRANT_REFUSED: "agent.spawn_grant.refused",
+  AGENT_OWNER_REVOKED: "agent.owner.revoked",
+  AGENT_CLAIM_STARTED: "agent.claim.started",
+  AGENT_OWNER_CLAIMED: "agent.owner.claimed",
   AI_CHAT_RECEIVED: "ai.chat_received",
   AI_CHAT_RESPONSE_STARTED: "ai.chat_response_started",
   AI_CHAT_STREAM_CLOSED: "ai.chat_stream_closed",

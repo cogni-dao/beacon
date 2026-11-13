@@ -113,3 +113,6 @@ export * from "./work.items.delete.v1.contract";
 export * from "./work.items.get.v1.contract";
 export * from "./work.items.list.v1.contract";
 export * from "./work.items.patch.v1.contract";
+export * from "./agent.owned.v1.contract";
+export * from "./agent.mine.v1.contract";
+export * from "./agent.request.v1.contract";
