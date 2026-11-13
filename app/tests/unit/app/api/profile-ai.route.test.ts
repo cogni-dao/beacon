@@ -14,11 +14,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { memorySpawnStore } from "../../../../../packages/agent-grants/tests/spawn-memory-store";
+import { memorySpawnStore } from "../../../helpers/spawn-memory-store";
 
 const fake = vi.hoisted(() => ({
   user: null as unknown,
-  world: null as unknown as ReturnType<typeof import("../../../../../packages/agent-grants/tests/spawn-memory-store").memorySpawnStore>,
+  world: null as unknown as ReturnType<typeof import("../../../helpers/spawn-memory-store").memorySpawnStore>,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
