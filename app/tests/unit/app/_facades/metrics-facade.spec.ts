@@ -50,7 +50,19 @@ describe("metrics facade", () => {
     const response = metricResponse(result);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toEqual(progress);
+    // The package's goals read stamps how much history it served (metrics 0.14).
+    expect(await response.json()).toEqual({ ...progress, historyMode: "full" });
+  });
+
+  it("tells clients to retry a 503 after 2 s, and no other status", async () => {
+    container.goalProgress.mockRejectedValue(new Error("unavailable"));
+    expect(
+      metricResponse(await metricHandlers().goals()).headers.get("Retry-After"),
+    ).toBe("2");
+    container.goalProgress.mockResolvedValue(progress);
+    expect(
+      metricResponse(await metricHandlers().goals()).headers.get("Retry-After"),
+    ).toBeNull();
   });
 
   it("answers 503 metrics_unavailable when the node has no metrics service", async () => {

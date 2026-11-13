@@ -9,66 +9,26 @@
  *   - Contract remains stable; breaking changes require new version
  *   - All consumers use z.infer types
  *   - PATCH_ALLOWLIST: only fields in `set` are mutable. id/created_at/updated_at are server-managed.
+ *   - REASON_REQUIRED (task.0086): `reason` is required: one line (line breaks become spaces), 1-240 chars, at most 25 words, stored in Dolt history, never in the item (task.0052).
+ *   - Optional `cites` (at most 8 hub atoms) are pinned to commits in history; an unknown id is a 400.
  *   - v0 has no transition state-machine — whoever holds a valid token is trusted.
- *   - Optional reason is one line (CR/LF become spaces), 1-512 chars, stored in Dolt history, never in the item (task.0052).
  * Side-effects: none
  * Links: /api/v1/work/items/[id] route, docs/spec/work-items-port.md, work/items/task.0423.doltgres-work-items-source-of-truth.md
  * @internal
  */
 
-import { ChangeReasonSchema } from "@cogni/work-items";
-import { z } from "zod";
-import { WorkItemScoresSchema } from "./work.items.scores";
+import { WorkItemPatchInputSchema } from "@cogni/work-items";
+import type { z } from "zod";
 
 import { WorkItemDtoSchema } from "./work.items.list.v1.contract";
-
-const WorkItemStatusSchema = z.enum([
-  "needs_triage",
-  "needs_research",
-  "needs_design",
-  "needs_implement",
-  "needs_closeout",
-  "needs_merge",
-  "done",
-  "blocked",
-  "cancelled",
-]);
 
 export const workItemsPatchOperation = {
   id: "work.items.patch.v1",
   summary: "Patch a work item",
   description:
-    "Updates a subset of fields on a work item. Whitelisted fields only — id, created_at, updated_at are server-managed. Optional reason (one line, 1-512 chars) says why; it is stored in history (GET /work/items/{id}/history), not in the item.",
-  input: z.object({
-    id: z.string(),
-    expectedRevision: z.number().int().nonnegative().optional(),
-    // The adapter turns CR/LF into spaces and trims; this checks the result fits.
-    reason: ChangeReasonSchema.optional(),
-    set: z
-      .strictObject({
-        title: z.string().min(1).max(500).optional(),
-        summary: z.string().optional(),
-        outcome: z.string().optional(),
-        status: WorkItemStatusSchema.optional(),
-        priority: z.number().int().min(0).max(99).optional(),
-        rank: z.number().int().optional(),
-        estimate: z.number().int().optional(),
-        scores: WorkItemScoresSchema.nullable().optional(),
-        labels: z.array(z.string()).optional(),
-        specRefs: z.array(z.string()).optional(),
-        branch: z.string().optional(),
-        pr: z.string().optional(),
-        reviewer: z.string().optional(),
-        node: z.string().optional(),
-        deployVerified: z.boolean().optional(),
-        projectId: z.string().nullable().optional(),
-        parentId: z.string().nullable().optional(),
-        blockedBy: z.string().nullable().optional(),
-      })
-      .refine((v) => Object.keys(v).length > 0, {
-        message: "set must contain at least one field",
-      }),
-  }),
+    "Updates whitelisted fields on a work item. Optional expectedRevision makes the patch compare-and-set; a stale revision returns 409 without writing. Required reason (one line, at most 25 words and 240 chars) says why; a PATCH without it is a 400. It is stored in history (GET /work/items/{id}/history), not in the item. Optional cites (at most 8, each { id } or { id, contribution }) name hub atoms you read; each is pinned to its commit in history, and an unknown id is a 400.",
+  // One schema for the route and the agent tool (core__work_item_update); it lives in @cogni-dao/work-items.
+  input: WorkItemPatchInputSchema,
   output: WorkItemDtoSchema,
 } as const;
 

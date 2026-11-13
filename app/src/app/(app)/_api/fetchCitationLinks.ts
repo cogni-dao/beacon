@@ -35,9 +35,12 @@ export interface CitationLinksResponse {
 
 export async function fetchCitationLinks(
   id: string,
-  cursor?: string
+  cursor?: string,
+  signal?: AbortSignal
 ): Promise<CitationLinksResponse> {
-  const suffix = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const params = new URLSearchParams();
+  if (cursor !== undefined) params.set("cursor", cursor);
+  const suffix = params.size ? `?${params.toString()}` : "";
   const response = await fetch(
     `/api/v1/citations/${encodeURIComponent(id)}${suffix}`,
     {
@@ -45,6 +48,7 @@ export async function fetchCitationLinks(
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       cache: "no-store",
+      ...(signal ? { signal } : {}),
     }
   );
   if (!response.ok) {

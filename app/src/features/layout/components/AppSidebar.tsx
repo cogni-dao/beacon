@@ -14,6 +14,7 @@
 "use client";
 
 import {
+  Activity,
   BookOpen,
   Briefcase,
   CalendarClock,
@@ -50,6 +51,7 @@ const NAV_ITEMS = [
   { href: "/schedules", label: "Schedules", icon: CalendarClock },
   { href: "/growth", label: "Growth", icon: TrendingUp },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
+  { href: "/metrics", label: "Metrics", icon: Activity },
   { href: "/gov", label: "Gov", icon: Vote },
   { href: "/credits", label: "Credits", icon: CreditCard },
   { href: "/admin", label: "Admin", icon: Shield },

@@ -8,8 +8,10 @@
 import "@testing-library/jest-dom/vitest";
 
 import type { WorkItemDto } from "@cogni/node-contracts";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render as renderUi, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkItemFetchError } from "@/app/(app)/work/_api/fetchWorkItems";
 import { WorkItemDetail } from "@/app/(app)/work/_components/WorkItemDetail";
@@ -33,8 +35,31 @@ const item: WorkItemDto = {
   updatedAt: "2026-10-03T00:00:00.000Z",
 };
 
+// The detail's Moves block reads goals through the package's query hooks.
+const clients = new Set<QueryClient>();
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.add(client);
+  return renderUi(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
+
+beforeEach(() => {
+  // The goals read is not under test: answer it without a network call.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ error: "unavailable" }), { status: 503 })),
+  );
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  for (const client of clients) client.clear();
+  clients.clear();
   vi.restoreAllMocks();
 });
 
