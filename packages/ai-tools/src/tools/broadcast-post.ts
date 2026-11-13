@@ -102,6 +102,13 @@ export const broadcastPostContract: ToolContract<
 		"via the social adapter, and records the external post id with status 'posted'. " +
 		"Does NOT read or write engagement metrics — that is the ingest path's job.",
 	effect: "state_change",
+	requires: {
+		scope: "broadcast:post",
+		kind: "node",
+		subject: "member",
+		label: "Post to the node's social channels",
+		description: "Publish staged posts to the social channels this node has connected.",
+	},
 	inputSchema: BroadcastPostInputSchema,
 	outputSchema: BroadcastPostOutputSchema,
 	redact: (output) => output,

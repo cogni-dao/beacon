@@ -52,6 +52,7 @@ const GraphResponseSchema = z.object({
 export const GET = wrapRouteHandlerWithLogging(
   {
     routeId: "knowledge.graph",
+    sameDoor: "knowledge.read",
     auth: { mode: "required", getSessionUser },
   },
   async (ctx, _request, sessionUser) => {

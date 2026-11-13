@@ -330,6 +330,20 @@
       "when": 1794015305992,
       "tag": "0046_metric_observations",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794530255279,
+      "tag": "0047_agent_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794530256279,
+      "tag": "0048_seed_agent_principals",
+      "breakpoints": true
     }
   ]
 }

@@ -42,6 +42,10 @@ vi.mock("@/bootstrap/container", () => ({
     clock: { now: vi.fn(() => new Date("2026-01-01T00:00:00Z")) },
     config: { unhandledErrorPolicy: "rethrow" },
     knowledgeStorePort: mockStore,
+    // The GET routes carry the knowledge.read door; this file proves reads, the role gate is proven in the same-door route tests.
+    agentAuthority: {
+      authorizeRoute: vi.fn(async () => ({ decision: "allow", basis: "role" })),
+    },
   })),
 }));
 

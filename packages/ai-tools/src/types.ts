@@ -17,7 +17,10 @@
  */
 
 import type { ToolEffect } from "@cogni/ai-core";
-import type { ToolContract as SharedToolContract } from "@cogni/shared-ai-tools";
+import type {
+  ToolContract as SharedToolContract,
+  ToolRequires,
+} from "@cogni/shared-ai-tools";
 import type { z } from "zod";
 
 /**
@@ -37,6 +40,8 @@ export type ToolResult<T> =
       readonly errorCode: ToolErrorCode;
       readonly safeMessage: string;
     };
+
+export type { ToolRequires };
 
 /**
  * Tool error codes.
@@ -71,6 +76,11 @@ export interface ToolContract<
   readonly description: string;
   /** Side-effect level for policy decisions */
   readonly effect: ToolEffect;
+  /**
+   * Authority the tool needs (enforced by @cogni-dao/agent-grants guardTools).
+   * Declared on every non-read_only contract; a read_only tool needs only the graph lock.
+   */
+  readonly requires?: ToolRequires;
   /**
    * Zod schema for input validation.
    * Source of truth — used by LangChain wrappers and compiled to JSONSchema7.

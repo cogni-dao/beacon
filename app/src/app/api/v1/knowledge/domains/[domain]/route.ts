@@ -76,10 +76,14 @@ function writeError(e: unknown): NextResponse {
   throw e;
 }
 
-function route(method: "get" | "update" | "delete") {
+function route(
+  method: "get" | "update" | "delete",
+  options: { routeId: string; sameDoor?: string }
+) {
   return wrapRouteHandlerWithLogging<Context>(
     {
-      routeId: `knowledge.domains.${method}`,
+      routeId: options.routeId,
+      ...(options.sameDoor ? { sameDoor: options.sameDoor } : {}),
       auth: { mode: "required", getSessionUser },
     },
     async (ctx, request, user, context) => {
@@ -163,6 +167,9 @@ function route(method: "get" | "update" | "delete") {
   );
 }
 
-export const GET = route("get");
-export const PATCH = route("update");
-export const DELETE = route("delete");
+export const GET = route("get", {
+  routeId: "knowledge.domains.get",
+  sameDoor: "knowledge.read",
+});
+export const PATCH = route("update", { routeId: "knowledge.domains.update" });
+export const DELETE = route("delete", { routeId: "knowledge.domains.delete" });

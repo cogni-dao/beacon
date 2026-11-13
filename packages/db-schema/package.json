@@ -56,6 +56,11 @@
       "import": "./dist/profile.js",
       "default": "./dist/profile.js"
     },
+    "./agent-authority": {
+      "types": "./dist/agent-authority.d.ts",
+      "import": "./dist/agent-authority.js",
+      "default": "./dist/agent-authority.js"
+    },
     "./beacon-growth": {
       "types": "./dist/beacon-growth.d.ts",
       "import": "./dist/beacon-growth.js",

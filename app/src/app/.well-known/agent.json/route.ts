@@ -18,8 +18,17 @@
  * @public
  */
 
+import { REVOCABLE_KEY_PREFIX } from "@cogni/agent-grants/credentials";
+import { CORE_TOOL_BUNDLE } from "@cogni/ai-tools";
 import {
+	agentAccessRequestCreateOperation,
+	agentAccessRequestListOperation,
+	confirmAgentCredentialOperation,
 	knowledgeHistoryOperation,
+	registerAgentOperation,
+	revokeAgentCredentialOperation,
+	rotateAgentCredentialOperation,
+	upgradeAgentCredentialOperation,
 	workItemsClaimOperation,
 	workItemsCoordinationOperation,
 	workItemsCreateOperation,
@@ -34,6 +43,10 @@ import {
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+	buildPermissionCatalog,
+	buildRequiresById,
+} from "@/bootstrap/agent-permissions";
+import {
 	getNodeBrandColor,
 	getNodeBrandIcon,
 	getNodeHook,
@@ -45,6 +58,14 @@ import { serverEnv } from "@/shared/env";
 
 export const runtime = "nodejs";
 
+/**
+ * JSON Schema for a contract. `unrepresentable: "any"` keeps a field the node validates with a custom zod check
+ * (the evaluation `scores` object, `z.custom`) as an open schema, instead of making `z.toJSONSchema` throw: that
+ * throw turned every GET of this document into HTTP 500 (the whole actions block is built eagerly).
+ */
+function toJsonSchema(schema: z.ZodType): ReturnType<typeof z.toJSONSchema> {
+  return z.toJSONSchema(schema, { unrepresentable: "any" });
+}
 /**
  * Resolve the public origin this request reached us through. In prod the app
  * runs behind Caddy / k8s ingress, so Next.js's `request.url` exposes the
@@ -66,6 +87,10 @@ function publicOrigin(request: Request): string {
 export async function GET(request: Request) {
 	const env = serverEnv();
 	const origin = publicOrigin(request);
+	// DECLARED_ONCE_SHOWN_EVERYWHERE: rendered from the grant declarations on every read, never a copy table.
+	const { permissions } = buildPermissionCatalog(
+		buildRequiresById([...CORE_TOOL_BUNDLE]),
+	);
 	return NextResponse.json({
 		name: "Cogni Node API",
 		version: "v1",
@@ -84,7 +109,12 @@ export async function GET(request: Request) {
 			},
 		},
 		registrationUrl: `${origin}/api/v1/agent/register`,
-		auth: { type: "bearer", keyPrefix: "cogni_ag_sk_v1_" },
+		auth: {
+			type: "bearer",
+			keyPrefix: "cogni_ag_sk_v1_",
+			// The revocable key an agent upgrades to (POST /api/v1/agent/credentials/upgrade).
+			revocableKeyPrefix: REVOCABLE_KEY_PREFIX,
+		},
 		endpoints: {
 			openapi: `${origin}/openapi.json`,
 			completions: `${origin}/api/v1/chat/completions`,
@@ -99,83 +129,136 @@ export async function GET(request: Request) {
 			workItemHeartbeat: `${origin}/api/v1/work/items/{id}/heartbeat`,
 			workItemCoordination: `${origin}/api/v1/work/items/{id}/coordination`,
 		},
+		// Scopes an outside agent can ask for (requestPermission). Derived from the declarations, not listed here.
+		permissions,
+		permissionsHow:
+			"Ask with requestPermission; a node admin turns it On in the Admin area (/admin/ai-access).",
 		actions: {
+			register: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/register`,
+				auth: { type: "none" },
+				inputSchema: toJsonSchema(registerAgentOperation.input),
+				outputSchema: toJsonSchema(registerAgentOperation.output),
+			},
+			upgradeCredential: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/credentials/upgrade`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(z.strictObject({})),
+				outputSchema: toJsonSchema(upgradeAgentCredentialOperation.output),
+			},
+			confirmCredential: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/credentials/confirm`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(z.strictObject({})),
+				outputSchema: toJsonSchema(confirmAgentCredentialOperation.output),
+			},
+			rotateCredential: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/credentials/rotate`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(z.strictObject({})),
+				outputSchema: toJsonSchema(rotateAgentCredentialOperation.output),
+			},
+			revokeCredential: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/credentials/revoke`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(revokeAgentCredentialOperation.input),
+				outputSchema: toJsonSchema(revokeAgentCredentialOperation.output),
+			},
+			requestPermission: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/agent/access-requests`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(agentAccessRequestCreateOperation.input),
+				outputSchema: toJsonSchema(agentAccessRequestCreateOperation.output),
+			},
+			listMyPermissions: {
+				method: "GET",
+				endpoint: `${origin}/api/v1/agent/access-requests`,
+				auth: { type: "bearer" },
+				inputSchema: toJsonSchema(z.strictObject({})),
+				outputSchema: toJsonSchema(agentAccessRequestListOperation.output),
+			},
 			listWorkItems: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/work/items`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsListOperation.input),
-				outputSchema: z.toJSONSchema(workItemsListOperation.output),
+				inputSchema: toJsonSchema(workItemsListOperation.input),
+				outputSchema: toJsonSchema(workItemsListOperation.output),
 			},
 			createWorkItem: {
 				method: "POST",
 				endpoint: `${origin}/api/v1/work/items`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsCreateOperation.input),
-				outputSchema: z.toJSONSchema(workItemsCreateOperation.output),
+				inputSchema: toJsonSchema(workItemsCreateOperation.input),
+				outputSchema: toJsonSchema(workItemsCreateOperation.output),
 			},
 			getWorkItem: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/work/items/{id}`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsGetOperation.input),
-				outputSchema: z.toJSONSchema(workItemsGetOperation.output),
+				inputSchema: toJsonSchema(workItemsGetOperation.input),
+				outputSchema: toJsonSchema(workItemsGetOperation.output),
 			},
 			updateWorkItem: {
 				method: "PATCH",
 				endpoint: `${origin}/api/v1/work/items/{id}`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsPatchOperation.input),
-				outputSchema: z.toJSONSchema(workItemsPatchOperation.output),
+				inputSchema: toJsonSchema(workItemsPatchOperation.input),
+				outputSchema: toJsonSchema(workItemsPatchOperation.output),
 			},
 			deleteWorkItem: {
 				method: "DELETE",
 				endpoint: `${origin}/api/v1/work/items/{id}`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsDeleteOperation.input),
-				outputSchema: z.toJSONSchema(workItemsDeleteOperation.output),
+				inputSchema: toJsonSchema(workItemsDeleteOperation.input),
+				outputSchema: toJsonSchema(workItemsDeleteOperation.output),
 			},
 			claimWorkItem: {
 				method: "POST",
 				endpoint: `${origin}/api/v1/work/items/{id}/claims`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsClaimOperation.input),
-				outputSchema: z.toJSONSchema(workItemsClaimOperation.output),
+				inputSchema: toJsonSchema(workItemsClaimOperation.input),
+				outputSchema: toJsonSchema(workItemsClaimOperation.output),
 			},
 			heartbeatWorkItem: {
 				method: "POST",
 				endpoint: `${origin}/api/v1/work/items/{id}/heartbeat`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsHeartbeatOperation.input),
-				outputSchema: z.toJSONSchema(workItemsHeartbeatOperation.output),
+				inputSchema: toJsonSchema(workItemsHeartbeatOperation.input),
+				outputSchema: toJsonSchema(workItemsHeartbeatOperation.output),
 			},
 			releaseWorkItem: {
 				method: "DELETE",
 				endpoint: `${origin}/api/v1/work/items/{id}/claims?runId={runId}`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsReleaseOperation.input),
-				outputSchema: z.toJSONSchema(workItemsReleaseOperation.output),
+				inputSchema: toJsonSchema(workItemsReleaseOperation.input),
+				outputSchema: toJsonSchema(workItemsReleaseOperation.output),
 			},
 			getWorkItemHistory: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/work/items/{id}/history`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsHistoryOperation.input),
-				outputSchema: z.toJSONSchema(workItemsHistoryOperation.output),
+				inputSchema: toJsonSchema(workItemsHistoryOperation.input),
+				outputSchema: toJsonSchema(workItemsHistoryOperation.output),
 			},
 			getKnowledgeHistory: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/knowledge/{id}/history`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(knowledgeHistoryOperation.input),
-				outputSchema: z.toJSONSchema(knowledgeHistoryOperation.output),
+				inputSchema: toJsonSchema(knowledgeHistoryOperation.input),
+				outputSchema: toJsonSchema(knowledgeHistoryOperation.output),
 			},
 			getWorkItemCoordination: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/work/items/{id}/coordination`,
 				auth: { type: "bearer" },
-				inputSchema: z.toJSONSchema(workItemsCoordinationOperation.input),
-				outputSchema: z.toJSONSchema(workItemsCoordinationOperation.output),
+				inputSchema: toJsonSchema(workItemsCoordinationOperation.input),
+				outputSchema: toJsonSchema(workItemsCoordinationOperation.output),
 			},
 		},
 		cognition: {

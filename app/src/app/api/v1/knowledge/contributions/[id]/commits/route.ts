@@ -23,6 +23,7 @@ export const POST = wrapRouteHandlerWithLogging<{
 }>(
   {
     routeId: "knowledge.contributions.commits.append",
+    sameDoor: "knowledge.contribute",
     auth: { mode: "required", getSessionUser },
   },
   async (_ctx, request, sessionUser, context) => {
