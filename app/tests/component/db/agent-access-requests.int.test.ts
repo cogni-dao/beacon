@@ -185,7 +185,8 @@ describe("access requests: an ask is an off row (real Postgres)", () => {
   it("the per-agent cap fires through the real route with only declared, askable scopes", async () => {
     const capped = await mkUser("Capped bot");
     as(capped, "bearer");
-    const askable = ["work_item:transition", "schedule:manage", "edo:write", "metric:compute", "knowledge:contribute"];
+    // This test's authority is built from the node-local tool bundle, which has no metric tool, so `metric:compute` is not declared here.
+    const askable = ["work_item:transition", "schedule:manage", "edo:write", "knowledge:contribute"];
     for (const scope of askable.slice(0, MAX_PENDING_PER_AGENT)) expect((await ask(scope)).status).toBe(201);
     const res = await ask(askable[MAX_PENDING_PER_AGENT] as string);
     expect(res.status).toBe(429);
