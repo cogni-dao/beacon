@@ -19,7 +19,7 @@
  * Notes: getAppDb() connects as app_user (FORCE RLS via provision.sh). getSeedDb()
  *        connects as app_service (BYPASSRLS) for seed/cleanup.
  * Links: app/src/adapters/server/db/migrations/0033_beacon_posts_define.sql,
- *        packages/db-schema/src/beacon-growth.ts, docs/spec/database-rls.md
+ *        packages/db-schema/src/beacon-growth.ts, https://github.com/cogni-dao/cogni/blob/2321821e61dd12aa0cf75d235bd668ff65739109/docs/spec/database-rls.md
  * @public
  */
 

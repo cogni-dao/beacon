@@ -17,7 +17,7 @@
  *   - SERVICE_ROLE_BYPASSES_RLS: this JOB reads/writes via the service-role DB (it
  *     operates across all accounts); RLS does not apply. It still writes account-scoped rows.
  * Side-effects: IO (DB reads/writes, social adapter reads via the container)
- * Links: docs/spec/beacon-growth-loop-v0.md §5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

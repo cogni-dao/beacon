@@ -33,7 +33,7 @@
  *   - FAIL_OPEN_RECALL: a recall failure degrades to no-playbook, never throws.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none (all I/O injected)
- * Links: docs/spec/beacon-growth-loop-v0.md §0/§3/§4/§7, ./prompts.ts,
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, ./prompts.ts,
  *         packages/langgraph-graphs/src/graphs/growth-research/workflow.ts
  * @public
  */

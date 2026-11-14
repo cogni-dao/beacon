@@ -16,7 +16,7 @@
  *     persisted queue is a classified funnel; `kind` is text-only in v0.
  *   - STRUCTURED_RESULTS: Zod-validated input/output.
  * Side-effects: none (interface + schemas only)
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§3, .context/specs/pr4-funnel.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr4-funnel.md
  * @public
  */
 

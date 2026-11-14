@@ -14,7 +14,7 @@
  *   - SOLE_POST_METRICS_WRITER: only the ingest job/route reference the writer.
  *   - BROADCAST_OUTPUT_HAS_NO_METRICS: the broadcast tool exposes no engagement fields.
  * Side-effects: none (read-only file scan)
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

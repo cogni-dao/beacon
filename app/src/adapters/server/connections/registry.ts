@@ -10,7 +10,7 @@
  * Invariants:
  * - REGISTRY_IS_THE_SWITCH: routes never branch on provider name; they ask the registry.
  * Side-effects: none (pure construction from env).
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @internal
  */
 

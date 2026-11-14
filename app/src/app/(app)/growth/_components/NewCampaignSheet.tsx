@@ -15,7 +15,7 @@
  *   - NO_DEV_MECHANICS_IN_UX: no hypothesis jargon, no target-rate, no evaluate-by,
  *     no exposed slug — those are defaulted/derived, never asked of the user.
  * Side-effects: IO (POST /api/v1/growth/campaigns via createCampaign).
- * Links: ./_api/mutateCampaign.ts, docs/research/marketing-platforms-landscape.md (DEFINE)
+ * Links: ./_api/mutateCampaign.ts, https://beacon.cognidao.org/knowledge/marketing-landscape-finding
  * @internal
  */
 

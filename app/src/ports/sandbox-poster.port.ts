@@ -10,7 +10,7 @@
  * - NO_NETWORK: implementations never make an HTTP request.
  * - DETERMINISTIC: the same (token, text) yields the same externalId (idempotency demo).
  * Side-effects: none (the reference impl logs via Pino only).
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @public
  */
 

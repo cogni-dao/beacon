@@ -10,7 +10,7 @@
  *   - PACKAGES_NO_SRC_IMPORTS: No imports from src/**
  *   - Adding a graph = add entry here, not touch bootstrap
  * Side-effects: none
- * Links: GRAPH_EXECUTION.md, LANGGRAPH_AI.md
+ * Links: https://node-template.cognidao.org/knowledge/graph-execution-invariants
  * @public
  */
 
@@ -225,7 +225,7 @@ export const LANGGRAPH_CATALOG: Readonly<Record<string, CatalogEntry>> = {
    * Growth-generate graph — the GENERATE activity of the beacon growth loop, as a
    * dashboard-visible, schedulable catalog graph. Wraps the pure `runGrowthGenerate`
    * (one LLM call per funnel layer) to POPULATE THE FUNNEL across TOFU/MOFU/BOFU.
-   * Per docs/guides/node-temporal.md: AI work is a graph, run on cron by the shared
+   * Per https://cognidao.org/knowledge/node-temporal-substrate: AI work is a graph, run on cron by the shared
    * worker. graphId is `langgraph:growth-generate` (a stable shared seam).
    */
   [GROWTH_GENERATE_GRAPH_NAME]: {

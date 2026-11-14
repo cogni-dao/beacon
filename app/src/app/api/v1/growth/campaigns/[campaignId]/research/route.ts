@@ -26,7 +26,7 @@
  *   - SOCIAL_EVIDENCE_IS_CACHED: this route reads only Postgres-cached connection
  *     snapshots and post_metrics; it never calls a paid/passive platform API.
  * Side-effects: IO (HTTP, LLM completion, Doltgres read, Postgres read+write).
- * Links: ../route.ts, docs/spec/beacon-growth-loop-v0.md §2.2/§3/§7,
+ * Links: ../route.ts, https://beacon.cognidao.org/knowledge/growth-loop-contract,
  *   packages/langgraph-graphs/src/graphs/growth-research/workflow.ts
  * @public
  */

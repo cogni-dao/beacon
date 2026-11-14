@@ -6,7 +6,7 @@
  * Purpose: SCAFFOLD the cron registration for the growth-generate catalog graph — the
  *   GENERATE activity of the beacon growth loop, run autonomously on a schedule by the
  *   SHARED worker via GraphRunWorkflow (graphId `langgraph:growth-generate`). Per
- *   docs/guides/node-temporal.md: "AI work is a graph, run on cron by the shared worker"
+ *   https://cognidao.org/knowledge/node-temporal-substrate: "AI work is a graph, run on cron by the shared worker"
  *   — this builds the typed `CreateScheduleParams` that registers that cron. Pure: it
  *   produces the registration SHAPE; the live `scheduleControl.createSchedule(...)` call
  *   (and the grant + system tenant + Temporal substrate it needs) is the app/operator's
@@ -26,7 +26,7 @@
  *   - FORBIDDEN: `@/`, `src/`, drizzle-orm, any I/O (scheduler-core package rule).
  * Side-effects: none
  * Links: ../ports/schedule-control.port.ts, ./syncGovernanceSchedules.ts,
- *   docs/guides/node-temporal.md, packages/langgraph-graphs/src/graphs/growth-generate/graph.ts
+ *   https://cognidao.org/knowledge/node-temporal-substrate, packages/langgraph-graphs/src/graphs/growth-generate/graph.ts
  * @public
  */
 

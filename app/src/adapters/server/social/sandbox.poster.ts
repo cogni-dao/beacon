@@ -11,7 +11,7 @@
  *   - DETERMINISTIC: externalId = hash(token, text) so retries dedupe identically.
  *   - NO_SECRETS_IN_LOGS: the resolved token is never logged.
  * Side-effects: emits one structured Pino line per post (observability of the exercise).
- * Links: docs/spec/platform-connections.md, src/ports/sandbox-poster.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/sandbox-poster.port.ts
  * @internal
  */
 

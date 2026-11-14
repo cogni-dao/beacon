@@ -12,7 +12,7 @@
  *   - TENANT_SCOPED: written inside withTenantScope for the caller's user.
  *   - RELINK_REPLACES: a re-link revokes the prior active row for the same external account.
  * Side-effects: IO (DB update + insert).
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @internal
  */
 

@@ -8,7 +8,7 @@
  *   leaks in), impression vs follower fallback, normalization vs target,
  *   validates/invalidates boundary, and empty/budget-deadline invalidation.
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

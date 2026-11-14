@@ -23,8 +23,8 @@
  *   - CRITIQUE_THEN_REVISE: a named-rubric refine pass rewrites each draft to fix its
  *     weaknesses (one bounded pass — never an infinite loop).
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §0/§3/§4, ./workflow.ts,
- *         docs/research/_knowledge/dolt-playbook-seed.md (the Hook-Body-CTA rubric)
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, ./workflow.ts,
+ *         https://beacon.cognidao.org/knowledge/marketing-landscape-finding (the Hook-Body-CTA rubric)
  * @public
  */
 

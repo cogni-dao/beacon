@@ -21,7 +21,7 @@
  * Side-effects: IO (database operations via testcontainers).
  * Notes: getAppDb() = app_user (FORCE RLS); getSeedDb() = app_service (BYPASSRLS).
  * Links: app/src/adapters/server/db/migrations/0032_mighty_maelstrom.sql,
- *        packages/db-schema/src/connections.ts, docs/spec/platform-connections.md
+ *        packages/db-schema/src/connections.ts, https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @public
  */
 

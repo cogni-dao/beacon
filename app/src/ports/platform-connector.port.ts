@@ -14,7 +14,7 @@
  * - TOKENS_NEVER_LOGGED: Credential blobs/tokens must not appear in logs or error messages.
  * - DISPLAY_IS_NONSECRET: fetchAccount returns only non-secret identity for display columns.
  * Side-effects: none (interface only)
- * Links: docs/spec/platform-connections.md, src/ports/connection-broker.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/connection-broker.port.ts
  * @public
  */
 

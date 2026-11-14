@@ -22,7 +22,7 @@
  *     activity must still produce findings on a fresh/empty knowledge hub.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none (all I/O injected)
- * Links: docs/spec/beacon-growth-loop-v0.md §2.2/§3/§7, ./prompts.ts
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, ./prompts.ts
  * @public
  */
 

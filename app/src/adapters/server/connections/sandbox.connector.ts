@@ -14,7 +14,7 @@
  * - DETERMINISTIC_IDENTITY: the submitted label maps 1:1 to a stable fake account so
  *   multiple sandbox handles can be linked per tenant (multi-account exercise).
  * Side-effects: none.
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @internal
  */
 

@@ -14,7 +14,7 @@
  *     connection credentials in the publish job, never an app-level env key
  *   - CHANNEL_ROUTED: postContent/readMetrics dispatch by channel
  * Side-effects: none (factory only)
- * Links: docs/spec/beacon-growth-loop-v0.md §2/§5.
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

@@ -13,7 +13,7 @@
  * - TOKENS_NEVER_LOGGED: the API key never appears in logs, errors, or display columns.
  * - DISPLAY_IS_NONSECRET: only name/karma/id reach the display columns.
  * Side-effects: IO (HTTPS GET to the Moltbook API).
- * Links: docs/spec/platform-connections.md, src/ports/platform-connector.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/platform-connector.port.ts
  * @internal
  */
 

@@ -11,7 +11,7 @@
  *     layer inside `runGrowthGenerate`) — it has no tool surface. Persistence as `posts`
  *     is the caller's job, never the graph's.
  * Side-effects: none
- * Links: ./graph.ts, ../content/tools.ts, TOOL_USE_SPEC.md
+ * Links: ./graph.ts, ../content/tools.ts, https://github.com/cogni-dao/cogni/blob/2321821e61dd12aa0cf75d235bd668ff65739109/docs/spec/tool-use.md
  * @public
  */
 

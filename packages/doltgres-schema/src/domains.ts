@@ -16,7 +16,7 @@
  *   - BASE_FIRST_APPEND_ONLY: the universal baseline comes first and node domains
  *     are appended; domain `id`s are stable identifiers.
  * Side-effects: none
- * Links: docs/spec/knowledge-syntropy.md, docs/spec/beacon-growth-loop-v0.md
+ * Links: https://node-template.cognidao.org/knowledge/knowledge-store-schema, https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

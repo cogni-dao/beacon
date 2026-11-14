@@ -15,7 +15,7 @@
  *   - HARD_CAPS_ENFORCED: text ≤280; metrics batched ≤100 ids; recent posts 5–100
  *   - NO_SECRETS_IN_LOGS: never logs the access token or post bodies
  * Side-effects: IO (HTTPS requests to api.x.com via twitter-api-v2)
- * Links: docs/spec/beacon-growth-loop-v0.md §5, docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @internal
  */
 

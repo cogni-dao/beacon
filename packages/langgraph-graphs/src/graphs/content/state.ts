@@ -12,7 +12,7 @@
  *   - FUNNEL_LAYER_CLASSIFIED: every variant carries its `funnelLayer` + `topic`.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §1, .context/specs/pr4-funnel.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr4-funnel.md
  * @public
  */
 

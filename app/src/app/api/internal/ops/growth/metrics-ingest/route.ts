@@ -12,7 +12,7 @@
  *   - JOB_DELEGATION_ONLY: Uses runIngestPostMetricsJob() for all orchestration
  *   - SOLE_POST_METRICS_WRITER: the delegated job is the only `post_metrics` writer
  * Side-effects: IO (HTTP request/response, DB reads/writes + social reads via job)
- * Links: docs/spec/beacon-growth-loop-v0.md §5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

@@ -17,7 +17,7 @@
  *     (as `posts`) is the CALLER's job, never this graph's (PACKAGES_NO_SRC_IMPORTS).
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none
- * Links: ./graph.ts, ./workflow.ts, docs/guides/node-temporal.md
+ * Links: ./graph.ts, ./workflow.ts, https://cognidao.org/knowledge/node-temporal-substrate
  * @public
  */
 

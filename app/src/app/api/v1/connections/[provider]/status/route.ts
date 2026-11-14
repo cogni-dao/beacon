@@ -10,7 +10,7 @@
  *   - NEVER_DECRYPTS: reads display columns only, never the credential blob.
  *   - TENANT_SCOPED: only the caller's billing-account connections.
  * Side-effects: IO (DB query).
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @public
  */
 

@@ -10,7 +10,7 @@
  *   - All LangChain graph creation code lives here
  *   - Shared types prevent per-graph interface duplication
  * Side-effects: none
- * Links: LANGGRAPH_AI.md, AGENT_DEVELOPMENT_GUIDE.md
+ * Links: https://node-template.cognidao.org/knowledge/graph-execution-invariants, https://node-template.cognidao.org/knowledge/agent-development
  * @public
  */
 
@@ -74,7 +74,7 @@ export {
 // Growth-generate (beacon growth loop GENERATE activity). The pure `runGrowthGenerate`
 // workflow stays the SHARED core (the generate route still calls it directly); the
 // catalog graph below wraps it so the activity is dashboard-visible + schedulable on a
-// cron via GraphRunWorkflow (graphId `langgraph:growth-generate`). See docs/guides/node-temporal.md.
+// cron via GraphRunWorkflow (graphId `langgraph:growth-generate`). See https://cognidao.org/knowledge/node-temporal-substrate.
 export {
   FUNNEL_LAYER_GUIDANCE,
   FUNNEL_LAYERS,
