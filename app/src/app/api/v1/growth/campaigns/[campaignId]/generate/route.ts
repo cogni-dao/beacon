@@ -29,7 +29,7 @@
  *     playbook (the workflow still produces drafts).
  *   - IDEMPOTENCY_APPEND_V0: each call appends fresh drafts (v0; de-dupe is later).
  * Side-effects: IO (HTTP, LLM completion, Doltgres read, Postgres read+write).
- * Links: ../research/route.ts, ../route.ts, docs/spec/beacon-growth-loop-v0.md §0/§3/§4,
+ * Links: ../research/route.ts, ../route.ts, https://beacon.cognidao.org/knowledge/growth-loop-contract,
  *   packages/langgraph-graphs/src/graphs/growth-generate/workflow.ts
  * @public
  */

@@ -10,7 +10,7 @@
  *   - CAPABILITY_NOT_POLICY: these are capabilities, not authorization
  *   - NO_POST_METRICS_WRITE: the content graph never gains a post_metrics write surface
  * Side-effects: none
- * Links: TOOL_USE_SPEC.md, docs/spec/beacon-growth-loop-v0.md §1
+ * Links: https://github.com/cogni-dao/cogni/blob/2321821e61dd12aa0cf75d235bd668ff65739109/docs/spec/tool-use.md, https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

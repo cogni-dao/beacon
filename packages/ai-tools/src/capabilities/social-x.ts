@@ -12,7 +12,7 @@
  *   - X_API_PINNED_V2: The X transport is pinned to API v2 (X_API_VERSION const)
  *   - METRIC_INTS_NONNEGATIVE: All engagement counts are ints ≥ 0
  * Side-effects: none (interface + schemas only)
- * Links: docs/spec/beacon-growth-loop-v0.md §5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

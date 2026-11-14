@@ -11,7 +11,7 @@
  *     toward storing credentials we can't encrypt.
  *   - FAIL_CLOSED: PKCE verifier + state carried only in the signed HttpOnly cookie.
  * Side-effects: cookie set, redirect.
- * Links: docs/spec/platform-connections.md, ../_state-cookie.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, ../_state-cookie.ts
  * @public
  */
 

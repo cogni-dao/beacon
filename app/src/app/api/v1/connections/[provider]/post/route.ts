@@ -13,7 +13,7 @@
  *   - TOKENS_NEVER_LOGGED: the resolved token is used, never logged or returned.
  *   - BROKER_RESOLVES_ALL: credentials come from the broker, never direct decrypt.
  * Side-effects: IO (DB read via broker). The fake poster makes no external call.
- * Links: docs/spec/platform-connections.md, src/ports/sandbox-poster.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/sandbox-poster.port.ts
  * @public
  */
 

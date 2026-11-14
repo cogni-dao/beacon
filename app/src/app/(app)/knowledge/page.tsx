@@ -15,7 +15,7 @@
  *   only pre-read on a `?mode=graph` deep-link; otherwise it stays deferred.
  *   `?mode=goals` redirects to `/metrics` (story.0039), so old deep links keep working.
  * Side-effects: IO (Doltgres reads via container port)
- * Links: [KnowledgeDashboardView](./view.tsx), ./_server/loaders.ts, docs/spec/knowledge-syntropy.md
+ * Links: [KnowledgeDashboardView](./view.tsx), ./_server/loaders.ts, https://node-template.cognidao.org/knowledge/knowledge-write-contract
  * @public
  */
 

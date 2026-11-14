@@ -5,7 +5,7 @@
  * Module: `@tests/unit/packages/langgraph-graphs/growth-generate-graph`
  * Purpose: Unit-test the growth-generate CATALOG GRAPH seam — prove the GENERATE
  *   activity is now a dashboard-visible, schedulable catalog graph (per
- *   docs/guides/node-temporal.md). Asserts the factory compiles to a runnable graph,
+ *   https://cognidao.org/knowledge/node-temporal-substrate). Asserts the factory compiles to a runnable graph,
  *   "growth-generate" is registered in LANGGRAPH_GRAPH_IDS + LANGGRAPH_CATALOG with the
  *   stable graphId `langgraph:growth-generate`, and the scheduler-core registration
  *   builder produces the right shape (graphId + workflowType "GraphRunWorkflow").
@@ -22,7 +22,7 @@
  * Side-effects: none
  * Links: packages/langgraph-graphs/src/graphs/growth-generate/graph.ts,
  *        packages/scheduler-core/src/services/growthGenerateSchedule.ts,
- *        docs/guides/node-temporal.md
+ *        https://cognidao.org/knowledge/node-temporal-substrate
  * @internal
  */
 

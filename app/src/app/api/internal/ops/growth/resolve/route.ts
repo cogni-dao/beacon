@@ -13,7 +13,7 @@
  *   - JOB_DELEGATION_ONLY: Uses runResolveEngagementCampaignsJob() for all orchestration
  *   - KPI_NEVER_SELF_CITED: the delegated job derives the edge solely from post_metrics
  * Side-effects: IO (HTTP request/response, Postgres reads + Doltgres reads/writes via job)
- * Links: docs/spec/beacon-growth-loop-v0.md §6, .context/specs/pr3-verifier.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr3-verifier.md
  * @internal
  */
 

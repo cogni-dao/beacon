@@ -13,7 +13,7 @@
  *   - APPROVED_ONLY: delegated job can only publish approved Moltbook queue rows.
  *   - TENANT_CONNECTION_ONLY: Moltbook credentials come from the user's connection row.
  * Side-effects: IO (HTTP, Postgres read/write, Moltbook HTTPS via job).
- * Links: docs/spec/beacon-growth-loop-v0.md §3/§4.
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

@@ -8,7 +8,7 @@
  * Invariants: NODE_NAME + DATABASE_URL from env. Migrations folder from argv[2]. Lock auto-releases on session end.
  * Side-effects: IO (Postgres connect, advisory lock, migrate, unlock).
  * Notes: COPY'd into each runtime image at /app/nodes/<node>/app/migrate.mjs. LOCK_KEY shared safely — advisory locks are database-scoped.
- * Links: docs/spec/databases.md §2 Migration Strategy, work/items/task.0371.kill-presync-migration-hook-step-1.md
+ * Links: https://cognidao.org/knowledge/node-database-contract
  * @internal
  */
 

@@ -24,7 +24,7 @@
  *   - SERVICE_ROLE_NO_RLS: `post_metrics` reads use the service-role DB.
  *   - METRIC_STRATEGY_ONLY: only `metric:engagement:*` hypotheses are touched.
  * Side-effects: IO (Postgres reads, Doltgres reads/writes + commits via ports)
- * Links: docs/spec/beacon-growth-loop-v0.md §6, .context/specs/pr3-verifier.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr3-verifier.md
  * @public
  */
 

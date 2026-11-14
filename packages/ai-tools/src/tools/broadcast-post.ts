@@ -15,7 +15,7 @@
  *   - IDEA_KEY_GROUPS_VARIANTS: per-channel variants share `ideaKey`.
  *   - NO LangChain imports (LangChain wrapping happens in langgraph-graphs).
  * Side-effects: IO (post to social channels + persist `posts` via capability)
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§3
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

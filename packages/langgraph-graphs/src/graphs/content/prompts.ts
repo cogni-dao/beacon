@@ -9,7 +9,7 @@
  *   - PACKAGES_NO_SRC_IMPORTS: this package cannot import from src/
  *   - GRAPH_OWNS_MESSAGES: graph defines its own prompts
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §1
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

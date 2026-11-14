@@ -14,7 +14,7 @@
  *   - PROFILE_LINKING_ONLY: profile owns connect/disconnect; this module only
  *     summarizes growth metrics.
  * Side-effects: IO (cheap status/snapshot reads on mount; explicit metrics refresh on user action).
- * Links: src/app/api/v1/connections/[provider]/metrics/route.ts, docs/spec/platform-connections.md
+ * Links: src/app/api/v1/connections/[provider]/metrics/route.ts, https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @internal
  */
 

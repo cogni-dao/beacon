@@ -22,7 +22,7 @@
  *     The campaign LIST now comes from the owned Postgres table (the campaigns→Postgres
  *     tenancy gap is closed).
  * Side-effects: IO (Postgres reads via the RLS-scoped client)
- * Links: docs/spec/beacon-growth-loop-v0.md §6, app/src/app/(app)/growth/view.tsx
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, app/src/app/(app)/growth/view.tsx
  * @internal
  */
 

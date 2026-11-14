@@ -20,7 +20,7 @@
  *   - ONE_PER_RUN: v0 publishes at most one approved Moltbook post per tick,
  *     respecting Moltbook's tight posting cadence.
  * Side-effects: IO (DB reads/writes, HTTPS request to Moltbook).
- * Links: docs/spec/beacon-growth-loop-v0.md §2.6/§3/§7
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

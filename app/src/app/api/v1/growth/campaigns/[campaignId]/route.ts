@@ -17,7 +17,7 @@
  *     status→Temporal schedule pause/resume (resume on `active`, pause on
  *     `draft`/`paused`) is the HEARTBEAT PR — this route does not touch schedules.
  * Side-effects: IO (HTTP, Postgres write).
- * Links: ../route.ts, docs/spec/beacon-growth-loop-v0.md §3
+ * Links: ../route.ts, https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

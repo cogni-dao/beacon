@@ -42,7 +42,7 @@
  *     counts critique→edit passes.
  *   - POST_METRICS_APPEND_ONLY: `post_metrics` is written ONLY by the ingest path; each row is one captured snapshot.
  * Side-effects: none (schema definitions only)
- * Links: docs/spec/beacon-growth-loop-v0.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

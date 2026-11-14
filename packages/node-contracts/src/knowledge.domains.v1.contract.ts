@@ -13,7 +13,7 @@
  *   - DOMAIN_DELETE_REFUSES_NONEMPTY; baseline domains remain protected.
  *   - id is short, slug-shaped (alnum, dash, underscore).
  * Side-effects: none
- * Links: docs/spec/knowledge-domain-registry.md
+ * Links: https://node-template.cognidao.org/knowledge/knowledge-domain-management
  * @internal
  */
 

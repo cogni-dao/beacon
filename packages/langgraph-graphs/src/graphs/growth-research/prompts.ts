@@ -13,7 +13,7 @@
  *   - GRAPH_OWNS_MESSAGES: the workflow defines its own prompts
  *   - SOURCE_BACKED_KINDS: exemplar/reference findings must cite an injected sourceRef.
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §2.2/§3/§7
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @public
  */
 

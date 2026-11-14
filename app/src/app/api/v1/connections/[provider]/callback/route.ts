@@ -12,7 +12,7 @@
  *   - TOKENS_NEVER_LOGGED: no tokens in logs or responses (errors are coarse-grained).
  *   - TENANT_SCOPED: connection belongs to the authenticated user's billing account.
  * Side-effects: IO (token exchange, identity fetch, DB insert), cookie clear, redirect.
- * Links: docs/spec/platform-connections.md, ../_state-cookie.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, ../_state-cookie.ts
  * @public
  */
 

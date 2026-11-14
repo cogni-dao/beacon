@@ -23,7 +23,7 @@
  *   - EMPTY_SNAPSHOTS_INVALIDATE: no measured engagement at the budget deadline
  *     is a failed hypothesis (score 0, invalidates).
  * Side-effects: none (pure)
- * Links: docs/spec/beacon-growth-loop-v0.md §5, .context/specs/pr3-verifier.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr3-verifier.md
  * Note: beacon-owned node-specific domain. Lives here (not in the shared
  *   `@cogni/knowledge-store` package) because that package is now consumed as a
  *   published node-template tarball and must not carry per-node logic.

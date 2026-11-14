@@ -9,7 +9,7 @@
  *   - SOFT_DELETE: sets revoked_at, never hard-deletes.
  *   - TENANT_SCOPED: only the caller's billing-account connections.
  * Side-effects: IO (DB update).
- * Links: docs/spec/platform-connections.md
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract
  * @public
  */
 

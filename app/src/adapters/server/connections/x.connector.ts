@@ -11,7 +11,7 @@
  * - TOKENS_NEVER_LOGGED: no tokens in logs or thrown messages.
  * - OFFLINE_ACCESS: requests offline.access so a refresh_token is issued.
  * Side-effects: IO (HTTPS to X auth + API endpoints).
- * Links: docs/spec/platform-connections.md, src/ports/platform-connector.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/platform-connector.port.ts
  * @internal
  */
 

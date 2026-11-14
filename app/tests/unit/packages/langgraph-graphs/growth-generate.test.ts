@@ -18,7 +18,7 @@
  *   - FINDINGS_GROUND_PROMPT: campaign findings reach the LLM user message.
  * Side-effects: none
  * Links: packages/langgraph-graphs/src/graphs/growth-generate/workflow.ts,
- *         docs/spec/beacon-growth-loop-v0.md §0/§3/§4
+ *         https://beacon.cognidao.org/knowledge/growth-loop-contract §0/§3/§4
  * @internal
  */
 

@@ -17,7 +17,7 @@
  *     (billing account, the tenancy axis) so RLS scopes it. The worker writes via the
  *     service-role DB (bypasses RLS) but persists account-scoped rows from row one.
  * Side-effects: none at construction (factory only). The returned capability does IO.
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§3
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

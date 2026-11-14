@@ -19,7 +19,6 @@
  *     `goals unavailable: …`) ships in `@cogni/knowledge-store`'s
  *     `renderGoalsLines`; this file is only the call site (story.5101).
  * Side-effects: none
- * Links: docs/spec/node-baas-architecture.md
  * @internal
  */
 

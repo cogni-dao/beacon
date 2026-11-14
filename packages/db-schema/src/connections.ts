@@ -10,7 +10,7 @@
  * - TENANT_SCOPED: Connections belong to billing_account_id. Cross-tenant access forbidden.
  * - SOFT_DELETE: Revocation sets revoked_at, never hard-deletes.
  * Side-effects: none (schema definitions only)
- * Links: docs/spec/tenant-connections.md
+ * Links: https://github.com/cogni-dao/cogni/blob/2321821e61dd12aa0cf75d235bd668ff65739109/docs/spec/tenant-connections.md
  * @public
  */
 
@@ -42,11 +42,11 @@ const CONNECTION_PROVIDERS = [
   "github",
   "google",
   "bluesky",
-  // Social platforms (see docs/spec/platform-connections.md)
+  // Social platforms (see https://beacon.cognidao.org/knowledge/platform-connections-contract)
   "x",
   "moltbook",
   // Fake platform for exercising the connect→resolve→post pipeline with no
-  // external calls (test harness; see docs/spec/platform-connections.md).
+  // external calls (test harness; see https://beacon.cognidao.org/knowledge/platform-connections-contract).
   "sandbox",
 ] as const;
 
@@ -55,7 +55,7 @@ const CONNECTION_PROVIDERS = [
  * platform read returned 402/403 (no credits) or 429 (rate-limited), so the data
  * plane stops calling until the connection is re-armed. Because resolveActive
  * resolves only `active` rows, every caller (card, cron, agent) is short-circuited
- * — not just the UI. See docs/spec/platform-connections.md §Read-cost governance. */
+ * — not just the UI. See https://beacon.cognidao.org/knowledge/platform-connections-contract §Read-cost governance. */
 const CONNECTION_STATUSES = [
   "active",
   "needs_reauth",

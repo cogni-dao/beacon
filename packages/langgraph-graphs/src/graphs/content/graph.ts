@@ -17,7 +17,7 @@
  *   - NO_POST_METRICS_WRITE: this module never references the post_metrics writer
  *   - TYPE_TRANSPARENT_RETURN: no explicit return type for CLI schema extraction
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §1, .context/specs/pr4-funnel.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr4-funnel.md
  * @public
  */
 

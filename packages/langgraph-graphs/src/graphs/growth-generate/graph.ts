@@ -7,7 +7,7 @@
  *   GENERATE activity of the beacon growth loop, made dashboard-visible and
  *   schedulable. A single-node StateGraph: read the campaign input, run the existing
  *   pure workflow (which POPULATES THE FUNNEL across TOFU/MOFU/BOFU), emit the drafts.
- *   Per docs/guides/node-temporal.md: "AI work is a graph, run on cron by the shared
+ *   Per https://cognidao.org/knowledge/node-temporal-substrate: "AI work is a graph, run on cron by the shared
  *   worker" — this is the graph; the cron registration is the schedule (see
  *   ./schedule registration). graphId is `langgraph:growth-generate`.
  * Scope: Pure factory. The single node bridges the injected LLM to the workflow's
@@ -24,7 +24,7 @@
  *   - TYPE_TRANSPARENT_RETURN: no explicit return type for CLI schema extraction.
  *   - PACKAGES_NO_SRC_IMPORTS: no imports from src/**
  * Side-effects: none (the injected LLM does the only I/O)
- * Links: ./workflow.ts, ./state.ts, ../content/graph.ts, docs/guides/node-temporal.md
+ * Links: ./workflow.ts, ./state.ts, ../content/graph.ts, https://cognidao.org/knowledge/node-temporal-substrate
  * @public
  */
 

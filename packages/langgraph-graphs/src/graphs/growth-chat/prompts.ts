@@ -10,7 +10,7 @@
  *   - GRAPH_OWNS_MESSAGES: Graph defines its own system prompt.
  *   - RECALL_BEFORE_ADVICE: persona MUST knowledge_search the playbook before advising.
  * Side-effects: none
- * Links: COGNI_BRAIN_SPEC.md, docs/research/marketing-platforms-landscape.md
+ * Links: https://github.com/cogni-dao/cogni/blob/2321821e61dd12aa0cf75d235bd668ff65739109/docs/spec/cogni-brain.md, https://beacon.cognidao.org/knowledge/marketing-landscape-finding
  * @public
  */
 

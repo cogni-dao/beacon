@@ -11,7 +11,7 @@
  *   - MONOTONIC_RISING_METRICS: engagement grows with readMetrics call-count so a
  *     campaign KPI demonstrably lifts in CI (each readMetrics() is one "tick")
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §5
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

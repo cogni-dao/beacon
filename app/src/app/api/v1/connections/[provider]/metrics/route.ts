@@ -18,7 +18,7 @@
  *   - TENANT_SCOPED / TOKENS_NEVER_LOGGED / BROKER_RESOLVES_ALL (unchanged).
  *   - ADAPTER_STAYS_DUMB: the adapter is a stateless fetcher; caching lives here.
  * Side-effects: IO (DB read/write via broker; HTTPS read to the platform only on refresh).
- * Links: docs/spec/platform-connections.md §Read-cost governance, src/ports/connection-broker.port.ts
+ * Links: https://beacon.cognidao.org/knowledge/platform-connections-contract, src/ports/connection-broker.port.ts
  * @public
  */
 

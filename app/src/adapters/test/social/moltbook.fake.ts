@@ -11,7 +11,7 @@
  *   - MONOTONIC_RISING_METRICS: engagement grows with readMetrics call-count
  *   - FAKE_ONLY_V0: Moltbook has no verified public API yet — real adapter deferred
  * Side-effects: none
- * Links: docs/spec/beacon-growth-loop-v0.md §2
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract
  * @internal
  */
 

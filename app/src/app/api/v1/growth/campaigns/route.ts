@@ -12,7 +12,7 @@
  *   `campaigns` rows (RLS-scoped to the user's account, NOT shared Doltgres) joined
  *   with their CURRENT engagement KPI (computed independently from `post_metrics`).
  *   (v0 campaign = a record; content generation + scheduling is a separate pipeline —
- *   no Temporal in the campaign path. See docs/spec/beacon-growth-loop-v0.md.)
+ *   no Temporal in the campaign path. See https://beacon.cognidao.org/knowledge/growth-loop-contract.)
  * Scope: HTTP boundary + Zod validation + orchestration. Files the EDO hypothesis
  *   (resolver dependency) + writes the owned record. The
  *   KPI is the same pure `computeEngagementKpi` the resolver bridge uses.
@@ -28,7 +28,7 @@
  *     filters rows to the user's account) — never service-role.
  *   - KPI_NEVER_SELF_CITED: the listed KPI derives solely from `post_metrics`.
  * Side-effects: IO (HTTP, Doltgres write via edoCapability, Postgres read+write).
- * Links: docs/spec/beacon-growth-loop-v0.md §1/§6, .context/specs/pr3-verifier.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr3-verifier.md
  * @public
  */
 

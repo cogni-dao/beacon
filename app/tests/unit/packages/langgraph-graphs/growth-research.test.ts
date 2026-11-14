@@ -15,7 +15,7 @@
  *   - RECALL_GROUNDS_PROMPT: recalled playbook reaches the LLM user message.
  * Side-effects: none
  * Links: packages/langgraph-graphs/src/graphs/growth-research/workflow.ts,
- *         docs/spec/beacon-growth-loop-v0.md §2.2/§3
+ *         https://beacon.cognidao.org/knowledge/growth-loop-contract §2.2/§3
  * @internal
  */
 

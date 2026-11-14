@@ -20,7 +20,7 @@
  *   - METRIC_STRATEGY_RESOLVABLE: a `metric:engagement:*` hypothesis is visible
  *     to `pendingResolutions('metric:')` and resolvable through the same port.
  * Side-effects: none (in-memory fakes)
- * Links: docs/spec/beacon-growth-loop-v0.md §6, .context/specs/pr3-verifier.md
+ * Links: https://beacon.cognidao.org/knowledge/growth-loop-contract, .context/specs/pr3-verifier.md
  * @internal
  */
 
