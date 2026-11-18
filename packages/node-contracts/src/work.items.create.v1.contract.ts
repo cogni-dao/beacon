@@ -16,9 +16,11 @@
  * @internal
  */
 
-import { WorkItemMovesInputSchema } from "@cogni/work-items";
+import {
+  WorkItemMovesInputSchema,
+  WorkItemScoresInputSchema,
+} from "@cogni/work-items";
 import { z } from "zod";
-import { WorkItemScoresSchema } from "./work.items.scores";
 
 import { WorkItemDtoSchema } from "./work.items.list.v1.contract";
 
@@ -54,7 +56,8 @@ export const workItemsCreateOperation = {
     priority: z.number().int().min(0).max(99).optional(),
     rank: z.number().int().optional(),
     estimate: z.number().int().optional(),
-    scores: WorkItemScoresSchema.optional(),
+    // The published, JSON-Schema-representable score shape: /.well-known/agent.json projects this input with z.toJSONSchema.
+    scores: WorkItemScoresInputSchema.optional(),
     // story.0033: a new item names the metrics it moves when it is filed. The server pins each baseline.
     moves: WorkItemMovesInputSchema.optional(),
     labels: z.array(z.string()).optional(),
