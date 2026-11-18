@@ -21,6 +21,11 @@ import {
 import { metaLivezOutputSchema } from "../meta.livez.read.v1.contract";
 import { metaReadyzOutputSchema } from "../meta.readyz.read.v1.contract";
 import { metaRoutesOutputSchema } from "../meta.route-manifest.read.v1.contract";
+import {
+  workItemsArtifactGetOperation,
+  workItemsArtifactsCreateOperation,
+  workItemsArtifactsListOperation,
+} from "../work.items.artifacts.v1.contract";
 import { workItemsCreateOperation } from "../work.items.create.v1.contract";
 import { workItemsDeleteOperation } from "../work.items.delete.v1.contract";
 import { workItemsGetOperation } from "../work.items.get.v1.contract";
@@ -112,6 +117,35 @@ export const ApiContractV1 = c.router({
     description: workItemsHistoryOperation.description,
     responses: {
       200: workItemsHistoryOperation.output,
+    },
+  },
+  workItemsArtifactsCreate: {
+    method: "POST",
+    path: "/work/items/:id/artifacts",
+    summary: workItemsArtifactsCreateOperation.summary,
+    description: workItemsArtifactsCreateOperation.description,
+    body: workItemsArtifactsCreateOperation.input,
+    responses: {
+      201: workItemsArtifactsCreateOperation.output,
+    },
+  },
+  workItemsArtifactsList: {
+    method: "GET",
+    path: "/work/items/:id/artifacts",
+    summary: workItemsArtifactsListOperation.summary,
+    description: workItemsArtifactsListOperation.description,
+    query: workItemsArtifactsListOperation.input.omit({ id: true }),
+    responses: {
+      200: workItemsArtifactsListOperation.output,
+    },
+  },
+  workItemsArtifactGet: {
+    method: "GET",
+    path: "/work/items/:id/artifacts/:artifactId",
+    summary: workItemsArtifactGetOperation.summary,
+    description: workItemsArtifactGetOperation.description,
+    responses: {
+      200: workItemsArtifactGetOperation.output,
     },
   },
   knowledgeHistory: {

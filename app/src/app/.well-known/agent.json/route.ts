@@ -20,6 +20,9 @@
 
 import {
 	knowledgeHistoryOperation,
+	workItemsArtifactGetOperation,
+	workItemsArtifactsCreateOperation,
+	workItemsArtifactsListOperation,
 	workItemsClaimOperation,
 	workItemsCoordinationOperation,
 	workItemsCreateOperation,
@@ -98,6 +101,7 @@ export async function GET(request: Request) {
 			workItemClaims: `${origin}/api/v1/work/items/{id}/claims`,
 			workItemHeartbeat: `${origin}/api/v1/work/items/{id}/heartbeat`,
 			workItemCoordination: `${origin}/api/v1/work/items/{id}/coordination`,
+			workItemArtifacts: `${origin}/api/v1/work/items/{id}/artifacts`,
 		},
 		actions: {
 			listWorkItems: {
@@ -117,6 +121,7 @@ export async function GET(request: Request) {
 			getWorkItem: {
 				method: "GET",
 				endpoint: `${origin}/api/v1/work/items/{id}`,
+				description: workItemsGetOperation.description,
 				auth: { type: "bearer" },
 				inputSchema: z.toJSONSchema(workItemsGetOperation.input),
 				outputSchema: z.toJSONSchema(workItemsGetOperation.output),
@@ -124,6 +129,7 @@ export async function GET(request: Request) {
 			updateWorkItem: {
 				method: "PATCH",
 				endpoint: `${origin}/api/v1/work/items/{id}`,
+				description: workItemsPatchOperation.description,
 				auth: { type: "bearer" },
 				inputSchema: z.toJSONSchema(workItemsPatchOperation.input),
 				outputSchema: z.toJSONSchema(workItemsPatchOperation.output),
@@ -162,6 +168,30 @@ export async function GET(request: Request) {
 				auth: { type: "bearer" },
 				inputSchema: z.toJSONSchema(workItemsHistoryOperation.input),
 				outputSchema: z.toJSONSchema(workItemsHistoryOperation.output),
+			},
+			recordWorkItemArtifact: {
+				method: "POST",
+				endpoint: `${origin}/api/v1/work/items/{id}/artifacts`,
+				description: workItemsArtifactsCreateOperation.description,
+				auth: { type: "bearer" },
+				inputSchema: z.toJSONSchema(workItemsArtifactsCreateOperation.input),
+				outputSchema: z.toJSONSchema(workItemsArtifactsCreateOperation.output),
+			},
+			listWorkItemArtifacts: {
+				method: "GET",
+				endpoint: `${origin}/api/v1/work/items/{id}/artifacts?view={view}&cursor={cursor}`,
+				description: workItemsArtifactsListOperation.description,
+				auth: { type: "bearer" },
+				inputSchema: z.toJSONSchema(workItemsArtifactsListOperation.input),
+				outputSchema: z.toJSONSchema(workItemsArtifactsListOperation.output),
+			},
+			getWorkItemArtifact: {
+				method: "GET",
+				endpoint: `${origin}/api/v1/work/items/{id}/artifacts/{artifactId}`,
+				description: workItemsArtifactGetOperation.description,
+				auth: { type: "bearer" },
+				inputSchema: z.toJSONSchema(workItemsArtifactGetOperation.input),
+				outputSchema: z.toJSONSchema(workItemsArtifactGetOperation.output),
 			},
 			getKnowledgeHistory: {
 				method: "GET",
