@@ -23,6 +23,12 @@ export const EVENT_NAMES = {
   WORK_ITEMS_ARTIFACT_RECORDED: "work.items.artifact_recorded",
   WORK_ITEMS_ARTIFACT_REFUSED: "work.items.artifact_refused",
   WORK_ITEMS_ARTIFACTS_READ: "work.items.artifacts_read",
+  // A refused work item write (task.0122): one terminal event per refusal with its errorCode (invalid_input, gate_unmet, revision_conflict, ...); codes and ids only, never a body.
+  WORK_ITEMS_CREATE_REFUSED: "work.items.create_refused",
+  WORK_ITEMS_PATCH_REFUSED: "work.items.patch_refused",
+  // The success twins: one terminal event per accepted create or patch, ids and counts only.
+  WORK_ITEMS_CREATE_SUCCESS: "work.items.create_success",
+  WORK_ITEMS_PATCH_SUCCESS: "work.items.patch_success",
   // Work-item PR repo pin at boot (task.0122): unset or malformed leaves it unpinned; entries that are not owner/repo are ignored. Once at boot, never per request.
   ADAPTER_WORK_ITEMS_PR_REPO_UNPINNED: "adapter.work_items.pr_repo_unpinned",
   ADAPTER_WORK_ITEMS_PR_REPO_IGNORED: "adapter.work_items.pr_repo_ignored",
