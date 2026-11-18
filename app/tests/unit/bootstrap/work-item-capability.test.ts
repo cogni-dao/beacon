@@ -242,7 +242,7 @@ describe("published evaluation writer binding", () => {
   it("live permitted transition retains current revision CAS and returns actual new revision", async () => {
     const patch = vi
       .fn()
-      .mockResolvedValue({ ...item, status: "needs_closeout", revision: 8 });
+      .mockResolvedValue({ ...item, status: "needs_implementation_review", revision: 8 });
     const capability = createWorkItemCapability({
       workItemQuery: {} as WorkItemQueryPort,
       workItemCommand: {} as WorkItemCommandPort,
@@ -254,11 +254,11 @@ describe("published evaluation writer binding", () => {
       getActorId: () => "trusted-actor",
     });
     await expect(
-      capability.transitionStatus({ id: item.id, toStatus: "needs_closeout" }),
+      capability.transitionStatus({ id: item.id, toStatus: "needs_implementation_review" }),
     ).resolves.toEqual({
       id: item.id,
       previousStatus: "needs_implement",
-      newStatus: "needs_closeout",
+      newStatus: "needs_implementation_review",
       revision: 8,
     });
     expect(patch).toHaveBeenCalledExactlyOnceWith(
@@ -266,8 +266,8 @@ describe("published evaluation writer binding", () => {
         id: item.id,
         expectedRevision: 7,
         // REASON_REQUIRED (task.0086): a transition with no caller reason still carries one.
-        reason: "Transition to needs_closeout",
-        set: { status: "needs_closeout" },
+        reason: "Transition to needs_implementation_review",
+        set: { status: "needs_implementation_review" },
       },
       "trusted-actor",
     );

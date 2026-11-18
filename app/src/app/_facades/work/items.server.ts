@@ -9,6 +9,7 @@
  *   checked before the store write), PORT_VIA_CONTAINER (no direct adapter imports), CONTRACTS_ARE_TRUTH, NODE_STORE_IS_LOCAL.
  * Moves (story.0033): create and patch resolve new metric links and pin baselines. Detail and bounded summary reads add authorized observations and directional verdicts.
  * Envelope (task.0118): `getWorkItem` is the one single-item read; each move also carries its metric, KPI and goal, and `includeLinks` adds the first page of citation links. List reads stay summary-sized.
+ * Artifacts (task.0028): `getWorkItem` also adds `artifacts`, the latest triage, review, validation or closeout of each kind (no `body`) from one bounded read; a failed read is `artifacts: { unavailable: true }`, never an empty answer.
  * Side-effects: IO (filesystem read via port; database read/write via Doltgres port)
  * Links: contracts/work.items.{list,get,create,patch}.v1.contract
  * @internal
@@ -19,6 +20,7 @@ import type {
   WorkItemsPatchInput as ContractPatchInput,
   WorkItemCoordinationOutput,
   WorkItemDto,
+  WorkItemsGetOutput,
   WorkItemsListInput,
   WorkItemsListOutput,
   WorkItemSummariesListInput,
@@ -168,12 +170,18 @@ function nextActionForWorkItem(item: WorkItem): string | null {
       return "/research";
     case "needs_design":
       return "/design";
+    case "needs_design_review":
+      return "/review-design";
     case "needs_implement":
       return "/implement";
+    case "needs_implementation_review":
+      return "/review-implementation";
+    case "needs_validation":
+      return "/validate-candidate";
+    case "needs_merge":
+      return "/merge";
     case "needs_closeout":
       return "/closeout";
-    case "needs_merge":
-      return item.deployVerified ? "/merge" : "/validate-candidate";
     case "blocked":
       return "blocked";
     case "done":
@@ -445,8 +453,9 @@ export interface WorkItemReadOptions extends WorkSummaryReadOptions {
 async function withItemEnvelope(
   dto: WorkItemDto,
   options?: WorkItemReadOptions,
-): Promise<WorkItemDto> {
+): Promise<WorkItemsGetOutput> {
   const container = getContainer();
+  const artifactStore = container.workItemArtifacts?.artifacts;
   const readings = container.goalMetrics
     ? createMoveMetricPorts(
         () => container.goalMetrics,
@@ -459,6 +468,10 @@ async function withItemEnvelope(
     {
       readings,
       links: createCitationLinksPort(() => container.knowledgeStorePort),
+      // task.0028: the latest artifact of each kind, without body, one bounded read.
+      artifacts: artifactStore
+        ? { latest: (id) => artifactStore.latest(id) }
+        : undefined,
       log: (event) => container.log.warn(event, "work.items.envelope_degraded"),
     },
     options,
@@ -468,7 +481,7 @@ async function withItemEnvelope(
 export async function getWorkItem(
   id: string,
   options?: WorkItemReadOptions,
-): Promise<WorkItemDto | null> {
+): Promise<WorkItemsGetOutput | null> {
   const container = getContainer();
   // Doltgres-first: legacy markdown IDs (e.g. bug.0002) can also live in Doltgres
   // after the markdown→Doltgres import (task.5002). Fall back to markdown only when

@@ -98,9 +98,9 @@ describe("renderBundleMarkdown", () => {
 		expect(markdown).toContain(
 			'{"reason":"<why, one line, at most 25 words>","set":{...}}',
 		);
-		expect(markdown).toContain(
-			'{"reason":"PR merged","set":{"status":"done"}}',
-		);
+		expect(markdown).toContain("needs_implementation_review|needs_validation|needs_merge|needs_closeout|done");
+		expect(markdown).toContain("409 `gate_unmet`");
+		expect(markdown).not.toContain('{"reason":"PR merged","set":{"status":"done"}}');
 	});
 
 	it("renders the current-node orientation entry IN FULL above the tooling invariants", () => {

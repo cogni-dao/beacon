@@ -36,6 +36,7 @@ import {
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
+import { EVENT_NAMES } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -117,12 +118,33 @@ export const PATCH = wrapRouteHandlerWithLogging<{
     }
 
     const { id } = await context.params;
+    // Every refusal ends in ONE registered terminal event with its errorCode (task.0122): ids and codes, never the body.
+    const refuse = (
+      status: number,
+      errorCode: string,
+      body: unknown,
+      extra: Record<string, string> = {},
+    ): NextResponse => {
+      ctx.log.info(
+        {
+          event: EVENT_NAMES.WORK_ITEMS_PATCH_REFUSED,
+          routeId: "work.items.patch",
+          outcome: "refused",
+          workItemId: id,
+          status,
+          errorCode,
+          ...extra,
+        },
+        EVENT_NAMES.WORK_ITEMS_PATCH_REFUSED,
+      );
+      return NextResponse.json(body, { status });
+    };
 
     let body: unknown;
     try {
       body = await request.json();
     } catch {
-      return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+      return refuse(400, "invalid_json", { error: "invalid JSON body" });
     }
 
     if (
@@ -132,10 +154,7 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       body.id !== undefined &&
       body.id !== id
     ) {
-      return NextResponse.json(
-        { error: "body id must match path id" },
-        { status: 400 }
-      );
+      return refuse(400, "id_mismatch", { error: "body id must match path id" });
     }
 
     const parseResult = workItemsPatchOperation.input.safeParse({
@@ -143,10 +162,10 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       id,
     });
     if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "invalid input", issues: parseResult.error.issues },
-        { status: 400 }
-      );
+      return refuse(400, "invalid_input", {
+        error: "invalid input",
+        issues: parseResult.error.issues,
+      });
     }
 
     try {
@@ -155,40 +174,72 @@ export const PATCH = wrapRouteHandlerWithLogging<{
         walletAddress: sessionUser.walletAddress,
       });
       ctx.log.info(
-        { workItemId: id, citeCount: parseResult.data.cites?.length ?? 0 },
-        "work.items.patch_success"
+        {
+          event: EVENT_NAMES.WORK_ITEMS_PATCH_SUCCESS,
+          routeId: "work.items.patch",
+          outcome: "success",
+          status: 200,
+          workItemId: id,
+          citeCount: parseResult.data.cites?.length ?? 0,
+        },
+        EVENT_NAMES.WORK_ITEMS_PATCH_SUCCESS,
       );
       return NextResponse.json(workItemsPatchOperation.output.parse(patched));
     } catch (e) {
-      if (e instanceof WorkItemNotFoundError) {
-        return NextResponse.json({ error: e.message }, { status: 404 });
-      }
-      if (e instanceof WorkItemRevisionConflictError) {
-        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
-      }
-      if (e instanceof WorkItemForbiddenError) {
-        return NextResponse.json({ error: e.message }, { status: 403 });
-      }
-      if (e instanceof NodeAdminRequiredError) {
-        return NextResponse.json(
-          { error: e.message, errorCode: e.errorCode, action: e.action },
-          { status: e.status }
-        );
-      }
-      if (e instanceof WorkItemWriteOutcomeUnknownError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
-      }
-      if (e instanceof WorkItemScoresInvalidError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
-      }
-      if (e instanceof WorkItemsBackendNotReadyError) {
-        return NextResponse.json({ error: e.message }, { status: 503 });
-      }
-      // The package answers the rest of the write contract (reason, cites, moves, resolver and
-      // baseline failures), matched by name so a bundled copy of the class still maps.
+      // The package answers the write contract (reason, cites, moves, gate, revision conflict, write outcome unknown,
+      // resolver and baseline failures), matched by name so a bundled copy of the class still maps.
       const mapped = workItemWriteErrorResponse(e, "patch");
       if (mapped) {
-        return NextResponse.json(mapped.body, { status: mapped.status });
+        // What the gate found: the stage move and the missing artifact or fact, never a body.
+        const { from, to, missing } = mapped.body as {
+          from?: unknown;
+          to?: unknown;
+          missing?: unknown;
+        };
+        return refuse(mapped.status, mapped.errorCode, mapped.body, {
+          ...(typeof from === "string" ? { from } : {}),
+          ...(typeof to === "string" ? { to } : {}),
+          ...(typeof missing === "string" ? { missing } : {}),
+        });
+      }
+      if (e instanceof WorkItemNotFoundError) {
+        return refuse(404, "not_found", { error: e.message });
+      }
+      if (e instanceof WorkItemRevisionConflictError) {
+        return refuse(409, "work_item_revision_conflict", {
+          error: e.message,
+          errorCode: "work_item_revision_conflict",
+          expectedRevision: e.expectedRevision,
+          currentRevision: e.currentRevision,
+        });
+      }
+      if (e instanceof WorkItemForbiddenError) {
+        return refuse(403, "forbidden", { error: e.message });
+      }
+      if (e instanceof NodeAdminRequiredError) {
+        return refuse(e.status, e.errorCode, {
+          error: e.message,
+          errorCode: e.errorCode,
+          action: e.action,
+        });
+      }
+      if (e instanceof WorkItemWriteOutcomeUnknownError) {
+        return refuse(500, e.code, {
+          error: e.message,
+          errorCode: e.code,
+          retryable: false,
+          receipt: e.receipt,
+        });
+      }
+      if (e instanceof WorkItemScoresInvalidError) {
+        return refuse(400, e.code, {
+          error: e.message,
+          errorCode: e.code,
+          issues: e.issues,
+        });
+      }
+      if (e instanceof WorkItemsBackendNotReadyError) {
+        return refuse(503, "backend_unavailable", { error: e.message });
       }
       throw e;
     }

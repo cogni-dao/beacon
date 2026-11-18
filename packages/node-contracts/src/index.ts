@@ -105,6 +105,7 @@ export * from "./users.profile.v1.contract";
 // ── VCS ─────────────────────────────────────────────────────────────────────
 export * from "./vcs.flight.v1.contract";
 export * from "./work.items.create.v1.contract";
+export * from "./work.items.artifacts.v1.contract";
 export * from "./work.items.coordination.v1.contract";
 export * from "./work.items.delete.v1.contract";
 export * from "./work.items.get.v1.contract";
