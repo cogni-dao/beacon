@@ -3,8 +3,8 @@
 
 /**
  * Module: `@tests/unit/components/auth/sign-in-dialog`
- * Purpose: Unit tests for SignInDialog provider rendering (bug.5074).
- * Scope: Asserts the dialog renders what /api/auth/providers advertises. Does not exercise the OAuth round trip.
+ * Purpose: Unit tests for SignInDialog provider rendering and sign-in starts.
+ * Scope: Asserts provider discovery and start feedback; does not exercise the OAuth round trip.
  * Invariants: no hardcoded provider allowlist — a configured provider always gets a button, an unconfigured one never does.
  * Side-effects: none (fetch + next-auth mocked)
  * Links: src/components/kit/auth/SignInDialog.tsx
@@ -15,7 +15,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const signIn = vi.fn();
@@ -139,5 +139,66 @@ describe("SignInDialog — operator-attested GitHub takes the broker round trip 
 
 		expect(signIn).not.toHaveBeenCalled();
 		expect(assign).toHaveBeenCalledWith("https://op.test/identity/attest?x=1");
+	});
+});
+
+describe("SignInDialog — sign-in start failures", () => {
+	beforeEach(() => {
+		signIn.mockReset();
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	async function brokerDialog() {
+		mockProviders(["operator-github", "discord"]);
+		renderDialog();
+		return screen.findByRole("button", { name: "Continue with GitHub" });
+	}
+
+	it.each(["http", "network", "invalid"])("shows a generic alert for %s failure", async (failure) => {
+		const button = await brokerDialog();
+		const fetchStart = failure === "network"
+			? vi.fn().mockRejectedValue(new Error("private network details"))
+			: vi.fn().mockResolvedValue({ ok: failure !== "http", json: async () => ({ error: "private server details" }) });
+		vi.stubGlobal("fetch", fetchStart);
+		fireEvent.click(button);
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent(/sign.in.*try again/i);
+		expect(alert).not.toHaveTextContent(/private|server|network details/i);
+		expect(button).toBeEnabled();
+	});
+
+	it("prevents duplicate starts while pending and clears the error on successful retry", async () => {
+		const button = await brokerDialog();
+		const assign = vi.fn();
+		vi.stubGlobal("location", { assign });
+		let resolveStart!: (value: unknown) => void;
+		const fetchStart = vi.fn().mockResolvedValueOnce({ ok: false }).mockImplementationOnce(
+			() => new Promise((resolve) => { resolveStart = resolve; }),
+		);
+		vi.stubGlobal("fetch", fetchStart);
+		fireEvent.click(button);
+		await screen.findByRole("alert");
+		fireEvent.click(button);
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Continue with Discord" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: /Ethereum Wallet/i })).toBeEnabled();
+		fireEvent.click(button);
+		expect(fetchStart).toHaveBeenCalledTimes(2);
+		resolveStart({ ok: true, json: async () => ({ authorizeUrl: "https://op.test/identity/attest?x=1" }) });
+		await waitFor(() => expect(assign).toHaveBeenCalledWith("https://op.test/identity/attest?x=1"));
+	});
+
+	it("shows a generic alert when an ordinary provider rejects", async () => {
+		mockProviders(["discord"]);
+		signIn.mockRejectedValueOnce(new Error("private provider details"));
+		renderDialog();
+		fireEvent.click(await screen.findByRole("button", { name: "Continue with Discord" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent(/sign.in.*try again/i);
+		expect(alert).not.toHaveTextContent(/private provider details/i);
+		expect(screen.getByRole("button", { name: "Continue with Discord" })).toBeEnabled();
 	});
 });
