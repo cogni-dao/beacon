@@ -6,7 +6,7 @@
  * Purpose: HTTP endpoints for listing and creating work items.
  * Scope: Auth-protected GET (list — markdown ∪ node-local Doltgres) and POST (create — node-local Doltgres only).
  * Invariants: VALIDATE_IO, CONTRACTS_ARE_TRUTH, AUTH_VIA_GETSESSIONUSER, NODE_STORE_IS_LOCAL.
- * Moves (story.0033): POST accepts `moves`; an unknown or deprecated new metric id is HTTP400 `cite_unresolved` at `moves`; a baseline failure is HTTP503 `metric_baseline_unavailable` (answered by `workItemWriteErrorResponse` from @cogni/work-items).
+ * Moves (story.0033): POST accepts `moves`; an unknown or deprecated new metric id is HTTP400 `cite_unresolved` at `moves`; a baseline failure is HTTP503 `metric_baseline_unavailable` (answered by `handleWorkItemCreate` from @cogni/work-items).
  * Side-effects: IO (HTTP response, filesystem read via port, Doltgres read/write)
  * Links: contracts/work.items.{list,create}.v1.contract
  * @public
@@ -16,7 +16,7 @@ import {
   workItemsCreateOperation,
   workItemsListOperation,
 } from "@cogni/node-contracts";
-import { workItemWriteErrorResponse } from "@cogni/work-items";
+import { handleWorkItemCreate } from "@cogni/work-items";
 import { NextResponse } from "next/server";
 
 import {
@@ -30,7 +30,6 @@ import {
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { EVENT_NAMES } from "@/shared/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -131,95 +130,33 @@ export const POST = wrapRouteHandlerWithLogging(
     if (!sessionUser) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    // Every refusal ends in ONE registered terminal event with its errorCode (task.0122): ids and codes, never the body.
-    const refuse = (
-      status: number,
-      errorCode: string,
-      body: unknown,
-    ): NextResponse => {
-      ctx.log.info(
-        {
-          event: EVENT_NAMES.WORK_ITEMS_CREATE_REFUSED,
-          routeId: "work.items.create",
-          outcome: "refused",
-          status,
-          errorCode,
-        },
-        EVENT_NAMES.WORK_ITEMS_CREATE_REFUSED,
-      );
-      return NextResponse.json(body, { status });
-    };
-
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return refuse(400, "invalid_json", { error: "invalid JSON body" });
-    }
-
-    const parseResult = workItemsCreateOperation.input.safeParse(body);
-    if (!parseResult.success) {
-      return refuse(400, "invalid_input", {
-        error: "invalid input",
-        issues: parseResult.error.issues,
-      });
-    }
-
-    try {
-      const created = await createWorkItem(parseResult.data, {
-        id: sessionUser.id,
-        walletAddress: sessionUser.walletAddress,
-      });
-      ctx.log.info(
-        {
-          event: EVENT_NAMES.WORK_ITEMS_CREATE_SUCCESS,
-          routeId: "work.items.create",
-          outcome: "success",
-          status: 201,
-          workItemId: created.id,
-          node: created.node,
-        },
-        EVENT_NAMES.WORK_ITEMS_CREATE_SUCCESS,
-      );
-      return NextResponse.json(workItemsCreateOperation.output.parse(created), {
-        status: 201,
-      });
-    } catch (e) {
-      // The package owns every write-contract answer, including a `moves` failure (story.0033).
-      // Matched by name, so a bundled copy of the class still maps.
-      const mapped = workItemWriteErrorResponse(e, "create");
-      if (mapped) {
-        return refuse(mapped.status, mapped.errorCode, mapped.body);
-      }
-      if (e instanceof NodeAdminRequiredError) {
-        return refuse(e.status, e.errorCode, {
-          error: e.message,
-          errorCode: e.errorCode,
-          action: e.action,
-        });
-      }
-      if (e instanceof WorkItemWriteOutcomeUnknownError) {
-        return refuse(500, e.code, {
-          error: e.message,
-          errorCode: e.code,
-          retryable: false,
-          receipt: e.receipt,
-        });
-      }
-      if (e instanceof WorkItemScoresInvalidError) {
-        return refuse(400, e.code, {
-          error: e.message,
-          errorCode: e.code,
-          issues: e.issues,
-        });
-      }
-      if (e instanceof WorkItemsBackendNotReadyError) {
-        return refuse(503, "backend_unavailable", { error: e.message });
-      }
-      if ((e as Error)?.name === "WorkItemAlreadyExistsError") {
-        return refuse(409, "already_exists", { error: (e as Error).message });
-      }
-      throw e;
-    }
+    // The package owns parse, refusals and the one terminal event (bug.0063); this route keeps auth, the actor and node errors.
+    const result = await handleWorkItemCreate({
+      readJson: () => request.json(),
+      parse: (body) => workItemsCreateOperation.input.safeParse(body),
+      write: (input) =>
+        createWorkItem(input, {
+          id: sessionUser.id,
+          walletAddress: sessionUser.walletAddress,
+        }),
+      toBody: (created) => workItemsCreateOperation.output.parse(created),
+      mapNodeError: (e) => {
+        if (e instanceof NodeAdminRequiredError)
+          return {
+            status: e.status,
+            errorCode: e.errorCode,
+            body: { error: e.message, errorCode: e.errorCode, action: e.action },
+          };
+        if (e instanceof WorkItemsBackendNotReadyError)
+          return {
+            status: 503,
+            errorCode: "backend_unavailable",
+            body: { error: e.message },
+          };
+        return undefined;
+      },
+    });
+    ctx.log.info(result.event, result.event.event);
+    return NextResponse.json(result.body, { status: result.status });
   },
 );
