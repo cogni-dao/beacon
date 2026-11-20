@@ -10,6 +10,8 @@
  */
 
 export {
+  knowledgeCitePairs,
+  knowledgeReadDaily,
   metricObservations,
   metricRefreshCursors,
 } from "@cogni-dao/metrics/schema";
