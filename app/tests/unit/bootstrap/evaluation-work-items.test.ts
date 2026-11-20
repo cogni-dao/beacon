@@ -182,10 +182,11 @@ describe("change reasons and row history", () => {
     await patchWorkItem(
       { id: item.id, reason: "why", set: { priority: 3 } },
       { id: "actor" },
+      { actor: "actor" },
     );
     expect(backend.patch).toHaveBeenLastCalledWith(
       expect.objectContaining({ reason: "why" }),
-      "actor",
+      { actor: "actor" },
     );
   });
 });
