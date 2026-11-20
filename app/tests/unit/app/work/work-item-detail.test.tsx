@@ -16,10 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkItemFetchError } from "@/app/(app)/work/_api/fetchWorkItems";
 import { WorkItemDetail } from "@/app/(app)/work/_components/WorkItemDetail";
 
-vi.mock("@/app/(app)/_components/EntityCitationLinks", () => ({
-  EntityCitationLinks: () => null,
-}));
-
 const item: WorkItemDto = {
   id: "task.5174",
   type: "task",

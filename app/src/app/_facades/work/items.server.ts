@@ -32,9 +32,11 @@ import type {
   WorkItemId,
   WorkQuery,
   WorkSummaryReadOptions,
+  WriteAttribution,
 } from "@cogni/work-items";
 import {
   composeItemEnvelope,
+  createItemRefPorts,
   judgeMoveSummaries,
   toWorkItemDto as toDto,
   toWorkItemId,
@@ -437,11 +439,19 @@ export async function listWorkBoardColumns(
   return { columns, queryCount: columns.length };
 }
 
-/** Single-item read options; `includeLinks` adds the first page of citation links (`?include=links`). */
+/**
+ * Single-item read options; `includeLinks` adds the first page of citation links (`?include=links`), `includeArtifacts`
+ * and `includeHistory` the first page of artifact and history refs, `artifactId` one artifact in full (story.0058).
+ */
 export interface WorkItemReadOptions extends WorkSummaryReadOptions {
   readonly includeLinks?: boolean;
+  readonly includeArtifacts?: boolean;
+  readonly includeHistory?: boolean;
+  readonly artifactId?: string;
   /** Set false for a caller that needs only the stored move ids (the EDO expectations read). Default: resolve the chain. */
   readonly chain?: boolean;
+  /** Set false for a caller that needs only the item (the EDO expectations read). Default: read the latest artifacts. */
+  readonly artifacts?: boolean;
 }
 
 /**
@@ -472,6 +482,11 @@ async function withItemEnvelope(
       artifacts: artifactStore
         ? { latest: (id) => artifactStore.latest(id) }
         : undefined,
+      // story.0058: refs first, then one read; the same ports the agent tool's capability wires.
+      ...createItemRefPorts({
+        artifacts: artifactStore,
+        history: container.doltgresWorkItems,
+      }),
       log: (event) => container.log.warn(event, "work.items.envelope_degraded"),
     },
     options,
@@ -501,13 +516,14 @@ export async function getWorkItem(
 export async function createWorkItem(
   input: ContractCreateInput,
   sessionUser: WorkItemActor,
+  attribution: WriteAttribution,
 ): Promise<WorkItemDto> {
   await assertPriorityAuthority(input.priority, sessionUser);
   const container = getContainer();
   try {
     const created = await container.doltgresWorkItems.create(
       toWorkItemsCreateInput(input),
-      sessionUser.id,
+      attribution,
     );
     return await withMoveReadings(toDto(created));
   } catch (e) {
@@ -518,13 +534,14 @@ export async function createWorkItem(
 export async function patchWorkItem(
   input: ContractPatchInput,
   sessionUser: WorkItemActor,
+  attribution: WriteAttribution,
 ): Promise<WorkItemDto> {
   await assertPriorityAuthority(input.set.priority, sessionUser);
   const container = getContainer();
   try {
     const patched = await container.doltgresWorkItems.patch(
       toWorkItemsPatchInput(input),
-      sessionUser.id,
+      attribution,
     );
     if (!patched) throw new WorkItemNotFoundError(input.id);
     return await withMoveReadings(toDto(patched));

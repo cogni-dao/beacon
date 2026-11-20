@@ -269,7 +269,7 @@ describe("published evaluation writer binding", () => {
         reason: "Transition to needs_implementation_review",
         set: { status: "needs_implementation_review" },
       },
-      "trusted-actor",
+      { actor: "trusted-actor" },
     );
   });
 
@@ -302,7 +302,7 @@ describe("published evaluation writer binding", () => {
         cites: [{ id: "node-template-mission" }],
         set: { scores },
       },
-      "actor-a",
+      { actor: "actor-a" },
     );
     expect(result.scores).toEqual(scores);
     expect(result.rankScore).toBeTypeOf("number");
@@ -324,7 +324,7 @@ describe("published evaluation writer binding", () => {
         reason: "Clear the scores",
         set: { scores: null },
       },
-      "actor-b",
+      { actor: "actor-b" },
     );
   });
   it("refuses missing trusted actors and human-only priority before store writes", async () => {

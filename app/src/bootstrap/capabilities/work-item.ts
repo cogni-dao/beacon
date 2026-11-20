@@ -185,7 +185,7 @@ export function createWorkItemCapability(
               reason: input.reason ?? `Transition to ${input.toStatus}`,
               set: { status: input.toStatus as WorkItemStatus },
             },
-            actor(),
+            { actor: actor() },
           )
         : await workItemCommand.transitionStatus({
             id: toWorkItemId(input.id),
@@ -229,7 +229,7 @@ export function createWorkItemCapability(
                 cites: input.cites,
                 set: input.set,
               }),
-              actor(),
+              { actor: actor() },
             )
           : await workItemCommand.patch({
               id: current.id,
