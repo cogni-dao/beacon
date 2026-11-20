@@ -27,6 +27,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
+import { routeAttribution } from "@/bootstrap/write-attribution";
 
 import { respond } from "./_respond";
 
@@ -61,7 +62,12 @@ export const POST = wrapRouteHandlerWithLogging<{
     return respond(
       ctx,
       startedAt,
-      await recordWorkItemArtifact(deps, id, sessionUser.id, body)
+      await recordWorkItemArtifact(
+        deps,
+        id,
+        routeAttribution(sessionUser.id),
+        body
+      )
     );
   }
 );

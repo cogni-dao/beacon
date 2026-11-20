@@ -154,6 +154,7 @@ async function runResolveTick(
       sourceType: "analysis_signal",
       sourceRef: `kpi:engagement:${campaignId}`,
       sourceNode: "growth-resolver",
+      attribution: { actor: "test-actor" },
     });
     if (!resolution.alreadyResolved) {
       resolved++;
@@ -179,16 +180,19 @@ describe("growth metric:engagement loop — ingest low → rising → resolve", 
     const evaluateAt = new Date("2026-06-30T00:00:00Z");
 
     // PLAN — file the campaign hypothesis, opted into the metric: resolver.
-    await capability.hypothesize({
-      id: hypothesisId,
-      domain: DOMAIN_CAMPAIGNS,
-      title: "Awareness angle A hits 3% engagement by end of June",
-      content: "Audience: builders. Angle A. target_rate=0.03",
-      evaluateAt,
-      resolutionStrategy: `metric:engagement:${campaignId}`,
-      sourceType: "human",
-      confidencePct: 30,
-    });
+    await capability.hypothesize(
+      {
+        id: hypothesisId,
+        domain: DOMAIN_CAMPAIGNS,
+        title: "Awareness angle A hits 3% engagement by end of June",
+        content: "Audience: builders. Angle A. target_rate=0.03",
+        evaluateAt,
+        resolutionStrategy: `metric:engagement:${campaignId}`,
+        sourceType: "human",
+        confidencePct: 30,
+      },
+      { actor: "test-actor" },
+    );
 
     // The hypothesis is invisible to the metric: cron before its deadline...
     const beforeDeadline = new Date("2026-06-01T00:00:00Z");
@@ -285,16 +289,19 @@ describe("growth metric:engagement loop — ingest low → rising → resolve", 
     const { store, resolver, capability } = await bootstrap();
     const campaignId = "empty-budget";
     const hypothesisId = `campaign:${campaignId}`;
-    await capability.hypothesize({
-      id: hypothesisId,
-      domain: DOMAIN_CAMPAIGNS,
-      title: "Angle B hits 2% — but nothing shipped",
-      content: "target_rate=0.02",
-      evaluateAt: new Date("2026-01-01T00:00:00Z"),
-      resolutionStrategy: `metric:engagement:${campaignId}`,
-      sourceType: "human",
-      confidencePct: 30,
-    });
+    await capability.hypothesize(
+      {
+        id: hypothesisId,
+        domain: DOMAIN_CAMPAIGNS,
+        title: "Angle B hits 2% — but nothing shipped",
+        content: "target_rate=0.02",
+        evaluateAt: new Date("2026-01-01T00:00:00Z"),
+        resolutionStrategy: `metric:engagement:${campaignId}`,
+        sourceType: "human",
+        confidencePct: 30,
+      },
+      { actor: "test-actor" },
+    );
 
     const tick = await runResolveTick(
       store,
@@ -316,16 +323,19 @@ describe("growth metric:engagement loop — ingest low → rising → resolve", 
     const { store, resolver, capability } = await bootstrap();
     const campaignId = "idem";
     const hypothesisId = `campaign:${campaignId}`;
-    await capability.hypothesize({
-      id: hypothesisId,
-      domain: DOMAIN_CAMPAIGNS,
-      title: "h",
-      content: "target_rate=0.03",
-      evaluateAt: new Date("2026-01-01T00:00:00Z"),
-      resolutionStrategy: `metric:engagement:${campaignId}`,
-      sourceType: "human",
-      confidencePct: 30,
-    });
+    await capability.hypothesize(
+      {
+        id: hypothesisId,
+        domain: DOMAIN_CAMPAIGNS,
+        title: "h",
+        content: "target_rate=0.03",
+        evaluateAt: new Date("2026-01-01T00:00:00Z"),
+        resolutionStrategy: `metric:engagement:${campaignId}`,
+        sourceType: "human",
+        confidencePct: 30,
+      },
+      { actor: "test-actor" },
+    );
     const snapshots: PostMetricSnapshot[] = [
       { impressions: 1000, likes: 30, reposts: 0, replies: 0, followersAtCapture: null },
     ];

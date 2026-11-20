@@ -46,6 +46,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer, resolveAppDb } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
+import { routeAttribution } from "@/bootstrap/write-attribution";
 import { campaigns, postMetrics, posts } from "@/shared/db/schema";
 import type { RequestContext } from "@/shared/observability";
 
@@ -318,7 +319,8 @@ export const POST = wrapRouteHandlerWithLogging(
     });
 
     try {
-      const hypothesis = await edo.hypothesize({
+      const hypothesis = await edo.hypothesize(
+      {
         id: hypothesisId,
         domain: DOMAIN_CAMPAIGNS,
         title: input.title,
@@ -330,7 +332,8 @@ export const POST = wrapRouteHandlerWithLogging(
         sourceNode: "operator",
         tags: ["growth-loop", "campaign"],
         confidencePct: CAMPAIGN_HYPOTHESIS_CONFIDENCE,
-      });
+      },
+      routeAttribution(sessionUser.id));
 
       // Persist the account-owned campaign RECORD. IDEMPOTENT_ON_CAMPAIGN_ID:
       // the (account_id, campaign_id) unique index rejects a duplicate slug

@@ -58,6 +58,8 @@ export function composeEvaluationWorkItems(
     return project(current, lease);
   };
   const history = content.history?.bind(content);
+  // The item read's history refs (story.0058) page through the store's `historyPage`.
+  const historyPage = content.historyPage?.bind(content);
   const listBoardColumns = content.listBoardColumns?.bind(content);
   return {
     async get(id) {
@@ -85,6 +87,7 @@ export function composeEvaluationWorkItems(
     // adapter provides it; otherwise the facade reads one column at a time.
     ...(listBoardColumns && { listBoardColumns }),
     ...(history && { history }),
+    ...(historyPage && { historyPage }),
     async create(input, principalId) {
       return content.create(input, principalId);
     },

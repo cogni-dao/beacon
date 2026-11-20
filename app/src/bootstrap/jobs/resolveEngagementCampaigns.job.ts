@@ -34,6 +34,7 @@ import {
   type EngagementTarget,
   type PostMetricSnapshot,
 } from "@/core/growth/engagement-kpi";
+import { COGNI_SYSTEM_PRINCIPAL_USER_ID } from "@cogni/node-shared";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { getServiceDb } from "@/adapters/server/db/drizzle.service-client";
@@ -198,6 +199,8 @@ export async function runResolveEngagementCampaignsJob(
       sourceType: "analysis_signal",
       sourceRef: `kpi:engagement:${campaignId}`,
       sourceNode: "growth-resolver",
+      // A scheduled job is not a person: the write is attributed to the node's system principal (task.0133).
+      attribution: { actor: COGNI_SYSTEM_PRINCIPAL_USER_ID },
     });
 
     if (!resolution.alreadyResolved) {
