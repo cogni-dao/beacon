@@ -85,6 +85,21 @@
     --dropdown-lg: 10rem;
     --dropdown-xl: 12rem;
 
+    --radius: 0.5rem;
+
+    --success-foreground: var(--color-emerald-900);
+
+    --info-foreground: var(--color-violet-900);
+
+    --warning-foreground: var(--color-yellow-900);
+
+  }
+
+  .dark {
+
+    --success-foreground: var(--color-emerald-600);
+    --info-foreground: var(--color-violet-600);
+    --warning-foreground: var(--color-yellow-600);
   }
 
   /* Hero animation tokens (isolated, code.ts only) */
