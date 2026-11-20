@@ -15,6 +15,7 @@ import {
   createGoalMetrics as createPublishedGoalMetrics,
   createGoalSource,
 } from "@cogni-dao/metrics/knowledge";
+import { createKnowledgeUsageCalculator } from "@cogni-dao/metrics/usage";
 import type { Sql } from "postgres";
 import { getNodeId } from "@/shared/config";
 
@@ -26,5 +27,9 @@ export function createGoalMetrics(deps: {
   environment: string;
   log(event: object): void;
 }) {
-  return createPublishedGoalMetrics({ ...deps, node: getNodeId() });
+  return createPublishedGoalMetrics({
+    ...deps,
+    node: getNodeId(),
+    nodeCalculators: [createKnowledgeUsageCalculator(deps.observationsSql)],
+  });
 }
