@@ -30,6 +30,7 @@ import {
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
+import { backendUnavailable } from "./_backend-unavailable";
 import { routeAttribution } from "@/bootstrap/write-attribution";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +108,7 @@ export const GET = wrapRouteHandlerWithLogging(
         );
       }
       if (e instanceof WorkItemsBackendNotReadyError) {
-        return NextResponse.json({ error: e.message }, { status: 503 });
+        return backendUnavailable(ctx, e.reason);
       }
       throw e;
     }
@@ -153,12 +154,6 @@ export const POST = wrapRouteHandlerWithLogging(
             status: e.status,
             errorCode: e.errorCode,
             body: { error: e.message, errorCode: e.errorCode, action: e.action },
-          };
-        if (e instanceof WorkItemsBackendNotReadyError)
-          return {
-            status: 503,
-            errorCode: "backend_unavailable",
-            body: { error: e.message },
           };
         return undefined;
       },

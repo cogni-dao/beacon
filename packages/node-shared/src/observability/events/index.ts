@@ -23,6 +23,8 @@ export const EVENT_NAMES = {
   WORK_ITEMS_ARTIFACT_RECORDED: "work.items.artifact_recorded",
   WORK_ITEMS_ARTIFACT_REFUSED: "work.items.artifact_refused",
   WORK_ITEMS_ARTIFACTS_READ: "work.items.artifacts_read",
+  // A work-item store answered busy with no terminal event of its own (task.0162): one 503 line with its closed `reason`, never the error text.
+  WORK_ITEMS_BACKEND_UNAVAILABLE: "work.items.backend_unavailable",
   // A refused work item write (task.0122): one terminal event per refusal with its errorCode (invalid_input, gate_unmet, revision_conflict, ...); codes and ids only, never a body.
   WORK_ITEMS_CREATE_REFUSED: "work.items.create_refused",
   WORK_ITEMS_PATCH_REFUSED: "work.items.patch_refused",

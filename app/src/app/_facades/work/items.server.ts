@@ -30,11 +30,13 @@ import type {
   WorkBoardColumnPages,
   WorkItem,
   WorkItemId,
+  WorkItemsBusyReason,
   WorkQuery,
   WorkSummaryReadOptions,
   WriteAttribution,
 } from "@cogni/work-items";
 import {
+  backendUnavailableReason,
   composeItemEnvelope,
   createItemRefPorts,
   judgeMoveSummaries,
@@ -129,7 +131,10 @@ export class WorkItemLeaseConflictError extends Error {
 }
 
 export class WorkItemsBackendNotReadyError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly reason: WorkItemsBusyReason
+  ) {
     super(message);
     this.name = "WorkItemsBackendNotReadyError";
   }
@@ -224,9 +229,14 @@ function rethrowBackendError(error: unknown): never {
     (error as Error)?.name === "DoltgresNotConfiguredError" ||
     (error as Error)?.name === "WorkItemsBusyError" ||
     (error as Error)?.name === "WorkItemsCapacityError" ||
+    (error as Error)?.name === "UnprovableTransitionError" ||
     (error as Error)?.name === "DoltMergeOutcomeUnknownError"
   ) {
-    throw new WorkItemsBackendNotReadyError(message);
+    // The 503 names its reason (task.0162); a busy-named error that carries none is the base "store busy" case.
+    throw new WorkItemsBackendNotReadyError(
+      message,
+      backendUnavailableReason(error) ?? "capacity_held"
+    );
   }
   if ((error as Error)?.name === "WorkItemAuthorizationError") {
     const id = (error as { id?: string }).id ?? "unknown";
