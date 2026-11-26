@@ -1354,7 +1354,7 @@ packages:
     resolution: {integrity: sha512-JIpyaboYZeWYlyP0H+OoPPxd6nqueG/CmN6ixBiNFsIDHREevjIf0n0Ohh5gr5C8pEDknzgvz+pIJ8dMhzWIeg==}
 
   '@cogni-dao/agent-grants@https://github.com/cogni-dao/node-template/releases/download/agent-grants-v0.10.0/cogni-dao-agent-grants-0.10.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/agent-grants-v0.10.0/cogni-dao-agent-grants-0.10.0.tgz}
+    resolution: {integrity: sha512-rYIUW6T7w/lLr6FkY8SYoJ0jbM+kBzuIXM3cMwF8zI719tymX+r+uAlYdU3Kve78e5fWZt7b0SF1QNLROOfwOQ==, tarball: https://github.com/cogni-dao/node-template/releases/download/agent-grants-v0.10.0/cogni-dao-agent-grants-0.10.0.tgz}
     version: 0.10.0
     peerDependencies:
       drizzle-orm: ^0.44.7
@@ -1363,7 +1363,7 @@ packages:
         optional: true
 
   '@cogni-dao/ai-tools@https://github.com/cogni-dao/node-template/releases/download/ai-tools-v0.27.0/cogni-dao-ai-tools-0.27.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/ai-tools-v0.27.0/cogni-dao-ai-tools-0.27.0.tgz}
+    resolution: {integrity: sha512-h4hfh//VhNW25wdjjqz9II6MtMatY3gljv8AhUiPIKwOMR0MN8MihpvKXLEznpdoRxrRZ08q8pWClKmYR2TnnQ==, tarball: https://github.com/cogni-dao/node-template/releases/download/ai-tools-v0.27.0/cogni-dao-ai-tools-0.27.0.tgz}
     version: 0.27.0
     peerDependencies:
       '@cogni-dao/knowledge-store': ^0.27.0
@@ -1371,7 +1371,7 @@ packages:
       '@cogni-dao/work-items': ^0.27.0
 
   '@cogni-dao/knowledge-base-ui@https://github.com/cogni-dao/node-template/releases/download/knowledge-base-ui-v0.27.0/cogni-dao-knowledge-base-ui-0.27.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/knowledge-base-ui-v0.27.0/cogni-dao-knowledge-base-ui-0.27.0.tgz}
+    resolution: {integrity: sha512-rD/bjB76+srgTHUibkTAeC3eybBm1jiQUzqd4jFMnuHEUHrCc9HHJuEzbOChxbTodVuqmBk/nEJRjHaHQr0Csw==, tarball: https://github.com/cogni-dao/node-template/releases/download/knowledge-base-ui-v0.27.0/cogni-dao-knowledge-base-ui-0.27.0.tgz}
     version: 0.27.0
     peerDependencies:
       '@cogni-dao/metrics': ^0.27.0
@@ -1408,18 +1408,18 @@ packages:
       '@cogni/knowledge-store': '*'
 
   '@cogni-dao/knowledge-store@https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.27.0/cogni-dao-knowledge-store-0.27.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.27.0/cogni-dao-knowledge-store-0.27.0.tgz}
+    resolution: {integrity: sha512-8IDFy42y+YuHlhgZdfPnwWhHkZQFFoQQAR92tuOtC+nAdmwhFp7z3tLfAwypfB2jUe3MF0vOJiC0ztQHgSRm+g==, tarball: https://github.com/cogni-dao/node-template/releases/download/knowledge-store-v0.27.0/cogni-dao-knowledge-store-0.27.0.tgz}
     version: 0.27.0
 
   '@cogni-dao/langgraph-graphs@https://github.com/cogni-dao/node-template/releases/download/langgraph-graphs-v0.11.0/cogni-dao-langgraph-graphs-0.11.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/langgraph-graphs-v0.11.0/cogni-dao-langgraph-graphs-0.11.0.tgz}
+    resolution: {integrity: sha512-bWksZW0S4vlaPMVwCJ7tqoQqivtaARL/c4rxxVLSeoGkkjx5ez5hjOOGpjrbL+y2bd7X3V8XdXlGSvtoPGTG0g==, tarball: https://github.com/cogni-dao/node-template/releases/download/langgraph-graphs-v0.11.0/cogni-dao-langgraph-graphs-0.11.0.tgz}
     version: 0.11.0
     peerDependencies:
       '@cogni/agent-grants': '>=0.8.1'
       '@cogni/ai-tools': '>=0.16.0'
 
   '@cogni-dao/metrics@https://github.com/cogni-dao/node-template/releases/download/metrics-v0.27.0/cogni-dao-metrics-0.27.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/metrics-v0.27.0/cogni-dao-metrics-0.27.0.tgz}
+    resolution: {integrity: sha512-91DohRIBiUDGOrNHkYAx0534hIRzZAgJnbt9O0r/6fneU9pb3bmTE6k39YI8A47sS/4mVfUPv6jfycJEe5XLQQ==, tarball: https://github.com/cogni-dao/node-template/releases/download/metrics-v0.27.0/cogni-dao-metrics-0.27.0.tgz}
     version: 0.27.0
     peerDependencies:
       drizzle-orm: ^0.44.7
@@ -1431,7 +1431,7 @@ packages:
         optional: true
 
   '@cogni-dao/money-plane@https://github.com/cogni-dao/node-template/releases/download/money-plane-v0.2.0/cogni-dao-money-plane-0.2.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/money-plane-v0.2.0/cogni-dao-money-plane-0.2.0.tgz}
+    resolution: {integrity: sha512-meo7aO8VqwM2lqiqmNmohnvQa4Qby2DZGiZo4eaQqcsQil3Tw9gIDHH9yts9Qe1uvCnHADlI0T4MxpaclrcsRA==, tarball: https://github.com/cogni-dao/node-template/releases/download/money-plane-v0.2.0/cogni-dao-money-plane-0.2.0.tgz}
     version: 0.2.0
     peerDependencies:
       react: ^19.0.0
@@ -1440,12 +1440,12 @@ packages:
         optional: true
 
   '@cogni-dao/node-declarations@https://github.com/cogni-dao/node-template/releases/download/node-declarations-v0.1.0/cogni-dao-node-declarations-0.1.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/node-declarations-v0.1.0/cogni-dao-node-declarations-0.1.0.tgz}
+    resolution: {integrity: sha512-xfHVZMFh8pIbjPFxNHyOzxsD0n35elZy80YIWbnOY7+Yv9KkSlncs3rCMSLG6v0iBkhRX/QSF9Jp4LTtwP7mIg==, tarball: https://github.com/cogni-dao/node-template/releases/download/node-declarations-v0.1.0/cogni-dao-node-declarations-0.1.0.tgz}
     version: 0.1.0
     hasBin: true
 
   '@cogni-dao/scheduling@https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz}
+    resolution: {integrity: sha512-RCW1ZF2aHcPAUD93doZMZ9mFJyC6JJ8AV9Y/Dgmc/vdI0uJxNvuBUZdw2TTWW4XEab21k4XQK/+jbap7wTR6CQ==, tarball: https://github.com/cogni-dao/node-template/releases/download/scheduling-v0.1.0/cogni-dao-scheduling-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       postgres: ^3.4.5
@@ -1454,7 +1454,7 @@ packages:
         optional: true
 
   '@cogni-dao/substrate-health@https://github.com/cogni-dao/node-template/releases/download/substrate-health-v0.3.0/cogni-dao-substrate-health-0.3.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/substrate-health-v0.3.0/cogni-dao-substrate-health-0.3.0.tgz}
+    resolution: {integrity: sha512-cRnzkeY22GRM42pAuvLMWlLf0U0m0uaLp/gjBk3DyFvJhywRmhQbYKp6hN2xGCPUUWf3dcbgK5zzHd/7+jzHww==, tarball: https://github.com/cogni-dao/node-template/releases/download/substrate-health-v0.3.0/cogni-dao-substrate-health-0.3.0.tgz}
     version: 0.3.0
 
   '@cogni-dao/ui-theme@https://github.com/cogni-dao/node-template/releases/download/ui-theme-v0.1.1/cogni-dao-ui-theme-0.1.1.tgz':
@@ -1463,7 +1463,7 @@ packages:
     hasBin: true
 
   '@cogni-dao/work-items@https://github.com/cogni-dao/node-template/releases/download/work-items-v0.27.0/cogni-dao-work-items-0.27.0.tgz':
-    resolution: {tarball: https://github.com/cogni-dao/node-template/releases/download/work-items-v0.27.0/cogni-dao-work-items-0.27.0.tgz}
+    resolution: {integrity: sha512-npMDIyki78xLXwUGNyS1uqKOi//kf5fn2sq+9bH5LV200dZBwoa3auNGZiA/q/BxgtywRaG5av7HvChMRzlt0Q==, tarball: https://github.com/cogni-dao/node-template/releases/download/work-items-v0.27.0/cogni-dao-work-items-0.27.0.tgz}
     version: 0.27.0
 
   '@coinbase/cdp-sdk@1.51.0':
