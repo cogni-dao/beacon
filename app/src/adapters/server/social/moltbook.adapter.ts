@@ -25,12 +25,12 @@ import type {
 	PostContentResult,
 	PostMetricSnapshot,
 	SocialXCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import {
 	MoltbookPostPayloadSchema,
 	PostContentResultSchema,
 	PostMetricSnapshotSchema,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { z } from "zod";
 
 import { getNodeId } from "@/shared/config/repoSpec.server";

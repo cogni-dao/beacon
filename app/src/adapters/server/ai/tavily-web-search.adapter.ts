@@ -18,7 +18,7 @@ import type {
   WebSearchCapability,
   WebSearchParams,
   WebSearchResult,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 import { EVENT_NAMES, makeLogger } from "@/shared/observability";
 

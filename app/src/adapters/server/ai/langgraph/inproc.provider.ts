@@ -25,17 +25,23 @@ import {
   createToolAllowlistPolicy,
   createToolRunner,
 } from "@cogni/ai-core";
-import type { CatalogBoundTool } from "@cogni/ai-tools";
+import type { CatalogBoundTool } from "@cogni/beacon-ai-tools";
+import type { CatalogBoundTool as PublishedCatalogBoundTool } from "@cogni/ai-tools";
 import {
   type CompletionFn,
   type CreateGraphFn,
   createInProcGraphRunner,
   type GraphResult,
   type InProcGraphRequest,
+  type InProcRunnerOptions,
   type ToolExecFn,
-} from "@cogni/langgraph-graphs";
+} from "@cogni/shared-langgraph-graphs";
 import { trace } from "@opentelemetry/api";
 import type { Logger } from "pino";
+import {
+  resolveExecutionScope,
+  runInScope,
+} from "@/adapters/server/ai/execution-scope";
 import { getExecutionScope } from "@/adapters/server/ai/execution-scope";
 import type {
   AiExecutionErrorCode,
@@ -75,6 +81,8 @@ export interface CompletionUnitAdapter {
  * Per NODE_BUNDLE_IS_CANONICAL: tools referenced by ID, resolved from the injected node bundle.
  */
 interface ProviderCatalogEntry {
+  readonly program?: InProcRunnerOptions["program"];
+  readonly principal?: string;
   readonly displayName: string;
   readonly description: string;
   readonly toolIds: readonly string[];
@@ -105,7 +113,11 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
     private readonly toolSource: ToolSourcePort,
     private readonly getMcpToolSource: () => Promise<ToolSourcePort | null> = () =>
       Promise.resolve(null),
-    nodeBundle: readonly CatalogBoundTool[] = []
+    nodeBundle: readonly CatalogBoundTool[] = [],
+    private readonly identity: {
+      readonly resolvePrincipal: (slug: string) => Promise<string | null>;
+      readonly publishedToolIds: readonly string[];
+    } = { resolvePrincipal: async () => null, publishedToolIds: [] },
   ) {
     this.log = makeLogger({ component: "LangGraphInProcProvider" });
     this.boundToolMap = new Map(nodeBundle.map((bt) => [bt.contract.name, bt]));
@@ -118,7 +130,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         graphCount: Object.keys(this.catalog).length,
         graphs: Object.keys(this.catalog),
       },
-      "LangGraphInProcProvider initialized"
+      "LangGraphInProcProvider initialized",
     );
   }
 
@@ -145,7 +157,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
 
     this.log.debug(
       { runId, graphName, model, messageCount: messages.length },
-      "LangGraphInProcProvider.runGraph routing to package runner"
+      "LangGraphInProcProvider.runGraph routing to package runner",
     );
 
     // Create completion function wrapping adapter
@@ -157,7 +169,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
     if (req.toolIds === undefined) {
       this.log.debug(
         { runId, graphName, catalogToolIds },
-        "toolIds undefined; using catalog default per P0 contract"
+        "toolIds undefined; using catalog default per P0 contract",
       );
     }
 
@@ -171,7 +183,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
       } else {
         this.log.error(
           { runId, graphName, toolId },
-          "Tool not found in toolSource; graph misconfigured"
+          "Tool not found in toolSource; graph misconfigured",
         );
       }
     }
@@ -186,6 +198,17 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
       stream: AsyncIterable<AiEvent>;
       final: Promise<GraphResult>;
     }> => {
+      const runScope = await resolveExecutionScope(
+        scope,
+        entry.principal,
+        this.identity.resolvePrincipal,
+      );
+      for (const [id, runtime] of Object.entries(runtimeTools)) {
+        runtimeTools[id] = {
+          ...runtime,
+          exec: (...args) => runInScope(runScope, () => runtime.exec(...args)),
+        };
+      }
       const mcpToolIds: string[] = [];
       if (mcpServerIds.length > 0) {
         const mcpToolSource = await this.getMcpToolSource();
@@ -209,7 +232,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
                 mcpServerIds,
                 mcpToolCount: mcpToolIds.length,
               },
-              "Resolved MCP tools for graph"
+              "Resolved MCP tools for graph",
             );
           }
         }
@@ -251,18 +274,34 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
                 errorCode: result.errorCode,
                 safeMessage: result.safeMessage.slice(0, 300),
               },
-              "tool call failed"
+              "tool call failed",
             );
           }
           return result;
         };
       };
 
-      const toolContracts = catalogTools.map((bt) => bt.contract);
+      // Public contracts use Zod 4. Beacon product contracts retain their Zod 3
+      // compiler and enter the released runner through its JSON-schema spec port.
+      // The same bound runtimes still validate and execute every call.
+      const toolContracts = catalogTools
+        .filter((bt): bt is PublishedCatalogBoundTool =>
+          this.identity.publishedToolIds.includes(bt.contract.name),
+        )
+        .map((bt) => bt.contract);
+      const productSpecs = catalogTools
+        .filter(
+          (bt) => !this.identity.publishedToolIds.includes(bt.contract.name),
+        )
+        .map((bt) => runtimeTools[bt.contract.name]?.spec)
+        .filter((spec): spec is NonNullable<typeof spec> => spec !== undefined);
 
-      const mcpToolSpecs = mcpToolIds
-        .map((id) => runtimeTools[id]?.spec)
-        .filter((s): s is NonNullable<typeof s> => s !== undefined);
+      const mcpToolSpecs = [
+        ...productSpecs,
+        ...mcpToolIds
+          .map((id) => runtimeTools[id]?.spec)
+          .filter((s): s is NonNullable<typeof s> => s !== undefined),
+      ];
 
       const traceId =
         trace.getActiveSpan()?.spanContext().traceId ??
@@ -275,11 +314,26 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         }),
         ...(traceId !== undefined && { traceId }),
         ...(requestId !== undefined && { ingressRequestId: requestId }),
-        configurable: { model, toolIds },
+        configurable: {
+          model,
+          toolIds,
+          ...(runScope.principalId ? { actorId: runScope.principalId } : {}),
+          ...(runScope.subjectUserId
+            ? { subjectId: runScope.subjectUserId }
+            : {}),
+          tenantId: runScope.billing.billingAccountId,
+          graphId,
+        },
       };
 
       return createInProcGraphRunner({
         createGraph: entry.graphFactory,
+        ...(entry.program
+          ? { program: entry.program, trustedProgramId: entry.program }
+          : {}),
+        ...(runScope.principalId
+          ? { trustedActorId: runScope.principalId }
+          : {}),
         completionFn,
         createToolExecFn,
         toolContracts,
@@ -322,7 +376,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
           runId,
           requestId,
           error: "internal",
-        }) as const
+        }) as const,
     );
 
     // mapToGraphFinal returns Promise<GraphFinal>, so final is Promise<Promise<GraphFinal> | GraphFinal>
@@ -349,7 +403,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
    * Create completion function wrapping adapter.executeCompletionUnit.
    */
   private createCompletionFn(
-    req: GraphRunRequest
+    req: GraphRunRequest,
   ): CompletionFn<LlmToolDefinition> {
     const { runId, graphId } = req;
     const attempt = 0; // P0_ATTEMPT_FREEZE
@@ -393,7 +447,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
     final: Promise<GraphResult>,
     runId: string,
     requestId: string,
-    graphName: string
+    graphName: string,
   ): Promise<GraphFinal> {
     const result = await final;
 
@@ -408,7 +462,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
           errorMessage: result.errorMessage,
           event: EVENT_NAMES.ADAPTER_LANGGRAPH_INPROC_ERROR,
         },
-        EVENT_NAMES.ADAPTER_LANGGRAPH_INPROC_ERROR
+        EVENT_NAMES.ADAPTER_LANGGRAPH_INPROC_ERROR,
       );
 
       // Direct passthrough - GraphResult.error is already AiExecutionErrorCode
@@ -436,7 +490,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
   private createErrorResult(
     runId: string,
     requestId: string,
-    code: AiExecutionErrorCode = "internal"
+    code: AiExecutionErrorCode = "internal",
   ): GraphRunResult {
     const errorStream = (async function* () {
       yield { type: "error" as const, error: code };

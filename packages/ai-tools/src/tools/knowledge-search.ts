@@ -12,8 +12,8 @@ export {
   knowledgeSearchBoundTool,
   knowledgeSearchContract,
   knowledgeSearchStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";
 
-import { KnowledgeSearchOutputSchema } from "@cogni/shared-ai-tools";
+import { KnowledgeSearchOutputSchema } from "@cogni/ai-tools";
 export const KnowledgeSearchResultSchema =
   KnowledgeSearchOutputSchema.shape.results.element;

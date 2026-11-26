@@ -27,7 +27,7 @@ import type {
 	BroadcastResult,
 	BroadcastVariantResult,
 	SocialXCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { eq } from "drizzle-orm";
 
 import type { Database } from "@/adapters/server/db/client";

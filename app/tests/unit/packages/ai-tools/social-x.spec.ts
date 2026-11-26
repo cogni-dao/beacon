@@ -18,7 +18,7 @@ import {
   deriveMoltbookPayloadFromDraft,
   deriveMoltbookPayloadFromText,
   MOLTBOOK_SUBMOLT_OPTIONS,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { describe, expect, it } from "vitest";
 
 describe("deriveMoltbookPayloadFromText", () => {

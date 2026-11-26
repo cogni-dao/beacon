@@ -18,7 +18,7 @@ import type {
   ToolSourcePort,
 } from "@cogni/ai-core";
 import { createStaticToolSourceFromRecord } from "@cogni/ai-core";
-import type { ToolCapabilities } from "@cogni/ai-tools";
+import type { ToolCapabilities } from "@cogni/beacon-ai-tools";
 import type { Message, MessageToolCall } from "@cogni/node-core";
 import { z } from "zod";
 import type {

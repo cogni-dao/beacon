@@ -12,4 +12,4 @@ export {
   edoHypothesizeBoundTool,
   edoHypothesizeContract,
   edoHypothesizeStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";

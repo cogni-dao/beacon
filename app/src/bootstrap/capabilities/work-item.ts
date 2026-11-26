@@ -19,18 +19,16 @@
  */
 
 import { isPrivilegedPriority } from "@cogni/knowledge-store";
-import type {
-  WorkItemCapability,
-  WorkItemInfo,
-  WorkItemTransitionResult,
-} from "@cogni/shared-ai-tools";
-import { WorkItemPatchConflictError } from "@cogni/shared-ai-tools";
+import type { WorkItemCapability, WorkItemInfo } from "@cogni/ai-tools";
+import { WorkItemPatchConflictError } from "@cogni/ai-tools";
 import type {
   ActorKind,
   EnvelopeDegradedEvent,
   ItemLinksPort,
   MoveReadingPort,
   WorkItemCommandPort,
+  createWorkItemWriters,
+  WorkItemArtifactDeps,
   WorkItemQueryPort,
   WorkItemStatus,
   WorkItemSortBy,
@@ -38,14 +36,16 @@ import type {
 } from "@cogni/work-items";
 import {
   composeItemEnvelope,
-  isValidTransition,
+  createItemRefPorts,
+  recordWorkItemArtifact,
+  artifactsNotConfigured,
+  WorkItemRevisionConflictError,
   judgeMoveSummaries,
   WORK_ITEM_SORT_FIELDS,
   toWorkItemId,
   toWorkItemDto as toWorkItemInfo,
   toWorkItemsPatchInput,
 } from "@cogni/work-items";
-import { InvalidTransitionError } from "@cogni/work-items/markdown";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
 /**
@@ -54,7 +54,8 @@ import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 export interface WorkItemCapabilityDeps {
   readonly workItemQuery: WorkItemQueryPort;
   readonly liveStore?: () => EvaluationWorkItemsPort;
-  readonly getActorId?: () => string;
+  readonly writers: ReturnType<typeof createWorkItemWriters>;
+  readonly artifactDeps: () => WorkItemArtifactDeps | undefined;
   readonly workItemCommand: WorkItemCommandPort;
   /**
    * QUERY_READS_THE_LIVE_BACKLOG: `query` lists through this when wired — the
@@ -72,9 +73,6 @@ export interface WorkItemCapabilityDeps {
 }
 
 /** The patch `set` without explicit-undefined keys (the route facade drops them the same way). */
-const definedOnly = (set: object): object =>
-  Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined));
-
 function isStoreSortBy(value: string): value is WorkItemSortBy {
   return (WORK_ITEM_SORT_FIELDS as readonly string[]).includes(value);
 }
@@ -85,7 +83,7 @@ function isStoreSortBy(value: string): value is WorkItemSortBy {
 export function createWorkItemCapability(
   deps: WorkItemCapabilityDeps,
 ): WorkItemCapability {
-  const { workItemQuery, workItemCommand } = deps;
+  const { workItemQuery } = deps;
 
   const page: NonNullable<WorkItemCapability["queryPage"]> = async (params) => {
     const result = await (
@@ -116,14 +114,6 @@ export function createWorkItemCapability(
       ...(result.nextCursor && { nextCursor: result.nextCursor }),
     };
   };
-  const actor = () => {
-    const id = deps.getActorId?.();
-    if (!id)
-      throw new Error(
-        "Work item writes require an authenticated execution actor",
-      );
-    return id;
-  };
   /** A one-item read gets each move judged from its observations (bounded: at most 3 moves). */
   async function withMoveReadings(
     items: readonly WorkItemInfo[],
@@ -144,7 +134,7 @@ export function createWorkItemCapability(
      * item with each move's readings, verdict and metric → KPI → goal chain, and with `includeLinks`
      * the first page of citation links.
      */
-    async read(id, options): Promise<WorkItemInfo | null> {
+    async read(id, options) {
       const item = (await page({ ids: [id], limit: 1 })).items.find(
         (entry) => entry.id === id,
       );
@@ -152,54 +142,33 @@ export function createWorkItemCapability(
       // ONE_COMPOSITION: the same `composeItemEnvelope` the HTTP facade calls.
       return composeItemEnvelope(
         item,
-        { readings: deps.moveReadings, links: deps.links, log: deps.log },
-        { includeLinks: options?.includeLinks === true },
+        {
+          readings: deps.moveReadings,
+          links: deps.links,
+          log: deps.log,
+          artifacts: deps.artifactDeps()?.artifacts,
+          ...createItemRefPorts({
+            artifacts: deps.artifactDeps()?.artifacts,
+            history: deps.liveStore?.(),
+          }),
+        },
+        options,
       );
     },
 
-    async transitionStatus(input): Promise<WorkItemTransitionResult> {
-      const current = await (deps.liveStore?.() ?? workItemQuery).get(
-        toWorkItemId(input.id),
-      );
-      if (!current) {
-        throw new Error(`Work item not found: ${input.id}`);
-      }
-
-      if (
-        deps.liveStore &&
-        !isValidTransition(current.status, input.toStatus as WorkItemStatus)
-      ) {
-        throw new InvalidTransitionError(
-          current.id,
-          current.status,
-          input.toStatus as WorkItemStatus,
-        );
-      }
-
-      const updated = deps.liveStore
-        ? await deps.liveStore().patch(
-            {
-              id: current.id,
-              expectedRevision: current.revision,
-              // REASON_REQUIRED (task.0086): the store refuses a patch without a reason.
-              reason: input.reason ?? `Transition to ${input.toStatus}`,
-              set: { status: input.toStatus as WorkItemStatus },
-            },
-            { actor: actor() },
+    async recordArtifact(input) {
+      const attribution = deps.writers.artifacts.attribution();
+      const stores = deps.writers.artifacts.deps();
+      const result = stores
+        ? await recordWorkItemArtifact(
+            stores,
+            input.id,
+            attribution,
+            input.body,
           )
-        : await workItemCommand.transitionStatus({
-            id: toWorkItemId(input.id),
-            expectedRevision: String(current.revision),
-            toStatus: input.toStatus as WorkItemStatus,
-            ...(input.reason && { reason: input.reason }),
-          });
-
-      return {
-        id: updated.id,
-        previousStatus: current.status,
-        newStatus: updated.status,
-        revision: updated.revision as number,
-      };
+        : artifactsNotConfigured(input.id, "write");
+      deps.writers.artifacts.log(result.log, attribution);
+      return { status: result.status, body: result.body };
     },
 
     async patch(input): Promise<WorkItemInfo> {
@@ -220,31 +189,19 @@ export function createWorkItemCapability(
       }
 
       try {
-        const updated = deps.liveStore
-          ? await deps.liveStore().patch(
-              toWorkItemsPatchInput({
-                id: current.id,
-                expectedRevision: input.expectedRevision,
-                reason: input.reason,
-                cites: input.cites,
-                set: input.set,
-              }),
-              { actor: actor() },
-            )
-          : await workItemCommand.patch({
-              id: current.id,
-              expectedRevision: String(current.revision),
-              // The markdown ports take the narrow field set; drop absent keys, as the store path does.
-              set: definedOnly(input.set) as NonNullable<
-                Parameters<typeof workItemCommand.patch>[0]["set"]
-              >,
-            });
+        const updated = await deps.writers.backlogWriter.store.patch(
+          toWorkItemsPatchInput({
+            id: current.id,
+            expectedRevision: input.expectedRevision,
+            reason: input.reason,
+            cites: input.cites,
+            set: input.set,
+          }),
+          deps.writers.backlogWriter.attribution(),
+        );
         return toWorkItemInfo(updated);
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.name === "WorkItemRevisionConflictError"
-        ) {
+        if (error instanceof WorkItemRevisionConflictError) {
           const conflict = error as Error & {
             expectedRevision: number;
             currentRevision: number;

@@ -12,7 +12,15 @@
 
 import { z } from "zod";
 
-import { WorkItemDtoSchema } from "./work.items.list.v1.contract";
+export const WorkItemLeaseSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  leaseToken: z.uuid(),
+  claimedAt: z.string(),
+  expiresAt: z.string(),
+  lastCommand: z.string(),
+  active: z.boolean(),
+});
 
 const WorkItemIdSchema = z
   .string()
@@ -28,7 +36,7 @@ export const workItemsClaimOperation = {
     runId: z.string().min(1),
     command: z.string().min(1),
   }),
-  output: WorkItemDtoSchema,
+  output: WorkItemLeaseSchema,
 } as const;
 
 export const workItemsHeartbeatOperation = {
@@ -39,21 +47,22 @@ export const workItemsHeartbeatOperation = {
   input: z.object({
     id: WorkItemIdSchema,
     runId: z.string().min(1),
+    leaseToken: z.uuid(),
     command: z.string().min(1).optional(),
   }),
-  output: WorkItemDtoSchema,
+  output: WorkItemLeaseSchema,
 } as const;
 
 export const workItemsReleaseOperation = {
   id: "work.items.release.v1",
   summary: "Release a work-item claim",
-  description:
-    "Releases a lease owned by the authenticated principal and run.",
+  description: "Releases a lease owned by the authenticated principal and run.",
   input: z.object({
     id: WorkItemIdSchema,
     runId: z.string().min(1),
+    leaseToken: z.uuid(),
   }),
-  output: WorkItemDtoSchema,
+  output: WorkItemLeaseSchema,
 } as const;
 
 export const WorkItemCoordinationSchema = z.object({

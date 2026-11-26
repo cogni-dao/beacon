@@ -14,7 +14,7 @@
  * @internal
  */
 
-import type { RepoCapability } from "@cogni/ai-tools";
+import type { RepoCapability } from "@cogni/beacon-ai-tools";
 
 import { GitLsFilesAdapter, RipgrepAdapter } from "@/adapters/server";
 import { FakeRepoAdapter } from "@/adapters/test";

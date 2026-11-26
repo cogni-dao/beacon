@@ -12,4 +12,4 @@ export {
   workItemQueryBoundTool,
   workItemQueryContract,
   workItemQueryStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";

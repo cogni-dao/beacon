@@ -7,7 +7,7 @@
  * maps onto the Zod-shaped XAccountMetrics contract, including free-tier gaps.
  */
 
-import { XAccountMetricsSchema } from "@cogni/ai-tools";
+import { XAccountMetricsSchema } from "@cogni/beacon-ai-tools";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { meMock, userTimelineMock } = vi.hoisted(() => ({

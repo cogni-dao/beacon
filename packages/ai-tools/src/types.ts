@@ -17,7 +17,7 @@
  */
 
 import type { ToolEffect } from "@cogni/ai-core";
-import type { ToolContract as SharedToolContract } from "@cogni/shared-ai-tools";
+import type { ToolContract as SharedToolContract } from "@cogni/ai-tools";
 import type { z } from "zod";
 
 /**

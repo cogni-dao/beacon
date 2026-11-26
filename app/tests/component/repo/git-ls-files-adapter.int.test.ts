@@ -14,7 +14,7 @@
  * @public
  */
 
-import { makeRepoCitation, REPO_CITATION_REGEX } from "@cogni/ai-tools";
+import { makeRepoCitation, REPO_CITATION_REGEX } from "@cogni/beacon-ai-tools";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { GitLsFilesAdapter, RipgrepAdapter } from "@/adapters/server/repo";

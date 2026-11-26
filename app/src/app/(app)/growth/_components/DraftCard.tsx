@@ -42,7 +42,7 @@ import {
   deriveMoltbookPayloadFromDraft,
   MOLTBOOK_SUBMOLT_OPTIONS,
   type MoltbookPostPayload,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 import { Badge, Button, Card, CardContent } from "@/components";
 import type { CampaignPost } from "@/app/_facades/growth/campaigns.server";

@@ -21,7 +21,7 @@ import type {
   RepoOpenResult,
   RepoSearchParams,
   RepoSearchResult,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 const FAKE_SHA = "abc1234";
 

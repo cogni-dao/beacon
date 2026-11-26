@@ -17,7 +17,7 @@ import type { ToolSpec } from "@cogni/ai-core";
 import {
   type ToolContract as SharedToolContract,
   toToolSpec as sharedToToolSpec,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";
 import type { JSONSchema7 } from "json-schema";
 import { zodToJsonSchema } from "zod-to-json-schema";
 

@@ -14,7 +14,7 @@
  * @internal
  */
 
-import type { MetricsCapability } from "@cogni/ai-tools";
+import type { MetricsCapability } from "@cogni/beacon-ai-tools";
 
 import { MimirMetricsAdapter } from "@/adapters/server";
 import { FakeMetricsAdapter } from "@/adapters/test";

@@ -1,3 +1,4 @@
+import type { WorkItemLease } from "@cogni/work-items";
 // SPDX-License-Identifier: LicenseRef-PolyForm-Shield-1.0.0
 // SPDX-FileCopyrightText: 2025 Cogni-DAO
 
@@ -133,7 +134,7 @@ export class WorkItemLeaseConflictError extends Error {
 export class WorkItemsBackendNotReadyError extends Error {
   constructor(
     message: string,
-    readonly reason: WorkItemsBusyReason
+    readonly reason: WorkItemsBusyReason,
   ) {
     super(message);
     this.name = "WorkItemsBackendNotReadyError";
@@ -235,7 +236,7 @@ function rethrowBackendError(error: unknown): never {
     // The 503 names its reason (task.0162); a busy-named error that carries none is the base "store busy" case.
     throw new WorkItemsBackendNotReadyError(
       message,
-      backendUnavailableReason(error) ?? "capacity_held"
+      backendUnavailableReason(error) ?? "capacity_held",
     );
   }
   if ((error as Error)?.name === "WorkItemAuthorizationError") {
@@ -560,27 +561,12 @@ export async function patchWorkItem(
   }
 }
 
-export async function deleteWorkItem(
-  id: string,
-  sessionUser: { id: string },
-): Promise<boolean> {
-  const container = getContainer();
-  try {
-    return await container.doltgresWorkItems.delete(
-      toWorkItemId(id),
-      sessionUser.id,
-    );
-  } catch (e) {
-    rethrowBackendError(e);
-  }
-}
-
 export async function claimWorkItem(input: {
   id: string;
   runId: string;
   command: string;
   principalId: string;
-}): Promise<WorkItemDto> {
+}): Promise<WorkItemLease> {
   const container = getContainer();
   try {
     const item = await container.doltgresWorkItems.claim({
@@ -589,7 +575,7 @@ export async function claimWorkItem(input: {
       command: input.command,
       principalId: input.principalId,
     });
-    return toDto(item);
+    return item;
   } catch (error) {
     rethrowBackendError(error);
   }
@@ -598,16 +584,18 @@ export async function claimWorkItem(input: {
 export async function releaseWorkItem(input: {
   id: string;
   runId: string;
+  leaseToken: string;
   principalId: string;
-}): Promise<WorkItemDto> {
+}): Promise<WorkItemLease> {
   const container = getContainer();
   try {
     const item = await container.doltgresWorkItems.release({
       id: toWorkItemId(input.id),
       runId: input.runId,
+      leaseToken: input.leaseToken,
       principalId: input.principalId,
     });
-    return toDto(item);
+    return item;
   } catch (error) {
     rethrowBackendError(error);
   }
@@ -616,18 +604,20 @@ export async function releaseWorkItem(input: {
 export async function heartbeatWorkItem(input: {
   id: string;
   runId: string;
+  leaseToken: string;
   command?: string;
   principalId: string;
-}): Promise<WorkItemDto> {
+}): Promise<WorkItemLease> {
   const container = getContainer();
   try {
     const item = await container.doltgresWorkItems.heartbeat({
       id: toWorkItemId(input.id),
       runId: input.runId,
+      leaseToken: input.leaseToken,
       ...(input.command !== undefined && { command: input.command }),
       principalId: input.principalId,
     });
-    return toDto(item);
+    return item;
   } catch (error) {
     rethrowBackendError(error);
   }

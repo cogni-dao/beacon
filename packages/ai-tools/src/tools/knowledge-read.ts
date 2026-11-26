@@ -12,8 +12,8 @@ export {
   knowledgeReadBoundTool,
   knowledgeReadContract,
   knowledgeReadStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";
 
-import { KnowledgeReadOutputSchema } from "@cogni/shared-ai-tools";
+import { KnowledgeReadOutputSchema } from "@cogni/ai-tools";
 export const KnowledgeReadEntrySchema =
   KnowledgeReadOutputSchema.shape.entries.element;

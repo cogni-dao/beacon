@@ -24,7 +24,7 @@ import {
   type ToolInvocationContext,
   type ToolSpec,
 } from "@cogni/ai-core";
-import type { ToolCapabilities } from "@cogni/ai-tools";
+import type { ToolCapabilities } from "@cogni/beacon-ai-tools";
 import {
   createEventCollector,
   createTestToolSource,

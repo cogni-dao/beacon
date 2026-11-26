@@ -12,4 +12,4 @@ export {
   edoRecordOutcomeBoundTool,
   edoRecordOutcomeContract,
   edoRecordOutcomeStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";

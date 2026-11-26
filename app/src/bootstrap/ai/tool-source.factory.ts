@@ -21,12 +21,12 @@ import { createStaticToolSource, type StaticToolSource } from "@cogni/ai-core";
 import {
   contractToRuntime,
   type CatalogBoundTool as LocalCatalogBoundTool,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 import {
   type CatalogBoundTool,
   contractToRuntime as sharedContractToRuntime,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";
 import { PUBLISHED_TOOL_IDS } from "./evaluation-baseline";
 
 import type { ToolBindings } from "./tool-bindings";

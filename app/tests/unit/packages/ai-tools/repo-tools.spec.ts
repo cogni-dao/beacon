@@ -18,7 +18,7 @@ import {
   REPO_CITATION_REGEX,
   RepoOpenInputSchema,
   RepoSearchInputSchema,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { describe, expect, it } from "vitest";
 
 describe("Repo tool schemas", () => {

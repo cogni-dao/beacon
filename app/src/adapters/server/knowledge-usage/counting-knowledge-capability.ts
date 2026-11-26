@@ -14,7 +14,7 @@
  * @internal
  */
 
-import type { KnowledgeCapability } from "@cogni/ai-tools";
+import type { KnowledgeCapability } from "@cogni/beacon-ai-tools";
 
 import type { KnowledgeReadCounter } from "@/ports";
 

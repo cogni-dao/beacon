@@ -23,7 +23,7 @@ import type {
   PostContentResult,
   PostMetricSnapshot,
   SocialXCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 import { XSocialAdapter } from "@/adapters/server";
 import { FakeMoltbookAdapter, FakeXSocialAdapter } from "@/adapters/test";

@@ -24,3 +24,6 @@ export * from "./metric-observations";
 export * from "./profile";
 export * from "./refs";
 export * from "./scheduling";
+
+export * from "./agent-authority";
+export * from "./work-item-leases";

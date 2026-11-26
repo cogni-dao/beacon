@@ -4,7 +4,7 @@
 /**
  * Module: `@bootstrap/capabilities/schedule`
  * Purpose: Factory for ScheduleCapability — bridges ai-tools interface to ScheduleUserPort with RLS-scoped user identity.
- * Scope: Creates ScheduleCapability that reads actorUserId from ExecutionScope (ALS) at invocation time. Does not implement transport.
+ * Scope: Creates ScheduleCapability that reads subjectUserId from ExecutionScope (ALS) at invocation time. Does not implement transport.
  * Invariants:
  *   - RLS_ENFORCED: All schedule operations use the real user's identity, never system principal
  *   - CRUD_IS_TEMPORAL_AUTHORITY: All mutations go through ScheduleUserPort → Temporal
@@ -18,7 +18,7 @@ import type {
   ScheduleCreateParams,
   ScheduleInfo,
   ScheduleUpdateParams,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import type { UserId } from "@cogni/ids";
 import { toUserId } from "@cogni/ids";
 import type { ScheduleUserPort } from "@cogni/scheduler-core";
@@ -36,17 +36,17 @@ export interface ScheduleCapabilityDeps {
 
 /**
  * Resolve the current actor's userId from ExecutionScope (ALS).
- * Throws if no execution scope or no actorUserId — tools must run within a graph execution.
+ * Throws if no execution scope or no subjectUserId — tools must run within a graph execution.
  */
 function resolveUserId(): UserId {
   const scope = getExecutionScope();
-  if (!scope.actorUserId) {
+  if (!scope.subjectUserId) {
     throw new Error(
-      "ScheduleCapability: actorUserId not set in ExecutionScope. " +
-        "Schedule tools must run within an authenticated graph execution."
+      "ScheduleCapability: subjectUserId not set in ExecutionScope. " +
+        "Schedule tools must run within an authenticated graph execution.",
     );
   }
-  return toUserId(scope.actorUserId);
+  return toUserId(scope.subjectUserId);
 }
 
 function toScheduleInfo(spec: {
@@ -82,7 +82,7 @@ function toScheduleInfo(spec: {
  * not a system principal.
  */
 export function createScheduleCapability(
-  deps: ScheduleCapabilityDeps
+  deps: ScheduleCapabilityDeps,
 ): ScheduleCapability {
   const { scheduleManager, getOrCreateBillingAccountId } = deps;
 
@@ -105,20 +105,20 @@ export function createScheduleCapability(
           input: input.input,
           cron: input.cron,
           timezone: input.timezone,
-        }
+        },
       );
       return toScheduleInfo(spec);
     },
 
     async update(
       scheduleId: string,
-      patch: ScheduleUpdateParams
+      patch: ScheduleUpdateParams,
     ): Promise<ScheduleInfo> {
       const userId = resolveUserId();
       const spec = await scheduleManager.updateSchedule(
         userId,
         scheduleId,
-        patch
+        patch,
       );
       return toScheduleInfo(spec);
     },
@@ -130,7 +130,7 @@ export function createScheduleCapability(
 
     async setEnabled(
       scheduleId: string,
-      enabled: boolean
+      enabled: boolean,
     ): Promise<ScheduleInfo> {
       const userId = resolveUserId();
       const spec = await scheduleManager.updateSchedule(userId, scheduleId, {

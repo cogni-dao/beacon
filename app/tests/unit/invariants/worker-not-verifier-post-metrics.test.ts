@@ -24,7 +24,7 @@ import path from "node:path";
 import {
   BroadcastPostOutputSchema,
   broadcastPostContract,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { describe, expect, it } from "vitest";
 
 // process.cwd() is the app/ dir under vitest; repo root is one level up.
