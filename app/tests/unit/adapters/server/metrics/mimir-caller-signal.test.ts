@@ -42,4 +42,39 @@ describe("MimirMetricsAdapter caller signal", () => {
     await expect(pending).rejects.toThrow();
     expect(sent?.aborted).toBe(true);
   });
+  it("rejects without sending when the caller's signal is already aborted", async () => {
+    let sent: AbortSignal | undefined;
+    global.fetch = vi.fn((_url: unknown, init?: RequestInit) => {
+      sent = init?.signal ?? undefined;
+      return Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    }) as unknown as typeof fetch;
+    const adapter = new MimirMetricsAdapter({
+      url: "https://mimir.example.com",
+      username: "u",
+      password: "p",
+      timeoutMs: 60_000,
+    });
+    const caller = new AbortController();
+    caller.abort();
+    await expect(adapter.queryInstant({ query: "up", signal: caller.signal })).rejects.toThrow();
+    expect(sent?.aborted).toBe(true);
+  });
+
+  // Defect guarded: the abort listener stayed on a long-lived caller signal after every query.
+  it("removes its abort listener from the caller's signal when the query ends", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ status: "success", data: { resultType: "vector", result: [] } }),
+    })) as unknown as typeof fetch;
+    const adapter = new MimirMetricsAdapter({
+      url: "https://mimir.example.com",
+      username: "u",
+      password: "p",
+      timeoutMs: 60_000,
+    });
+    const caller = new AbortController();
+    const remove = vi.spyOn(caller.signal, "removeEventListener");
+    await adapter.queryInstant({ query: "up", signal: caller.signal });
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
 });

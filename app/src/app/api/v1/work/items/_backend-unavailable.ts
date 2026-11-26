@@ -5,9 +5,9 @@
  * Module: `@app/api/v1/work/items/_backend-unavailable`
  * Purpose: The one 503 answer and log line for a busy work-item store, so every route names why (task.0162).
  * Scope: For routes with no terminal event of their own, logs the one `work.items.backend_unavailable` line and answers the package's fixed 503 body (`code` is the busy reason). No reads, no writes.
- * Invariants: the body is the package's `backendUnavailableBody`, never the error text; create and PATCH get the reason from the package route core, and the list adds it to its own terminal line.
+ * Invariants: the body is the package's `backendUnavailableBody`, never the error text; create, PATCH and GET-by-id get the reason from the package cores; every other work-item route uses this helper.
  * Side-effects: IO (log line)
- * Links: @cogni-dao/work-items backendUnavailableReason
+ * Links: @cogni-dao/work-items backendUnavailableBody
  * @internal
  */
 

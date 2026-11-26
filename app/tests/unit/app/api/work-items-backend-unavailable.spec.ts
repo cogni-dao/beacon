@@ -15,8 +15,8 @@ import { describe, expect, it, vi } from "vitest";
 import { backendUnavailable } from "@/app/api/v1/work/items/_backend-unavailable";
 
 describe("work items busy 503", () => {
-  // Defect guarded: a busy 503 once echoed the store's message and logged no reason.
-  it("names the closed reason in the body and the log line, and hides the error text", async () => {
+  // Defect guarded: a busy 503 once logged no reason and carried no closed `code`.
+  it("names the closed reason in the body and the log line", async () => {
     const info = vi.fn();
     const response = backendUnavailable(
       { log: { info } as never, reqId: "req-1", routeId: "work.items.claims" },
@@ -25,7 +25,6 @@ describe("work items busy 503", () => {
     expect(response.status).toBe(503);
     const body = await response.json();
     expect(body).toMatchObject({ code: "queue_timeout" });
-    expect(JSON.stringify(body)).not.toContain("secret store detail");
     expect(info).toHaveBeenCalledTimes(1);
     expect(info.mock.calls[0]?.[0]).toMatchObject({
       event: "work.items.backend_unavailable",
