@@ -15,9 +15,8 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-
-import type { WriteRunKind } from "@cogni/work-items";
 import type { SourceSystem } from "@cogni/ai-core";
+import type { WriteRunKind } from "@cogni/work-items";
 import type { BillingContext, LlmService } from "@/ports";
 
 /**
@@ -33,6 +32,7 @@ export interface ExecutionScope {
   /** The catalog principal's stored user id; never the requester or payer. */
   readonly principalId?: string;
   readonly runId?: string;
+  readonly graphId?: string;
   readonly runKind?: WriteRunKind;
   /** Chat-only temporary tech debt — browser disconnect, not durable cancellation. */
   readonly abortSignal?: AbortSignal;

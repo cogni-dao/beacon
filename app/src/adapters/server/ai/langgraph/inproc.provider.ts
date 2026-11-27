@@ -18,15 +18,23 @@
  * @internal
  */
 
-import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
+import {
+  type GuardDeps,
+  guardTools,
+  offeredToolIds,
+  type TerminalDenial,
+  ToolAuthorityError,
+} from "@cogni/agent-grants";
+import { buildRequiresById } from "@cogni/agent-grants/host";
 import type { AiEvent, BoundToolRuntime, ToolSourcePort } from "@cogni/ai-core";
 import {
   createStaticToolSourceFromRecord,
   createToolAllowlistPolicy,
   createToolRunner,
 } from "@cogni/ai-core";
-import type { CatalogBoundTool } from "@cogni/beacon-ai-tools";
 import type { CatalogBoundTool as PublishedCatalogBoundTool } from "@cogni/ai-tools";
+import type { CatalogBoundTool } from "@cogni/beacon-ai-tools";
+import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
 import {
   type CompletionFn,
   type CreateGraphFn,
@@ -39,10 +47,10 @@ import {
 import { trace } from "@opentelemetry/api";
 import type { Logger } from "pino";
 import {
+  getExecutionScope,
   resolveExecutionScope,
   runInScope,
 } from "@/adapters/server/ai/execution-scope";
-import { getExecutionScope } from "@/adapters/server/ai/execution-scope";
 import type {
   AiExecutionErrorCode,
   CompletionFinalResult,
@@ -117,6 +125,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
     private readonly identity: {
       readonly resolvePrincipal: (slug: string) => Promise<string | null>;
       readonly publishedToolIds: readonly string[];
+      readonly guardDeps?: Omit<GuardDeps, "runAs">;
     } = { resolvePrincipal: async () => null, publishedToolIds: [] },
   ) {
     this.log = makeLogger({ component: "LangGraphInProcProvider" });
@@ -203,12 +212,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         entry.principal,
         this.identity.resolvePrincipal,
       );
-      for (const [id, runtime] of Object.entries(runtimeTools)) {
-        runtimeTools[id] = {
-          ...runtime,
-          exec: (...args) => runInScope(runScope, () => runtime.exec(...args)),
-        };
-      }
+
       const mcpToolIds: string[] = [];
       if (mcpServerIds.length > 0) {
         const mcpToolSource = await this.getMcpToolSource();
@@ -238,12 +242,60 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         }
       }
 
-      // Combined tool IDs for allowlist: native catalog tools + MCP tools
-      const allToolIds = [...toolIds, ...mcpToolIds];
-
-      // Get catalog tools for contract extraction from the injected node bundle
-      // (per NODE_BUNDLE_IS_CANONICAL — TOOL_CATALOG only has core tools post-bug.0319 ckpt 2)
-      const catalogTools = catalogToolIds
+      const controller = new AbortController();
+      const runSignal = scope.abortSignal
+        ? AbortSignal.any([scope.abortSignal, controller.signal])
+        : controller.signal;
+      let denial: TerminalDenial | undefined;
+      const guardScope = {
+        principalId: runScope.principalId,
+        subjectUserId: runScope.subjectUserId,
+        payer: runScope.billing.billingAccountId,
+        runId,
+        // A payer is never account authority. No account-kind tools are admitted
+        // until the launcher supplies an independently resolved account.
+      };
+      const requiresById = buildRequiresById(
+        [...this.boundToolMap.values()].map(({ contract }) => ({
+          id: contract.name,
+          ...("requires" in contract ? { requires: contract.requires } : {}),
+        })),
+      );
+      const guardDeps: GuardDeps = {
+        ...(this.identity.guardDeps ?? {
+          withStore: async () => {
+            throw new Error("agent_authority_unavailable");
+          },
+          adminCheck: async () => "unavailable" as const,
+        }),
+        runAs: (_identity, fn) => runInScope(runScope, fn),
+        onTerminalDenial: (receipt) => {
+          denial ??= receipt;
+          controller.abort(
+            new ToolAuthorityError(receipt.code, receipt.tool, null),
+          );
+        },
+      };
+      // MCP has no permission declarations yet. It is never admitted, even if
+      // a transport labels an MCP tool read_only.
+      const nativeRuntimes = Object.fromEntries(
+        Object.entries(runtimeTools).filter(([id]) => !mcpToolIds.includes(id)),
+      );
+      const guarded = guardTools(
+        nativeRuntimes,
+        requiresById,
+        guardScope,
+        guardDeps,
+      );
+      const eligible = await offeredToolIds(
+        Object.values(nativeRuntimes),
+        requiresById,
+        guardScope,
+        guardDeps,
+      );
+      const offered = eligible.offered.filter((id) => toolIds.includes(id));
+      const allToolIds = toolIds.filter((id) => catalogToolIds.includes(id));
+      const catalogTools = offered
         .map((id) => this.boundToolMap.get(id))
         .filter((bt): bt is NonNullable<typeof bt> => bt !== undefined);
 
@@ -251,13 +303,14 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
       // Policy allowlist includes both native and MCP tool IDs
       const createToolExecFn = (emit: (e: AiEvent) => void): ToolExecFn => {
         const policy = createToolAllowlistPolicy(allToolIds);
-        const source = createStaticToolSourceFromRecord(runtimeTools);
+        const source = createStaticToolSourceFromRecord(guarded);
         const toolRunner = createToolRunner(source, emit, {
           policy,
           ctx: { runId },
         });
 
         return async (name, args, toolCallId) => {
+          if (denial) throw new ToolAuthorityError(denial.code, name, null);
           const result =
             toolCallId !== undefined
               ? await toolRunner.exec(name, args, {
@@ -281,27 +334,19 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         };
       };
 
-      // Public contracts use Zod 4. Beacon product contracts retain their Zod 3
-      // compiler and enter the released runner through its JSON-schema spec port.
-      // The same bound runtimes still validate and execute every call.
       const toolContracts = catalogTools
         .filter((bt): bt is PublishedCatalogBoundTool =>
           this.identity.publishedToolIds.includes(bt.contract.name),
         )
         .map((bt) => bt.contract);
+      // The public JSON-schema seam is the product boundary. graphs0.11 drops
+      // inputSchema here; activation waits for the package-owned repair.
       const productSpecs = catalogTools
         .filter(
           (bt) => !this.identity.publishedToolIds.includes(bt.contract.name),
         )
-        .map((bt) => runtimeTools[bt.contract.name]?.spec)
+        .map((bt) => nativeRuntimes[bt.contract.name]?.spec)
         .filter((spec): spec is NonNullable<typeof spec> => spec !== undefined);
-
-      const mcpToolSpecs = [
-        ...productSpecs,
-        ...mcpToolIds
-          .map((id) => runtimeTools[id]?.spec)
-          .filter((s): s is NonNullable<typeof s> => s !== undefined),
-      ];
 
       const traceId =
         trace.getActiveSpan()?.spanContext().traceId ??
@@ -309,14 +354,12 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
       const runnerRequest: InProcGraphRequest = {
         runId,
         messages: messages as InProcGraphRequest["messages"],
-        ...(scope.abortSignal !== undefined && {
-          abortSignal: scope.abortSignal,
-        }),
+        abortSignal: runSignal,
         ...(traceId !== undefined && { traceId }),
         ...(requestId !== undefined && { ingressRequestId: requestId }),
         configurable: {
           model,
-          toolIds,
+          toolIds: offered,
           ...(runScope.principalId ? { actorId: runScope.principalId } : {}),
           ...(runScope.subjectUserId
             ? { subjectId: runScope.subjectUserId }
@@ -326,7 +369,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         },
       };
 
-      return createInProcGraphRunner({
+      const result = createInProcGraphRunner({
         createGraph: entry.graphFactory,
         ...(entry.program
           ? { program: entry.program, trustedProgramId: entry.program }
@@ -337,7 +380,7 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         completionFn,
         createToolExecFn,
         toolContracts,
-        ...(mcpToolSpecs.length > 0 && { mcpToolSpecs }),
+        ...(productSpecs.length ? { mcpToolSpecs: productSpecs } : {}),
         request: runnerRequest,
         ...(req.responseFormat !== undefined && {
           responseFormat: req.responseFormat,
@@ -346,6 +389,37 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
           systemPrompt: entry.systemPrompt,
         }),
       });
+      const denialContent = () =>
+        JSON.stringify({
+          code: denial?.code,
+          retryable: false,
+          lookup: { tool: denial?.tool ?? null },
+          message: "Tool permission denied.",
+        });
+      return {
+        stream: (async function* () {
+          for await (const event of result.stream) {
+            if (denial) continue;
+            yield event;
+          }
+          if (denial) {
+            yield {
+              type: "assistant_final" as const,
+              content: denialContent(),
+            };
+            yield { type: "done" as const };
+          }
+        })(),
+        final: result.final.then((final) =>
+          denial
+            ? {
+                ok: true,
+                content: denialContent(),
+                ...(final.usage ? { usage: final.usage } : {}),
+              }
+            : final,
+        ),
+      };
     };
 
     // Execute: resolve MCP (if needed) then run graph.

@@ -1,27 +1,31 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Shield-1.0.0
 /** Published update/EDO contracts at Beacon's real capability seam; no database claims. */
-import { WorkItemPatchConflictError } from "@cogni/ai-tools";
+
 import {
-  createWorkItemWriters,
-  createRunAttribution,
-  toWorkItemId,
-  WorkItemRevisionConflictError,
-  WorkItemWriteOutcomeUnknownError,
-  type WorkItemsPort,
-  type WorkItem,
-} from "@cogni/work-items";
+  createWorkItemUpdateImplementation,
+  WorkItemPatchConflictError,
+} from "@cogni/ai-tools";
 import {
   bindEdoToolCapability,
   type EdoCapability,
 } from "@cogni/knowledge-store";
-import { describe, expect, it, vi } from "vitest";
-import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
 import {
+  createRunAttribution,
+  createWorkItemWriters,
+  toWorkItemId,
+  type WorkItem,
+  type WorkItemsPort,
+  WorkItemWriteOutcomeUnknownError,
+} from "@cogni/work-items";
+import { WorkItemRevisionConflictError } from "@cogni/work-items/adapters/doltgres";
+import { describe, expect, it, vi } from "vitest";
+import {
+  type ExecutionScope,
   getExecutionScope,
   resolveExecutionScope,
   runInScope,
-  type ExecutionScope,
 } from "@/adapters/server/ai/execution-scope";
+import { createWorkItemCapability } from "@/bootstrap/capabilities/work-item";
 
 const item: WorkItem = {
   id: toWorkItemId("task.0001"),
@@ -50,12 +54,10 @@ const log = { info: vi.fn(), warn: vi.fn() };
 function fixture() {
   const store = {
     get: vi.fn().mockResolvedValue(item),
-    list: vi
-      .fn()
-      .mockResolvedValue({
-        items: [item],
-        pageInfo: { hasMore: false, endCursor: null },
-      }),
+    list: vi.fn().mockResolvedValue({
+      items: [item],
+      pageInfo: { hasMore: false, endCursor: null },
+    }),
     patch: vi.fn().mockResolvedValue({ ...item, revision: 9 }),
     historyPage: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   };
@@ -166,6 +168,44 @@ describe("Beacon released writers", () => {
         }),
       ),
     ).rejects.toBeInstanceOf(WorkItemPatchConflictError);
+    const implementation = createWorkItemUpdateImplementation({
+      workItemCapability: cap,
+    });
+    await expect(
+      run(() =>
+        implementation.execute({
+          id: item.id,
+          expectedRevision: 7,
+          reason: "Try stale change",
+          set: {},
+        }),
+      ),
+    ).resolves.toMatchObject({
+      success: false,
+      code: "revision_conflict",
+      currentRevision: 8,
+    });
+  });
+  it("keeps Operating Review planning fields and triage-only status", async () => {
+    const { store, cap } = fixture();
+    const execute = (set: Parameters<typeof cap.patch>[0]["set"]) =>
+      runInScope(
+        {
+          ...scope,
+          principalId: "actual-agent-row",
+          graphId: "langgraph:operating-review",
+        },
+        () => cap.patch({ id: item.id, reason: "Plan next work", set }),
+      );
+    await expect(
+      execute({ outcome: "replacement acceptance" }),
+    ).rejects.toThrow("policy_denied");
+    await expect(execute({ status: "needs_validation" })).rejects.toThrow(
+      "triage",
+    );
+    expect(store.patch).not.toHaveBeenCalled();
+    await execute({ priority: 3, labels: ["stuck"], summary: "Follow up" });
+    expect(store.patch).toHaveBeenCalledOnce();
   });
   it("never retries an uncertain write", async () => {
     const { store, cap } = fixture();

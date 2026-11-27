@@ -18,34 +18,35 @@
  * @internal
  */
 
-import { isPrivilegedPriority } from "@cogni/knowledge-store";
 import type { WorkItemCapability, WorkItemInfo } from "@cogni/ai-tools";
 import { WorkItemPatchConflictError } from "@cogni/ai-tools";
+import { isPrivilegedPriority } from "@cogni/knowledge-store";
 import type {
   ActorKind,
+  createWorkItemWriters,
   EnvelopeDegradedEvent,
   ItemLinksPort,
   MoveReadingPort,
-  WorkItemCommandPort,
-  createWorkItemWriters,
   WorkItemArtifactDeps,
+  WorkItemCommandPort,
   WorkItemQueryPort,
-  WorkItemStatus,
   WorkItemSortBy,
+  WorkItemStatus,
   WorkItemType,
 } from "@cogni/work-items";
 import {
+  artifactsNotConfigured,
   composeItemEnvelope,
   createItemRefPorts,
-  recordWorkItemArtifact,
-  artifactsNotConfigured,
-  WorkItemRevisionConflictError,
   judgeMoveSummaries,
-  WORK_ITEM_SORT_FIELDS,
+  recordWorkItemArtifact,
   toWorkItemId,
   toWorkItemDto as toWorkItemInfo,
   toWorkItemsPatchInput,
+  WORK_ITEM_SORT_FIELDS,
 } from "@cogni/work-items";
+import { WorkItemRevisionConflictError } from "@cogni/work-items/adapters/doltgres";
+import { getExecutionScope } from "@/adapters/server/ai/execution-scope";
 import type { EvaluationWorkItemsPort } from "@/ports/work-items";
 
 /**
@@ -188,6 +189,22 @@ export function createWorkItemCapability(
         throw new Error(`Work item not found: ${input.id}`);
       }
 
+      if (getExecutionScope().graphId === "langgraph:operating-review") {
+        const allowed = new Set(["status", "priority", "labels", "summary"]);
+        if (Object.keys(input.set).some((field) => !allowed.has(field))) {
+          throw new Error(
+            "policy_denied: Operating Review may only update planning fields",
+          );
+        }
+        if (
+          input.set.status !== undefined &&
+          current.status !== "needs_triage"
+        ) {
+          throw new Error(
+            "policy_denied: Operating Review may only triage status",
+          );
+        }
+      }
       try {
         const updated = await deps.writers.backlogWriter.store.patch(
           toWorkItemsPatchInput({

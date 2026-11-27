@@ -20,11 +20,7 @@
  * @public
  */
 
-import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
 import type { SourceSystem, ToolSourcePort } from "@cogni/ai-core";
-import { resolveAgentAuthority } from "./agent-authority";
-import { PUBLISHED_TOOL_IDS } from "./ai/evaluation-baseline";
-import { BEACON_CORE_TOOL_BUNDLE as CORE_TOOL_BUNDLE } from "./ai/evaluation-baseline";
 import type {
   ExecutionContext,
   GraphFinal,
@@ -40,11 +36,14 @@ import {
   UsageCommitDecorator,
 } from "@cogni/graph-execution-host";
 import type { UserId } from "@cogni/ids";
+import { SYSTEM_ACTOR } from "@cogni/ids/system";
 import {
   loadMcpTools,
   McpToolSource,
   parseMcpConfigFromEnv,
 } from "@cogni/langgraph-graphs";
+import { COGNI_SYSTEM_PRINCIPAL_USER_ID } from "@cogni/node-shared";
+import { LANGGRAPH_CATALOG } from "@cogni/node-template-graphs";
 import { trace } from "@opentelemetry/api";
 import {
   type CompletionStreamFn,
@@ -53,7 +52,6 @@ import {
   LangGraphDevProvider,
   LangGraphInProcProvider,
 } from "@/adapters/server";
-import { SYSTEM_ACTOR } from "@cogni/ids/system";
 import { runInScope } from "@/adapters/server/ai/execution-scope";
 import type {
   AiExecutionErrorCode,
@@ -66,6 +64,11 @@ import type {
 } from "@/ports";
 import { serverEnv } from "@/shared/env";
 import { makeLogger } from "@/shared/observability";
+import { resolveAgentAuthority } from "./agent-authority";
+import {
+  BEACON_CORE_TOOL_BUNDLE as CORE_TOOL_BUNDLE,
+  PUBLISHED_TOOL_IDS,
+} from "./ai/evaluation-baseline";
 import {
   type AiAdapterDeps,
   getContainer,
@@ -300,18 +303,44 @@ export function runGraphWithScope(params: {
 }): GraphRunResult {
   const { executor, req, ctx, billing, llmService, usageSource } = params;
   const started = (async () => {
-    const run = await getContainer()
-      .graphRunRepository.getRunByRunId(SYSTEM_ACTOR, req.runId)
-      .catch(() => null);
-    const subjectUserId = ctx?.actorUserId ?? run?.requestedBy;
+    const run = await getContainer().graphRunRepository.getRunByRunId(
+      SYSTEM_ACTOR,
+      req.runId,
+    );
+    if (
+      !run ||
+      run.runId !== req.runId ||
+      run.graphId !== req.graphId ||
+      !["user_immediate", "system_scheduled", "system_webhook"].includes(
+        run.runKind ?? "",
+      )
+    ) {
+      throw new Error("graph_run_identity_unavailable");
+    }
+    const requester =
+      run.requestedBy === COGNI_SYSTEM_PRINCIPAL_USER_ID
+        ? null
+        : run.requestedBy;
+    const caller =
+      ctx?.actorUserId === COGNI_SYSTEM_PRINCIPAL_USER_ID
+        ? undefined
+        : ctx?.actorUserId;
+    if (
+      (run.runKind !== "system_webhook" && !requester) ||
+      (caller !== undefined && caller !== requester)
+    ) {
+      throw new Error("graph_run_requester_mismatch");
+    }
+    const subjectUserId = requester;
     return runInScope(
       {
         billing,
         llmService,
         usageSource,
         ...(subjectUserId ? { subjectUserId } : {}),
-        runId: req.runId,
-        ...(run?.runKind ? { runKind: run.runKind } : {}),
+        runId: run.runId,
+        graphId: run.graphId,
+        runKind: run.runKind as import("@cogni/work-items").WriteRunKind,
         ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
       },
       () => executor.runGraph(req, ctx),
@@ -552,8 +581,7 @@ function createInProcProvider(
     () => cache.getSource(),
     [...CORE_TOOL_BUNDLE],
     {
-      resolvePrincipal: (slug) =>
-        resolveAgentAuthority().resolvePrincipal(slug),
+      ...resolveAgentAuthority(),
       publishedToolIds: PUBLISHED_TOOL_IDS,
     },
   );
