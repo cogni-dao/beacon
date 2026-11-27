@@ -15,6 +15,7 @@
  * @public
  */
 
+import { scheduleManageContract as sharedScheduleManageContract } from "@cogni/ai-tools";
 import { z } from "zod";
 
 import type { ScheduleCapability } from "../capabilities/schedule";
@@ -97,6 +98,7 @@ export const scheduleManageContract: ToolContract<
     "'enable'/'disable' (requires scheduleId). " +
     "Use core__schedule_list first to see existing schedules.",
   effect: "state_change",
+  requires: sharedScheduleManageContract.requires,
   inputSchema: ScheduleManageInputSchema,
   outputSchema: ScheduleManageOutputSchema,
 

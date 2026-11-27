@@ -71,6 +71,13 @@ export interface ToolContract<
   readonly description: string;
   /** Side-effect level for policy decisions */
   readonly effect: ToolEffect;
+  /** Published permission contract; private Beacon tools use the same guard. */
+  readonly requires?: SharedToolContract<
+    TName,
+    TInput,
+    TOutput,
+    TRedacted
+  >["requires"];
   /**
    * Zod schema for input validation.
    * Source of truth — used by LangChain wrappers and compiled to JSONSchema7.

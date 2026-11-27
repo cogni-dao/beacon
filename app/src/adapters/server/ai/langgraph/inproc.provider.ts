@@ -247,20 +247,30 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
         ? AbortSignal.any([scope.abortSignal, controller.signal])
         : controller.signal;
       let denial: TerminalDenial | undefined;
+      const requiresById = buildRequiresById(
+        [...this.boundToolMap.values()].map(({ contract }) => ({
+          id: contract.name,
+          requires: contract.requires,
+        })),
+      );
+      // Account ownership is independent of the run's payer. Beacon has one
+      // account per owner; accountOf reads billing_accounts.owner_user_id.
+      const needsAccount = catalogToolIds.some(
+        (id) => requiresById[id]?.kind === "account",
+      );
+      const accountId =
+        needsAccount && runScope.subjectUserId && this.identity.guardDeps
+          ? await this.identity.guardDeps.withStore((store) =>
+              store.accountOf(runScope.subjectUserId as string),
+            )
+          : undefined;
       const guardScope = {
         principalId: runScope.principalId,
         subjectUserId: runScope.subjectUserId,
         payer: runScope.billing.billingAccountId,
         runId,
-        // A payer is never account authority. No account-kind tools are admitted
-        // until the launcher supplies an independently resolved account.
+        accountId: accountId ?? undefined,
       };
-      const requiresById = buildRequiresById(
-        [...this.boundToolMap.values()].map(({ contract }) => ({
-          id: contract.name,
-          ...("requires" in contract ? { requires: contract.requires } : {}),
-        })),
-      );
       const guardDeps: GuardDeps = {
         ...(this.identity.guardDeps ?? {
           withStore: async () => {
@@ -281,8 +291,78 @@ export class LangGraphInProcProvider implements GraphExecutorPort {
       const nativeRuntimes = Object.fromEntries(
         Object.entries(runtimeTools).filter(([id]) => !mcpToolIds.includes(id)),
       );
+      // The shared account lock authorizes the host-resolved account. Bind the
+      // actual product target to that account before any service-role IO.
+      const accountBoundRuntimes = Object.fromEntries(
+        Object.entries(nativeRuntimes).map(([id, runtime]) => [
+          id,
+          requiresById[id]?.kind !== "account"
+            ? runtime
+            : {
+                ...runtime,
+                exec: async (
+                  ...[args, ctx, capabilities]: Parameters<
+                    BoundToolRuntime["exec"]
+                  >
+                ) => {
+                  let ownerStillMatches = false;
+                  let ownerUnavailable = false;
+                  try {
+                    ownerStillMatches = !!(
+                      accountId &&
+                      runScope.subjectUserId &&
+                      (await guardDeps.withStore((store) =>
+                        store.ownsAccount(
+                          runScope.subjectUserId as string,
+                          accountId,
+                        ),
+                      ))
+                    );
+                  } catch {
+                    ownerUnavailable = true;
+                  }
+                  if (
+                    !ownerStillMatches ||
+                    typeof args !== "object" ||
+                    args === null ||
+                    !("accountId" in args) ||
+                    args.accountId !== accountId
+                  ) {
+                    const code = ownerUnavailable
+                      ? "authz_unavailable"
+                      : "policy_denied";
+                    const reason = ownerUnavailable
+                      ? "store_unavailable"
+                      : "account_target_mismatch";
+                    guardDeps.onDecision?.({
+                      principal: guardScope.principalId ?? null,
+                      subject: guardScope.subjectUserId ?? null,
+                      payer: guardScope.payer,
+                      account: accountId ?? null,
+                      tool: id,
+                      runId,
+                      decision: "deny",
+                      code,
+                      reason,
+                    });
+                    guardDeps.onTerminalDenial?.({
+                      tool: id,
+                      code,
+                      reason,
+                    });
+                    throw new ToolAuthorityError(
+                      code,
+                      id,
+                      requiresById[id]?.scope ?? null,
+                    );
+                  }
+                  return runtime.exec(args, ctx, capabilities);
+                },
+              },
+        ]),
+      );
       const guarded = guardTools(
-        nativeRuntimes,
+        accountBoundRuntimes,
         requiresById,
         guardScope,
         guardDeps,

@@ -32,7 +32,6 @@ const catalog = vi.hoisted(() => ({ entries: {} as Record<string, unknown> }));
 vi.mock("@cogni/node-template-graphs", () => ({
   LANGGRAPH_CATALOG: catalog.entries,
 }));
-vi.mock("@cogni/langgraph-graphs", () => ({}));
 
 import { runGraphWithScope } from "@/bootstrap/graph-executor.factory";
 
@@ -309,5 +308,244 @@ describe("actual provider authority composition", () => {
     const result = await run({ live: true, admin: true });
     expect(result.execute).toHaveBeenCalledOnce();
     expect(result.final).toMatchObject({ ok: true });
+  });
+});
+
+describe("Beacon product permissions", () => {
+  it("passes the released route parity rules over Beacon's actual composed tools", async () => {
+    const { BEACON_CORE_TOOL_BUNDLE } = await import("@/bootstrap/ai/evaluation-baseline");
+    const { nodeExtensions } = await import("@/node-extensions");
+    const { composeAgentRoutes } = await import("@cogni/agent-grants");
+    const { SAME_DOOR_PARITY_RULES } = await import("@cogni/agent-grants/same-door-parity");
+    const contracts = BEACON_CORE_TOOL_BUNDLE.map(t => t.contract);
+    const routes = composeAgentRoutes(nodeExtensions.routes);
+    for (const rule of SAME_DOOR_PARITY_RULES) {
+      expect(rule.violations(contracts, routes, { absentBaseline: ["core__sandbox_shell", "core__account_credits_read"] }), rule.name).toEqual([]);
+    }
+  });
+
+  it("declares every actual write and preserves grandfathered ids", async () => {
+    const { BEACON_CORE_TOOL_BUNDLE } = await import(
+      "@/bootstrap/ai/evaluation-baseline"
+    );
+    const { buildRequiresById, buildPermissionCatalog } = await import(
+      "@cogni/agent-grants/host"
+    );
+    const requires = buildRequiresById(
+      BEACON_CORE_TOOL_BUNDLE.map(({ contract }) => ({
+        id: contract.name,
+        requires: contract.requires,
+      })),
+    );
+    for (const { contract } of BEACON_CORE_TOOL_BUNDLE) {
+      if (contract.effect !== "read_only")
+        expect(requires[contract.name], contract.name).toBeDefined();
+    }
+    expect(requires.core__broadcast_post).toMatchObject({
+      scope: "beacon.broadcast:write",
+      kind: "account",
+      subject: "member",
+    });
+    expect(requires.core__schedule_manage).toMatchObject({
+      scope: "schedule:manage",
+      kind: "own",
+      subject: "member",
+    });
+    expect(
+      buildPermissionCatalog(requires).scopeKinds["beacon.broadcast:write"],
+    ).toBe("account");
+  });
+
+  async function broadcast(
+    options: {
+      grant?: boolean;
+      revoked?: boolean;
+      account?: string | null;
+      target?: string;
+      ownerChanged?: boolean;
+      outage?: boolean;
+      ownerOutage?: boolean;
+      subject?: string | null;
+    } = {},
+  ) {
+    const actual = await vi.importActual<
+      typeof import("@cogni/node-template-graphs")
+    >("@cogni/node-template-graphs");
+    const { BEACON_CORE_TOOL_BUNDLE } = await import(
+      "@/bootstrap/ai/evaluation-baseline"
+    );
+    const product = BEACON_CORE_TOOL_BUNDLE.find(
+      (t) => t.contract.name === "core__broadcast_post",
+    );
+    if (!product) throw new Error("actual broadcast missing");
+    const execute = vi.fn().mockResolvedValue({ ideaKey: "idea", results: [] });
+    const { createBroadcastPostImplementation } = await import(
+      "@cogni/beacon-ai-tools"
+    );
+    const bound = {
+      ...product,
+      implementation: createBroadcastPostImplementation({
+        broadcastCapability: { broadcast: execute },
+      }),
+    };
+    const runtime = toBoundToolRuntime(bound as never);
+    const shown: string[] = [];
+    let grant = options.grant ?? true;
+    const factory: CreateGraphFn = (opts) => ({
+      invoke: async (_input, config) => {
+        shown.push(...opts.tools.map((t) => t.name));
+        if (options.revoked) grant = false;
+        const tool = opts.tools.find((t) => t.name === product.contract.name);
+        if (tool)
+          await tool.invoke(
+            {
+              accountId: options.target ?? "owned",
+              campaignId: "campaign",
+              ideaKey: "idea",
+              variants: [
+                {
+                  channel: "x",
+                  text: "post",
+                  funnelLayer: "tofu",
+                  topic: "ownership",
+                  kind: "text",
+                },
+              ],
+            },
+            config,
+          );
+        return { messages: [] };
+      },
+    });
+    // Keep the actual content catalog's tool list and principal. Only the graph
+    // body is deterministic so this test exercises the real host execution seam.
+    catalog.entries.content = {
+      ...actual.LANGGRAPH_CATALOG.content,
+      graphFactory: factory,
+    };
+    expect(actual.LANGGRAPH_CATALOG.content?.principal).toBe("node-ai");
+    const accountOf = vi.fn(async (subject: string) =>
+      subject === "human"
+        ? options.account === undefined
+          ? "owned"
+          : options.account
+        : null,
+    );
+    const store = {
+      accountOf,
+      liveScopes: async () => [],
+      ownsAccount: async (subject: string, account: string) => {
+        if (options.ownerOutage) throw new Error("owner read unavailable");
+        return (
+          subject === "human" && account === "owned" && !options.ownerChanged
+        );
+      },
+      liveAccountScopes: async (
+        principal: string,
+        scopes: readonly string[],
+        account: string,
+      ) =>
+        principal === "stored-node-ai" && account === "owned" && grant
+          ? [...scopes]
+          : [],
+      hasLiveAccountGrant: async (
+        principal: string,
+        scope: string,
+        account: string,
+      ) =>
+        principal === "stored-node-ai" &&
+        scope === "beacon.broadcast:write" &&
+        account === "owned" &&
+        grant,
+    } as unknown as AgentGrantsStore;
+    const provider = new LangGraphInProcProvider(
+      {
+        executeCompletionUnit: () => {
+          throw new Error("no model needed");
+        },
+      },
+      {
+        getBoundTool: (id) => (id === runtime.id ? runtime : undefined),
+        listToolSpecs: () => [runtime.spec],
+        hasToolId: (id) => id === runtime.id,
+      },
+      async () => null,
+      [bound as CatalogBoundTool],
+      {
+        resolvePrincipal: async () => "stored-node-ai",
+        publishedToolIds: [],
+        guardDeps: {
+          withStore: async (fn) => {
+            if (options.outage) throw new Error("SQL unavailable");
+            return fn(store);
+          },
+          adminCheck: async () => "denied",
+        },
+      },
+    );
+    const subjectUserId =
+      options.subject === undefined ? "human" : options.subject;
+    const result = runInScope(
+      {
+        billing,
+        llmService: {} as never,
+        usageSource: "litellm",
+        ...(subjectUserId ? { subjectUserId } : {}),
+        runId: request.runId,
+        runKind: "user_immediate",
+      },
+      () => provider.runGraph({ ...request, graphId: "langgraph:content" }),
+    );
+    for await (const _event of result.stream) {
+      /* drain */
+    }
+    return { execute, shown, accountOf, final: await result.final };
+  }
+
+  it("offers and executes broadcast for the actual owner and approved principal, independently of payer", async () => {
+    const result = await broadcast();
+    expect(result.accountOf).toHaveBeenCalledWith("human");
+    expect(result.shown).toEqual(["core__broadcast_post"]);
+    expect(result.execute).toHaveBeenCalledOnce();
+    expect(result.execute.mock.calls[0]?.[0].accountId).toBe("owned");
+    expect(result.final.ok).toBe(true);
+  });
+  it.each([{ grant: false }, { account: null }, { subject: null }])(
+    "withholds broadcast without its actual authority (%j)",
+    async (options) => {
+      const result = await broadcast(options);
+      expect(result.shown).toEqual([]);
+      expect(result.execute).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { revoked: true },
+    { target: "foreign" },
+    { target: "payer" },
+    { ownerChanged: true },
+  ])(
+    "forced execution cannot cross the account or revoked-grant lock (%j)",
+    async (options) => {
+      const result = await broadcast(options);
+      expect(result.shown).toEqual(["core__broadcast_post"]);
+      expect(result.execute).not.toHaveBeenCalled();
+      expect(JSON.parse(result.final.content ?? "{}")).toMatchObject({
+        code: "policy_denied",
+        retryable: false,
+      });
+    },
+  );
+  it("returns a terminal unavailable receipt when the exec owner check fails", async () => {
+    const result = await broadcast({ ownerOutage: true });
+    expect(result.shown).toEqual(["core__broadcast_post"]);
+    expect(result.execute).not.toHaveBeenCalled();
+    expect(JSON.parse(result.final.content ?? "{}")).toMatchObject({
+      code: "authz_unavailable",
+      retryable: false,
+    });
+  });
+  it("never executes during an owner-store outage", async () => {
+    const result = await broadcast({ outage: true });
+    expect(result.execute).not.toHaveBeenCalled();
   });
 });

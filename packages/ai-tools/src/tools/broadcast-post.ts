@@ -102,6 +102,14 @@ export const broadcastPostContract: ToolContract<
 		"via the social adapter, and records the external post id with status 'posted'. " +
 		"Does NOT read or write engagement metrics — that is the ingest path's job.",
 	effect: "state_change",
+	requires: {
+		scope: "beacon.broadcast:write",
+		kind: "account",
+		subject: "member",
+		label: "Publish staged social posts",
+		description:
+			"Publish staged variants for the account that approved this AI.",
+	},
 	inputSchema: BroadcastPostInputSchema,
 	outputSchema: BroadcastPostOutputSchema,
 	redact: (output) => output,
