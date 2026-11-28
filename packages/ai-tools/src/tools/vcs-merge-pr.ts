@@ -61,6 +61,14 @@ export const vcsMergePrContract: ToolContract<
     "Never merge PRs targeting main directly — those go through the release workflow. " +
     "Use 'squash' for feature PRs targeting staging.",
   effect: "state_change",
+  requires: {
+    scope: "beacon.vcs:merge",
+    kind: "node",
+    subject: "admin",
+    label: "Merge reviewed pull requests",
+    description:
+      "Merge through the configured VCS capability after its existing checks.",
+  },
   inputSchema: VcsMergePrInputSchema,
   outputSchema: VcsMergePrOutputSchema,
   redact: (output: VcsMergePrOutput): VcsMergePrRedacted => output,

@@ -28,7 +28,7 @@ import {
 	MoltbookPostPayloadSchema,
 	type MoltbookPostPayload,
 	type SocialXCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { asc, and, eq, isNull, sql } from "drizzle-orm";
 
 import { MoltbookSocialAdapter } from "@/adapters/server";

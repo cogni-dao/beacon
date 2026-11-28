@@ -14,7 +14,7 @@
  * @internal
  */
 
-import type { MoltbookPostPayload } from "@cogni/ai-tools";
+import type { MoltbookPostPayload } from "@cogni/beacon-ai-tools";
 
 /** Owned campaign lifecycle status (mirrors the API/CHECK constraint). */
 export type CampaignStatus = "draft" | "active" | "paused" | "done";

@@ -17,7 +17,6 @@
  */
 
 import {
-  workItemsDeleteOperation,
   workItemsGetOperation,
   workItemsPatchOperation,
 } from "@cogni/node-contracts";
@@ -25,20 +24,16 @@ import { handleWorkItemGet, handleWorkItemPatch } from "@cogni/work-items";
 import { NextResponse } from "next/server";
 
 import {
-  deleteWorkItem,
   getWorkItem,
   patchWorkItem,
   WorkItemForbiddenError,
   WorkItemNotFoundError,
-  WorkItemRevisionConflictError,
-  WorkItemsBackendNotReadyError,
   WorkItemWriteOutcomeUnknownError,
   WorkItemScoresInvalidError,
   NodeAdminRequiredError,
 } from "@/app/_facades/work/items.server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
-import { backendUnavailable } from "../_backend-unavailable";
 import { routeAttribution } from "@/bootstrap/write-attribution";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +63,12 @@ export const GET = wrapRouteHandlerWithLogging<{
           return {
             status: 500,
             errorCode: e.code,
-            body: { error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt },
+            body: {
+              error: e.message,
+              errorCode: e.code,
+              retryable: false,
+              receipt: e.receipt,
+            },
           };
         if (e instanceof WorkItemScoresInvalidError)
           return {
@@ -81,7 +81,7 @@ export const GET = wrapRouteHandlerWithLogging<{
     });
     ctx.log.info(result.event, result.event.event);
     return NextResponse.json(result.body, { status: result.status });
-  }
+  },
 );
 
 /**
@@ -119,81 +119,54 @@ export const PATCH = wrapRouteHandlerWithLogging<{
       toBody: (patched) => workItemsPatchOperation.output.parse(patched),
       mapNodeError: (e) => {
         if (e instanceof WorkItemNotFoundError)
-          return { status: 404, errorCode: "not_found", body: { error: e.message } };
+          return {
+            status: 404,
+            errorCode: "not_found",
+            body: { error: e.message },
+          };
         if (e instanceof WorkItemForbiddenError)
-          return { status: 403, errorCode: "forbidden", body: { error: e.message } };
+          return {
+            status: 403,
+            errorCode: "forbidden",
+            body: { error: e.message },
+          };
         if (e instanceof NodeAdminRequiredError)
           return {
             status: e.status,
             errorCode: e.errorCode,
-            body: { error: e.message, errorCode: e.errorCode, action: e.action },
+            body: {
+              error: e.message,
+              errorCode: e.errorCode,
+              action: e.action,
+            },
           };
         return undefined;
       },
     });
     ctx.log.info(result.event, result.event.event);
     return NextResponse.json(result.body, { status: result.status });
-  }
+  },
 );
 
-/**
- * DELETE /api/v1/work/items/:id — Hard-delete a work item from Doltgres.
- *
- * The deletion is captured as a dolt_log commit; recovery via dolt_revert
- * remains available. Idempotent at the contract level: a missing id returns 404,
- * not 500. Returns `{id, deleted: true}` on success.
- */
+/** Content deletion is retired; preserve history through a reasoned CAS cancellation. */
 export const DELETE = wrapRouteHandlerWithLogging<{
   params: Promise<{ id: string }>;
 }>(
   { routeId: "work.items.delete", auth: { mode: "required", getSessionUser } },
-  async (ctx, _request, sessionUser, context) => {
+  async (ctx, _request, _sessionUser, context) => {
     if (!context) throw new Error("context required for dynamic routes");
-    if (!sessionUser) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
     const { id } = await context.params;
-
-    const inputParse = workItemsDeleteOperation.input.safeParse({ id });
-    if (!inputParse.success) {
-      return NextResponse.json(
-        { error: "invalid input", issues: inputParse.error.issues },
-        { status: 400 }
-      );
-    }
-
-    try {
-      const deleted = await deleteWorkItem(id, {
-        id: sessionUser.id,
-      });
-      if (!deleted) {
-        return NextResponse.json(
-          { error: `Work item not found: ${id}` },
-          { status: 404 }
-        );
-      }
-      ctx.log.info({ workItemId: id }, "work.items.delete_success");
-      return NextResponse.json(
-        workItemsDeleteOperation.output.parse({ id, deleted: true })
-      );
-    } catch (e) {
-      if (e instanceof WorkItemRevisionConflictError) {
-        return NextResponse.json({ error: e.message, errorCode: "work_item_revision_conflict", expectedRevision: e.expectedRevision, currentRevision: e.currentRevision }, { status: 409 });
-      }
-      if (e instanceof WorkItemForbiddenError) {
-        return NextResponse.json({ error: e.message }, { status: 403 });
-      }
-      if (e instanceof WorkItemWriteOutcomeUnknownError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, retryable: false, receipt: e.receipt }, { status: 500 });
-      }
-      if (e instanceof WorkItemScoresInvalidError) {
-        return NextResponse.json({ error: e.message, errorCode: e.code, issues: e.issues }, { status: 400 });
-      }
-      if (e instanceof WorkItemsBackendNotReadyError) {
-        return backendUnavailable(ctx, e.reason);
-      }
-      throw e;
-    }
-  }
+    ctx.log.info(
+      { workItemId: id, errorCode: "work_item_delete_removed" },
+      "work.items.delete_refused",
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Deletion is retired. Read the current revision, then PATCH with expectedRevision, a reason and set.status=cancelled.",
+        errorCode: "work_item_delete_removed",
+      },
+      { status: 410 },
+    );
+  },
 );

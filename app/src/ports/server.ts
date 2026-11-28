@@ -70,5 +70,5 @@ export type {
   WorkItemsPatchSet,
 } from "@cogni/work-items/adapters/doltgres";
 
-// Node-owned v1 lease/DELETE compatibility while shared content advances.
+// Published content + PostgreSQL lease receipt/token contract.
 export type { EvaluationWorkItemsPort as WorkItemsDoltgresPort } from "./work-items";

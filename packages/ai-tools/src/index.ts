@@ -77,7 +77,6 @@ export type {
   WorkItemCapability,
   WorkItemInfo,
   WorkItemQueryParams,
-  WorkItemTransitionResult,
   XAccountMetrics,
   XAccountProfile,
   XInsightsCapability,
@@ -413,18 +412,15 @@ export {
   workItemQueryStubImplementation,
 } from "./tools/work-item-query";
 export {
-  createWorkItemTransitionImplementation,
-  WORK_ITEM_TRANSITION_NAME,
-  type WorkItemTransitionDeps,
-  type WorkItemTransitionInput,
-  WorkItemTransitionInputSchema,
-  type WorkItemTransitionOutput,
-  WorkItemTransitionOutputSchema,
-  type WorkItemTransitionRedacted,
-  workItemTransitionBoundTool,
-  workItemTransitionContract,
-  workItemTransitionStubImplementation,
-} from "./tools/work-item-transition";
+  createWorkItemUpdateImplementation,
+  WORK_ITEM_UPDATE_NAME,
+  type WorkItemUpdateDeps,
+  type WorkItemUpdateInput,
+  type WorkItemUpdateOutput,
+  WorkItemUpdateOutputSchema,
+  workItemUpdateBoundTool,
+  workItemUpdateContract,
+} from "./tools/work-item-update";
 // Tool types
 export type {
   BoundTool,

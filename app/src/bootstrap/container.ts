@@ -12,7 +12,13 @@
  * @public
  */
 
-import { DoltgresWorkItemAdapter as LegacyWorkItemAdapter } from "@cogni/legacy-work-items/adapters/doltgres";
+import { PostgresWorkItemLeaseAdapter } from "@cogni/work-items/adapters/postgres";
+import {
+  createWorkItemWriters,
+  createRunAttribution,
+  runAttribution,
+} from "@cogni/work-items";
+import { trace } from "@opentelemetry/api";
 import { composeEvaluationWorkItems } from "./evaluation-work-items";
 import { findExecutionScope, getExecutionScope } from "@/adapters/server";
 import { withReadCounting } from "@/adapters/server/knowledge-usage/counting-knowledge-capability";
@@ -24,28 +30,27 @@ import {
 import type { ToolSourcePort } from "@cogni/ai-core";
 import type {
   BroadcastCapability,
-  EdoCapability,
   KnowledgeCapability,
   MetricsCapability,
   RepoCapability,
   SocialXCapability,
   WebSearchCapability,
   XInsightsCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { BEACON_CORE_TOOL_BUNDLE as CORE_TOOL_BUNDLE } from "./ai/evaluation-baseline";
 import type { AttributionStore } from "@cogni/attribution-ledger";
 import {
   createDefaultRegistries,
   type DefaultRegistries,
-	type FinalizeEpochInput,
-	type FinalizeEpochOutput,
-	type FinalizeLogger,
-	type RunFinalizeEpochDeps,
-	runFinalizeEpoch,
+  type FinalizeEpochInput,
+  type FinalizeEpochOutput,
+  type FinalizeLogger,
+  type RunFinalizeEpochDeps,
+  runFinalizeEpoch,
 } from "@cogni/attribution-pipeline-plugins";
 import {
-	DrizzleAttributionAdapter,
-	DrizzleClaimantWalletResolver,
+  DrizzleAttributionAdapter,
+  DrizzleClaimantWalletResolver,
 } from "@cogni/db-client";
 import type { FinancialLedgerPort } from "@cogni/financial-ledger";
 import { createTigerBeetleAdapter } from "@cogni/financial-ledger/adapters";
@@ -53,8 +58,11 @@ import type { UserId } from "@cogni/ids";
 import { toUserId, userActor } from "@cogni/ids";
 import {
   type ContributionService,
+  type EdoCapability,
   createContributionService,
   createEdoCapability,
+  bindEdoToolCapability,
+  attributedCommitMessage,
   createKnowledgeCapability,
   defaultCanMergeKnowledge,
   type EdoResolverPort,
@@ -89,7 +97,10 @@ import { PrivyOperatorWalletAdapter } from "@cogni/operator-wallet/adapters/priv
 import type { ScheduleControlPort } from "@cogni/scheduler-core";
 import type { ScheduleRunReader } from "@cogni/scheduling";
 import { PostgresScheduleRunReader } from "@cogni/scheduling/adapters/postgres";
-import type { WorkItemArtifactDeps, WorkItemQueryPort } from "@cogni/work-items";
+import type {
+  WorkItemArtifactDeps,
+  WorkItemQueryPort,
+} from "@cogni/work-items";
 import { createDoltgresWorkItemStore } from "@cogni/work-items/adapters/doltgres";
 import { MarkdownWorkItemAdapter } from "@cogni/work-items/markdown";
 import {
@@ -151,7 +162,11 @@ import {
   getTestOnChainVerifier,
   getTestOperatorWallet,
 } from "@/adapters/test";
-import { KpiBindingsSchema, type GoalsProgress, type MetricService } from "@cogni-dao/metrics";
+import {
+  KpiBindingsSchema,
+  type GoalsProgress,
+  type MetricService,
+} from "@cogni-dao/metrics";
 import { createToolBindings } from "@/bootstrap/ai/tool-bindings";
 import { createGoalMetricTools } from "@/bootstrap/capabilities/goal-metric-tools";
 import {
@@ -215,14 +230,14 @@ import type {
 } from "@/ports/server";
 import {
   getDaoTreasuryAddress,
-	getEmissionsHolderAddress,
+  getEmissionsHolderAddress,
   getLedgerConfig,
   getNodeId,
-	getNodeTokenomicsConfig,
+  getNodeTokenomicsConfig,
   getOperatorWalletConfig,
   getPaymentConfig,
   getScopeId,
-	getStewardWalletConfig,
+  getStewardWalletConfig,
 } from "@/shared/config";
 import { serverEnv } from "@/shared/env/server-env";
 import { EVENT_NAMES, logEvent, makeLogger } from "@/shared/observability";
@@ -234,7 +249,7 @@ export type UnhandledErrorPolicy = "rethrow" | "respond_500";
 class DoltgresNotConfiguredError extends Error {
   constructor() {
     super(
-      "Doltgres is not configured for this node. Set DOLTGRES_URL to enable the work-items API."
+      "Doltgres is not configured for this node. Set DOLTGRES_URL to enable the work-items API.",
     );
     this.name = "DoltgresNotConfiguredError";
   }
@@ -523,24 +538,24 @@ function getCollectRegistries(): DefaultRegistries {
  *   fires on the baked emissions-holder / non-production runtime.
  */
 function buildFinalizeEpochDeps(logger: FinalizeLogger): RunFinalizeEpochDeps {
-	const serviceDb = getServiceDb();
-	const tokenomics = getNodeTokenomicsConfig();
-	return {
-		attributionStore: new DrizzleAttributionAdapter(serviceDb, getScopeId()),
-		registries: getCollectRegistries(),
-		nodeId: getNodeId(),
-		scopeId: getScopeId(),
-		chainId: tokenomics.chainId,
-		tokenAddress: tokenomics.tokenAddress,
-		distributorAddress: tokenomics.distributorAddress,
-		emissionsHolderAddress: getEmissionsHolderAddress(),
-		walletResolver: tokenomics.tokenAddress
-			? new DrizzleClaimantWalletResolver(serviceDb)
-			: null,
-		distributionConfigClient: null,
-		deploymentEnvironment: serverEnv().DEPLOY_ENVIRONMENT,
-		logger,
-	};
+  const serviceDb = getServiceDb();
+  const tokenomics = getNodeTokenomicsConfig();
+  return {
+    attributionStore: new DrizzleAttributionAdapter(serviceDb, getScopeId()),
+    registries: getCollectRegistries(),
+    nodeId: getNodeId(),
+    scopeId: getScopeId(),
+    chainId: tokenomics.chainId,
+    tokenAddress: tokenomics.tokenAddress,
+    distributorAddress: tokenomics.distributorAddress,
+    emissionsHolderAddress: getEmissionsHolderAddress(),
+    walletResolver: tokenomics.tokenAddress
+      ? new DrizzleClaimantWalletResolver(serviceDb)
+      : null,
+    distributionConfigClient: null,
+    deploymentEnvironment: serverEnv().DEPLOY_ENVIRONMENT,
+    logger,
+  };
 }
 
 /**
@@ -550,10 +565,10 @@ function buildFinalizeEpochDeps(logger: FinalizeLogger): RunFinalizeEpochDeps {
  * repairs; the fold FREEZE (bug.5022) preserves a published manifest.
  */
 export async function finalizeEpochInProcess(
-	input: FinalizeEpochInput,
-	logger: FinalizeLogger,
+  input: FinalizeEpochInput,
+  logger: FinalizeLogger,
 ): Promise<FinalizeEpochOutput> {
-	return runFinalizeEpoch(buildFinalizeEpochDeps(logger), input);
+  return runFinalizeEpoch(buildFinalizeEpochDeps(logger), input);
 }
 
 function createContainer(): Container {
@@ -569,7 +584,7 @@ function createContainer(): Container {
       logLevel: env.PINO_LOG_LEVEL,
       pretty: env.NODE_ENV === "development",
     },
-		"container initialized",
+    "container initialized",
   );
 
   // Initialize PostHog product analytics (required — env validated at boot)
@@ -619,7 +634,7 @@ function createContainer(): Container {
           // Return stub that throws on use - allows app to start without metrics config
           const notConfiguredError = new Error(
             "MetricsQueryPort not configured. Set PROMETHEUS_QUERY_URL (or PROMETHEUS_REMOTE_WRITE_URL " +
-							"ending in /api/prom/push) + PROMETHEUS_READ_USERNAME + PROMETHEUS_READ_PASSWORD.",
+              "ending in /api/prom/push) + PROMETHEUS_READ_USERNAME + PROMETHEUS_READ_PASSWORD.",
           );
           return {
             queryRange: async () => {
@@ -651,13 +666,13 @@ function createContainer(): Container {
       const adapter = createTigerBeetleAdapter(env.TIGERBEETLE_ADDRESS);
       log.info(
         { address: env.TIGERBEETLE_ADDRESS },
-				"TigerBeetle financial ledger connected",
+        "TigerBeetle financial ledger connected",
       );
       return adapter;
     } catch (err) {
       log.warn(
         { err },
-				"TigerBeetle client failed to initialize — financial ledger disabled",
+        "TigerBeetle client failed to initialize — financial ledger disabled",
       );
       return undefined;
     }
@@ -667,7 +682,7 @@ function createContainer(): Container {
   // Testing strategy: unit tests mock the port, integration tests use real DB
   const serviceAccountService = new ServiceDrizzleAccountService(
     getServiceDb(),
-		financialLedger,
+    financialLedger,
   );
   // TreasuryReadPort: always uses ViemTreasuryAdapter (no test fake needed - mocked at port level in tests)
   const treasuryReadPort = new ViemTreasuryAdapter(evmOnchainClient);
@@ -696,7 +711,7 @@ function createContainer(): Container {
   if (!env.TEMPORAL_ADDRESS || !env.TEMPORAL_NAMESPACE) {
     throw new Error(
       "TEMPORAL_ADDRESS and TEMPORAL_NAMESPACE are required. " +
-				"Start Temporal with: pnpm dev:infra",
+        "Start Temporal with: pnpm dev:infra",
     );
   }
   // Per QUEUE_PER_NODE_ISOLATION: Schedules submit to this node's per-node
@@ -717,13 +732,13 @@ function createContainer(): Container {
   // User-facing scheduling (appDb, RLS enforced)
   const executionGrantPort = new DrizzleExecutionGrantUserAdapter(
     db,
-		log.child({ component: "DrizzleExecutionGrantUserAdapter" }),
+    log.child({ component: "DrizzleExecutionGrantUserAdapter" }),
   );
   const scheduleManager = new DrizzleScheduleUserAdapter(
     db,
     scheduleControl,
     executionGrantPort,
-		log.child({ component: "DrizzleScheduleUserAdapter" }),
+    log.child({ component: "DrizzleScheduleUserAdapter" }),
   );
 
   const scheduleRunReader = new PostgresScheduleRunReader(db.$client);
@@ -734,7 +749,7 @@ function createContainer(): Container {
     logEvent(usageLog, event, fields);
   const knowledgeReadCounter = new PostgresKnowledgeReadCounter(
     serviceDb.$client,
-    logUsage
+    logUsage,
   );
   const flushReadCounts = () => {
     void knowledgeReadCounter.flush();
@@ -745,17 +760,17 @@ function createContainer(): Container {
   // Worker scheduling (serviceDb, BYPASSRLS)
   const executionGrantWorkerPort = new DrizzleExecutionGrantWorkerAdapter(
     serviceDb,
-		log.child({ component: "DrizzleExecutionGrantWorkerAdapter" }),
+    log.child({ component: "DrizzleExecutionGrantWorkerAdapter" }),
   );
   const graphRunRepository = new DrizzleGraphRunAdapter(
     serviceDb,
-		log.child({ component: "DrizzleGraphRunAdapter" }),
+    log.child({ component: "DrizzleGraphRunAdapter" }),
   );
 
   // Execution request port (not user-scoped — exempt from RLS)
   const executionRequestPort = new DrizzleExecutionRequestAdapter(
     db,
-		log.child({ component: "DrizzleExecutionRequestAdapter" }),
+    log.child({ component: "DrizzleExecutionRequestAdapter" }),
   );
 
   // MetricsCapability for AI tools (requires PROMETHEUS_URL)
@@ -778,7 +793,7 @@ function createContainer(): Container {
 
   // WorkItemCapability for AI tools (delegates to markdown adapter ports)
   const workItemAdapter = new MarkdownWorkItemAdapter(
-		env.COGNI_REPO_ROOT ?? "/nonexistent",
+    env.COGNI_REPO_ROOT ?? "/nonexistent",
   );
   // story.0033: the work-items `moves` ports over this node's metrics service.
   // `goalMetrics` and `knowledgeStorePort` are assigned below and read only at call time.
@@ -794,25 +809,28 @@ function createContainer(): Container {
     links: createCitationLinksPort(() => knowledgeStorePort),
     log: (event) => log.warn(event, "work.items.envelope_degraded"),
     liveStore: () => doltgresWorkItems,
-    getActorId: () => {
-      const actor = getExecutionScope().actorUserId;
-      if (!actor) throw new Error("Work item write requires authenticated actorUserId");
-      return actor;
-    },
+    writers: createWorkItemWriters({
+      log,
+      scope: getExecutionScope,
+      traceId: () => trace.getActiveSpan()?.spanContext().traceId,
+      store: () => doltgresWorkItems,
+      artifacts: () => workItemArtifacts,
+    }),
+    artifactDeps: () => workItemArtifacts,
     // QUERY_READS_THE_LIVE_BACKLOG: the AI query tool (and the prioritizer) reads
     // this node's Doltgres work items; `doltgresWorkItems` is assigned below and
     // read only at call time.
     backlogReader: { list: (query) => doltgresWorkItems.list(query) },
   });
 
-  // ScheduleCapability for AI tools (reads actorUserId from ALS at invocation time)
+  // ScheduleCapability for AI tools (reads subjectUserId from ALS at invocation time)
   const scheduleCapability = createScheduleCapability({
     scheduleManager,
     getOrCreateBillingAccountId: async (userId) => {
       const accountService = new UserDrizzleAccountService(
         db,
         userId,
-				financialLedger,
+        financialLedger,
       );
       const account = await accountService.getOrCreateBillingAccountForUser({
         userId: userId as string,
@@ -851,7 +869,7 @@ function createContainer(): Container {
           event: EVENT_NAMES.ADAPTER_WORK_ITEMS_PR_REPO_UNPINNED,
           reason: prRepos.reason,
         },
-        "work items accept a pull request of any github.com repository as a code deliverable; set WORK_ITEMS_PR_REPO=owner/repo to pin one"
+        "work items accept a pull request of any github.com repository as a code deliverable; set WORK_ITEMS_PR_REPO=owner/repo to pin one",
       );
     }
     // A malformed entry is never pinned, even beside valid ones: say which, so a typo does not silently narrow the pin.
@@ -862,7 +880,7 @@ function createContainer(): Container {
           ignored: prRepos.ignored,
           pinned: prRepos.repos,
         },
-        "WORK_ITEMS_PR_REPO entries that are not owner/repo were ignored"
+        "WORK_ITEMS_PR_REPO entries that are not owner/repo were ignored",
       );
     }
     const workItemsClient = createWorkItemsClient();
@@ -894,17 +912,10 @@ function createContainer(): Container {
       // A story validation names its origin; only this hub's own is accepted.
       ownOrigin: env.APP_BASE_URL,
     };
-    // Independent bounded sessions; both published writers acquire legacy5001001.
-    const createLegacyClient = () => buildDoltgresClient({
-      connectionString: env.DOLTGRES_URL as string,
-      applicationName: `cogni_work_item_leases_${env.SERVICE_NAME ?? "app"}`,
-      max: 1,
-    });
-    const legacy = new LegacyWorkItemAdapter(createLegacyClient(), {
-      logger: log,
-      recreateClient: createLegacyClient,
-    });
-    doltgresWorkItems = composeEvaluationWorkItems(content, legacy);
+    doltgresWorkItems = composeEvaluationWorkItems(
+      content,
+      new PostgresWorkItemLeaseAdapter(serviceDb.$client, { logger: log }),
+    );
     // story.0061: a successful patch also records the (atom, item) pairs it cites; the route and the agent tool share
     // this patch, and the record never fails or delays it.
     {
@@ -940,7 +951,7 @@ function createContainer(): Container {
         writerProtocol: "database",
         logger: log,
         recreateClient: createKnowledgeBranchClient,
-      }
+      },
     );
     const knowledgePort = new DoltgresKnowledgeStoreAdapter({
       sql: doltClient,
@@ -976,7 +987,7 @@ function createContainer(): Container {
                     })
                   : [],
             };
-          })
+          }),
         );
       };
     // After the listActiveGoals reassignment, so the spread keeps it (story.0061).
@@ -985,9 +996,33 @@ function createContainer(): Container {
       knowledgeReadCounter,
       () => {
         const scope = findExecutionScope();
-        return scope ? { principalId: scope.actorUserId } : undefined;
-      }
+        return scope ? { principalId: scope.principalId } : undefined;
+      },
     );
+    // The node binds tool identity at the public write-session seam. The release
+    // owns validation, admission, the single commit and the attribution message.
+    const toolKnowledgeWrite: KnowledgeStorePort["withWrite"] = (input, run) =>
+      knowledgePort.withWrite(
+        {
+          ...input,
+          message: attributedCommitMessage(
+            input.message,
+            runAttribution(getExecutionScope(), log),
+          ),
+        },
+        run,
+      );
+    const toolKnowledgePort = new Proxy(knowledgePort, {
+      get(target, key) {
+        const value =
+          key === "withWrite" ? toolKnowledgeWrite : Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    knowledgeCapability = {
+      ...knowledgeCapability,
+      write: createKnowledgeCapability(toolKnowledgePort).write,
+    };
     const doltgresEdoResolver = new DoltgresEdoResolverAdapter({
       sql: doltClient,
       store: knowledgePort,
@@ -1018,7 +1053,7 @@ function createContainer(): Container {
             onSuccess: () => log.info({ remote: remoteUrl }, "dolthub_push_ok"),
             onFailure: (err) =>
               log.warn({ err, remote: remoteUrl }, "dolthub_push_failed"),
-					},
+          },
         )
       : undefined;
     knowledgeContributionService = createContributionService({
@@ -1036,7 +1071,7 @@ function createContainer(): Container {
     });
     log.info(
       { dolthubMirror: Boolean(env.DOLTHUB_REMOTE_URL) },
-			"Knowledge store + EDO capability configured (Doltgres)",
+      "Knowledge store + EDO capability configured (Doltgres)",
     );
   } else {
     const notConfigured = () => {
@@ -1079,7 +1114,10 @@ function createContainer(): Container {
   const toolBindings = createToolBindings({
     broadcastCapability,
     knowledgeCapability,
-    edoCapability,
+    edoCapability: bindEdoToolCapability(
+      edoCapability,
+      createRunAttribution({ scope: getExecutionScope, log }),
+    ),
     metricsCapability,
     webSearchCapability,
     repoCapability,
@@ -1133,33 +1171,33 @@ function createContainer(): Container {
         }
         if (!operatorWalletConfig) {
           log.warn(
-						"PRIVY_APP_ID set but operator_wallet missing from repo-spec — skipping operator wallet",
+            "PRIVY_APP_ID set but operator_wallet missing from repo-spec — skipping operator wallet",
           );
           return undefined;
         }
         const treasuryAddress = getDaoTreasuryAddress();
         if (!treasuryAddress) {
           log.warn(
-            "operator_wallet configured but governance.dao_contract missing — skipping operator wallet"
+            "operator_wallet configured but governance.dao_contract missing — skipping operator wallet",
           );
           return undefined;
         }
         const paymentConfig = getPaymentConfig();
         if (!paymentConfig) {
           log.warn(
-						"PRIVY_APP_ID set but payments_in missing from repo-spec — run `pnpm node:activate-payments`",
+            "PRIVY_APP_ID set but payments_in missing from repo-spec — run `pnpm node:activate-payments`",
           );
           return undefined;
         }
         if (!env.EVM_RPC_URL) {
           log.warn(
-						"PRIVY_APP_ID set but EVM_RPC_URL missing — operator wallet requires RPC for tx confirmation",
+            "PRIVY_APP_ID set but EVM_RPC_URL missing — operator wallet requires RPC for tx confirmation",
           );
           return undefined;
         }
-				// Steward wallet is optional — when payments_out is absent the adapter
-				// fails closed on withdrawToSteward but inbound/distribute still work.
-				const stewardWalletConfig = getStewardWalletConfig();
+        // Steward wallet is optional — when payments_out is absent the adapter
+        // fails closed on withdrawToSteward but inbound/distribute still work.
+        const stewardWalletConfig = getStewardWalletConfig();
         return new PrivyOperatorWalletAdapter({
           appId: env.PRIVY_APP_ID,
           appSecret: env.PRIVY_APP_SECRET,
@@ -1171,16 +1209,16 @@ function createContainer(): Container {
           revenueSharePpm: numberToPpm(env.SYSTEM_TENANT_REVENUE_SHARE),
           maxTopUpUsd: env.OPERATOR_MAX_TOPUP_USD,
           rpcUrl: env.EVM_RPC_URL,
-					...(stewardWalletConfig
-						? { stewardAddress: stewardWalletConfig.address }
-						: {}),
+          ...(stewardWalletConfig
+            ? { stewardAddress: stewardWalletConfig.address }
+            : {}),
         });
       })();
 
-	// ProviderFunding (OpenRouter/Coinbase top-up) was retired — OpenRouter 410'd
-	// programmatic crypto top-up. Outbound vendor funding now flows through the
-	// operator wallet's withdrawToSteward + a manual human checkout. The post-credit
-	// chain here is now just inbound credit + Split distribute (treasurySettlement below).
+  // ProviderFunding (OpenRouter/Coinbase top-up) was retired — OpenRouter 410'd
+  // programmatic crypto top-up. Outbound vendor funding now flows through the
+  // operator wallet's withdrawToSteward + a manual human checkout. The post-credit
+  // chain here is now just inbound credit + Split distribute (treasurySettlement below).
 
   // Connection broker — BYO-AI credential resolution
   // Undefined when CONNECTIONS_ENCRYPTION_KEY not set
@@ -1192,7 +1230,7 @@ function createContainer(): Container {
       keyBuf = decodeAeadKey(env.CONNECTIONS_ENCRYPTION_KEY);
     } catch {
       log.warn(
-        "CONNECTIONS_ENCRYPTION_KEY must be 32 bytes (64 hex chars or base64). BYO-AI disabled."
+        "CONNECTIONS_ENCRYPTION_KEY must be 32 bytes (64 hex chars or base64). BYO-AI disabled.",
       );
       return undefined;
     }
@@ -1288,7 +1326,7 @@ function createContainer(): Container {
       new DrizzleThreadPersistenceAdapter(db, userActor(userId)),
     governanceStatus: new DrizzleGovernanceStatusAdapter(
       db,
-			userActor(toUserId(COGNI_SYSTEM_PRINCIPAL_USER_ID)),
+      userActor(toUserId(COGNI_SYSTEM_PRINCIPAL_USER_ID)),
     ),
     attributionStore: new DrizzleAttributionAdapter(serviceDb, getScopeId()),
     workItemQuery: workItemAdapter,
@@ -1322,7 +1360,7 @@ function createContainer(): Container {
       const codexProvider = new CodexModelProvider(codexMcpConfig);
       const openAiCompatibleProvider = new OpenAiCompatibleModelProvider(
         connectionBroker,
-				resolveAppDb,
+        resolveAppDb,
       );
       const providers = [
         platformProvider,

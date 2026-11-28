@@ -28,8 +28,8 @@ import type {
   XAccountMetrics,
   XInsightsCapability,
   XRecentPost,
-} from "@cogni/ai-tools";
-import { X_API_VERSION, X_MAX_TEXT_LENGTH } from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
+import { X_API_VERSION, X_MAX_TEXT_LENGTH } from "@cogni/beacon-ai-tools";
 import { TwitterApi } from "twitter-api-v2";
 
 import { EVENT_NAMES, makeLogger } from "@/shared/observability";

@@ -12,4 +12,4 @@ export {
   knowledgeWriteBoundTool,
   knowledgeWriteContract,
   knowledgeWriteStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";

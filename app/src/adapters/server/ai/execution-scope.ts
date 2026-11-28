@@ -15,8 +15,8 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-
 import type { SourceSystem } from "@cogni/ai-core";
+import type { WriteRunKind } from "@cogni/work-items";
 import type { BillingContext, LlmService } from "@/ports";
 
 /**
@@ -28,7 +28,12 @@ import type { BillingContext, LlmService } from "@/ports";
 export interface ExecutionScope {
   readonly billing: BillingContext;
   /** Actor who initiated this run. Used by tools that need user-scoped operations (e.g., schedule CRUD). */
-  readonly actorUserId?: string;
+  readonly subjectUserId?: string;
+  /** The catalog principal's stored user id; never the requester or payer. */
+  readonly principalId?: string;
+  readonly runId?: string;
+  readonly graphId?: string;
+  readonly runKind?: WriteRunKind;
   /** Chat-only temporary tech debt — browser disconnect, not durable cancellation. */
   readonly abortSignal?: AbortSignal;
   /** Resolved LlmService for this run (from ModelProviderPort.createLlmService). */
@@ -46,7 +51,7 @@ export function getExecutionScope(): ExecutionScope {
   const scope = executionScopeStorage.getStore();
   if (!scope) {
     throw new Error(
-      "getExecutionScope() called outside runInScope — billing context not available"
+      "getExecutionScope() called outside runInScope — billing context not available",
     );
   }
   return scope;
@@ -63,4 +68,17 @@ export function findExecutionScope(): ExecutionScope | undefined {
  */
 export function runInScope<T>(scope: ExecutionScope, fn: () => T): T {
   return executionScopeStorage.run(scope, fn);
+}
+
+/** Resolve only a catalog slug through principal storage; discard any inherited principal. */
+export async function resolveExecutionScope(
+  scope: ExecutionScope,
+  principalSlug: string | undefined,
+  resolvePrincipal: (slug: string) => Promise<string | null>,
+): Promise<ExecutionScope> {
+  const { principalId: _inherited, ...run } = scope;
+  const principalId = principalSlug
+    ? await resolvePrincipal(principalSlug)
+    : null;
+  return { ...run, ...(principalId ? { principalId } : {}) };
 }

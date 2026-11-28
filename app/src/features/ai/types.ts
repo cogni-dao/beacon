@@ -23,7 +23,7 @@ export type {
   ToolErrorCode,
   ToolImplementation,
   ToolResult,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 // Re-export shared AI event types from types layer
 export type {
   AiEvent,

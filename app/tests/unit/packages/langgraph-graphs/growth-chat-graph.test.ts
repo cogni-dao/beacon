@@ -25,7 +25,7 @@
  * @internal
  */
 
-import { KNOWLEDGE_READ_NAME, KNOWLEDGE_SEARCH_NAME } from "@cogni/ai-tools";
+import { KNOWLEDGE_READ_NAME, KNOWLEDGE_SEARCH_NAME } from "@cogni/beacon-ai-tools";
 import {
   createGrowthChatGraph,
   GROWTH_CHAT_GRAPH_NAME,

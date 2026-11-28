@@ -12,4 +12,4 @@ export {
   edoDecideBoundTool,
   edoDecideContract,
   edoDecideStubImplementation,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";

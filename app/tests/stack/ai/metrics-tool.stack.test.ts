@@ -16,7 +16,7 @@
  */
 
 import { createToolAllowlistPolicy, createToolRunner } from "@cogni/ai-core";
-import { METRICS_QUERY_NAME } from "@cogni/ai-tools";
+import { METRICS_QUERY_NAME } from "@cogni/beacon-ai-tools";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getContainer } from "@/bootstrap/container";

@@ -52,7 +52,7 @@ describe("GET /.well-known/agent.json", () => {
     expect(body.actions.updateWorkItem.inputSchema.properties).toHaveProperty(
       "set"
     );
-    expect(body.actions.deleteWorkItem.method).toBe("DELETE");
+    expect(body.actions.deleteWorkItem).toBeUndefined();
     expect(body.actions.claimWorkItem).toMatchObject({
       method: "POST",
       endpoint: "https://node.example/api/v1/work/items/{id}/claims",

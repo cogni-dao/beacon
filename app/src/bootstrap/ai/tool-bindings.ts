@@ -22,7 +22,7 @@ import type {
   ToolImplementation,
   VcsCapability,
   WebSearchCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import {
   BROADCAST_POST_NAME,
   createBroadcastPostImplementation,
@@ -58,8 +58,8 @@ import {
   VCS_MERGE_PR_NAME,
   WEB_SEARCH_NAME,
   WORK_ITEM_QUERY_NAME,
-  WORK_ITEM_TRANSITION_NAME,
-} from "@cogni/ai-tools";
+  WORK_ITEM_UPDATE_NAME,
+} from "@cogni/beacon-ai-tools";
 
 import {
   createEdoDecideImplementation,
@@ -70,13 +70,17 @@ import {
   createKnowledgeSearchImplementation,
   createKnowledgeWriteImplementation,
   createWorkItemQueryImplementation,
-  createWorkItemTransitionImplementation,
+  createWorkItemUpdateImplementation,
+  createWorkItemReadImplementation,
+  createWorkItemArtifactRecordImplementation,
+  WORK_ITEM_READ_NAME,
+  WORK_ITEM_ARTIFACT_RECORD_NAME,
   type EdoCapability,
   GOAL_LIST_NAME,
   getCurrentTimeImplementation,
   type KnowledgeCapability,
   type WorkItemCapability,
-} from "@cogni/shared-ai-tools";
+} from "@cogni/ai-tools";
 
 /**
  * Dependencies required to create tool bindings.
@@ -213,7 +217,15 @@ export function createToolBindings(deps: ToolBindingDeps): ToolBindings {
       workItemCapability: deps.workItemCapability,
     }) as AnyToolImplementation,
 
-    [WORK_ITEM_TRANSITION_NAME]: createWorkItemTransitionImplementation({
+    [WORK_ITEM_READ_NAME]: createWorkItemReadImplementation({
+      workItemCapability: deps.workItemCapability,
+      nodePublicOrigin: deps.nodePublicOrigin,
+    }) as AnyToolImplementation,
+    [WORK_ITEM_ARTIFACT_RECORD_NAME]:
+      createWorkItemArtifactRecordImplementation({
+        workItemCapability: deps.workItemCapability,
+      }) as AnyToolImplementation,
+    [WORK_ITEM_UPDATE_NAME]: createWorkItemUpdateImplementation({
       workItemCapability: deps.workItemCapability,
     }) as AnyToolImplementation,
   };

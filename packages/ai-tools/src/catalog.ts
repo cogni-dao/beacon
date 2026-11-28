@@ -14,7 +14,7 @@
  * @public
  */
 
-import type { CatalogBoundTool as SharedCatalogBoundTool } from "@cogni/shared-ai-tools";
+import type { CatalogBoundTool as SharedCatalogBoundTool } from "@cogni/ai-tools";
 import { broadcastPostBoundTool } from "./tools/broadcast-post";
 import { edoDecideBoundTool } from "./tools/edo-decide";
 import { edoHypothesizeBoundTool } from "./tools/edo-hypothesize";
@@ -36,7 +36,7 @@ import { vcsListPrsBoundTool } from "./tools/vcs-list-prs";
 import { vcsMergePrBoundTool } from "./tools/vcs-merge-pr";
 import { webSearchBoundTool } from "./tools/web-search";
 import { workItemQueryBoundTool } from "./tools/work-item-query";
-import { workItemTransitionBoundTool } from "./tools/work-item-transition";
+import { workItemUpdateBoundTool } from "./tools/work-item-update";
 import type { BoundTool } from "./types";
 
 /**
@@ -126,7 +126,7 @@ export const CORE_TOOL_BUNDLE: readonly CatalogBoundTool[] = [
   vcsMergePrBoundTool as CatalogBoundTool,
   webSearchBoundTool as CatalogBoundTool,
   workItemQueryBoundTool as CatalogBoundTool,
-  workItemTransitionBoundTool as CatalogBoundTool,
+  workItemUpdateBoundTool as CatalogBoundTool,
 ];
 
 /**

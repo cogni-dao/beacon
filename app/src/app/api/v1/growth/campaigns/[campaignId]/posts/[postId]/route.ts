@@ -38,7 +38,7 @@
 import {
   deriveMoltbookPayloadFromDraft,
   type MoltbookPostPayload,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import {

@@ -20,7 +20,7 @@ import type {
   PostContentResult,
   PostMetricSnapshot,
   SocialXCapability,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 /**
  * Fake X capability: deterministic posts, monotonic-rising metrics.

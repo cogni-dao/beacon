@@ -10,7 +10,7 @@
  * @public
  */
 
-import { createMetricTools } from "@cogni/shared-ai-tools";
+import { createMetricTools } from "@cogni/ai-tools";
 import type { GoalsProgress, MetricService } from "@cogni-dao/metrics";
 
 export function createGoalMetricTools(deps: {

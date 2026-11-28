@@ -14,7 +14,7 @@
  */
 
 import type { AiEvent, ToolSourcePort } from "@cogni/ai-core";
-import { TOOL_CATALOG, toBoundToolRuntime } from "@cogni/ai-tools";
+import { TOOL_CATALOG, toBoundToolRuntime } from "@cogni/beacon-ai-tools";
 import { describe, expect, it, vi } from "vitest";
 
 import { runInScope } from "@/adapters/server/ai/execution-scope";

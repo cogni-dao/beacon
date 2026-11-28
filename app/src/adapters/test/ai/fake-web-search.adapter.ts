@@ -17,7 +17,7 @@ import type {
   WebSearchCapability,
   WebSearchParams,
   WebSearchResult,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 
 /**
  * Fake web search adapter for testing.

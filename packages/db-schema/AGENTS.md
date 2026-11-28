@@ -91,3 +91,5 @@ pnpm --filter @cogni/db-schema build
 - Schedule tables support Temporal migration (execution_requests for idempotency)
 - `billing.ts` includes `llmChargeDetails` (1:1 with charge_receipts, PK/FK cascade) for model/tokens/provider/latency/graphId
 - `charge_receipts.receipt_kind` distinguishes receipt types (e.g. "llm")
+
+`agent-authority.ts` binds the released schema factory to Beacon refs. `work-item-leases.ts` supplies service-only PostgreSQL coordination storage.

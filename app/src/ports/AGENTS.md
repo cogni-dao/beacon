@@ -116,3 +116,5 @@ These tests are separate from edge tests for src/contracts/\*\*
 - Port-level errors are thrown by adapters, caught and translated by feature layer
 - recordChargeReceipt is non-blocking (never throws InsufficientCredits post-call per ACTIVITY_METRICS.md)
 - Activity dashboard reads from charge_receipts + llm_charge_details (no external API dependency); LiteLLM usage service removed
+
+`work-items.ts` aliases the published `WorkItemsPort`; operational leases use PostgreSQL receipts and owner tokens.

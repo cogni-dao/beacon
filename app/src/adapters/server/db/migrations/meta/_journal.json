@@ -337,6 +337,13 @@
       "when": 1795197021664,
       "tag": "0047_fat_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795717316056,
+      "tag": "0048_yielding_caretaker",
+      "breakpoints": true
     }
   ]
 }

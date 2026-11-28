@@ -12,7 +12,7 @@
  * @internal
  */
 
-import type { VcsCapability } from "@cogni/ai-tools";
+import type { VcsCapability } from "@cogni/beacon-ai-tools";
 
 /**
  * Stub VcsCapability — satisfies tool binding requirement but throws if called.

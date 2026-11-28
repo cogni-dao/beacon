@@ -109,7 +109,7 @@ Bootstrap application runtime dependencies.
 - **Internal:** ports, adapters, shared, types
 - **External:** Node.js runtime
 
-Evaluation adoption: `evaluation-work-items.ts` composes published content/CAS with exact legacy v1 leases/DELETE. `ai/evaluation-baseline.ts` composes the six shared contracts while retaining node product tools. Trusted write identity resolves from ExecutionScope at invocation; P0/P1 stays human-only.
+Evaluation adoption: `evaluation-work-items.ts` delegates content/lease composition to the published PostgreSQL lease contract. `ai/evaluation-baseline.ts` composes the six shared contracts while retaining node product tools. ExecutionScope separates the stored catalog principal, requester and run. Published 0.27 writer builders resolve attribution at invocation; P0/P1 stays human-only.
 
 ## Change Protocol
 

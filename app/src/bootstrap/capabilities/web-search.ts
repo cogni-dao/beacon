@@ -13,7 +13,7 @@
  * @internal
  */
 
-import type { WebSearchCapability } from "@cogni/ai-tools";
+import type { WebSearchCapability } from "@cogni/beacon-ai-tools";
 
 import { TavilyWebSearchAdapter } from "@/adapters/server";
 import { FakeWebSearchAdapter } from "@/adapters/test";

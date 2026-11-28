@@ -31,7 +31,7 @@ import {
   EdoDecideInputSchema,
   EdoHypothesizeInputSchema,
   EdoRecordOutcomeInputSchema,
-} from "@cogni/ai-tools";
+} from "@cogni/beacon-ai-tools";
 import {
   CitationTargetNotFoundError,
   CitationTypeMismatchError,

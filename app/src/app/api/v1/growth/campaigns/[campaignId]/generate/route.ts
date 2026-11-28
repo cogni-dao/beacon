@@ -35,7 +35,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { deriveMoltbookPayloadFromDraft } from "@cogni/ai-tools";
+import { deriveMoltbookPayloadFromDraft } from "@cogni/beacon-ai-tools";
 import { withTenantScope } from "@cogni/db-client";
 import { toUserId, type UserId, userActor } from "@cogni/ids";
 import {
