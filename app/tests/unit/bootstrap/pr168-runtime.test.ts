@@ -118,7 +118,7 @@ describe("durable launch admission", () => {
   });
 });
 
-it.fails("UPSTREAM graphs0.11: preserves every actual product input schema in model-facing tools", async () => {
+it("preserves every actual product input schema in model-facing tools", async () => {
   const specs = CORE_TOOL_BUNDLE.map((tool) => toBoundToolRuntime(tool).spec);
   let modelTools: readonly {
     type: string;
